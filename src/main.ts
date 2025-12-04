@@ -1,6 +1,6 @@
 import { Game } from './game/Game';
 
-function init(): void {
+async function init(): Promise<void> {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   if (!canvas) {
     console.error('Canvas element not found');
@@ -8,7 +8,7 @@ function init(): void {
   }
 
   const game = new Game(canvas);
-  game.start();
+  await game.start();
 }
 
 // Start game when DOM is loaded

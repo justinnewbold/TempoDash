@@ -1,390 +1,818 @@
-import { GameState } from '../types';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
-import { InputManager } from '../systems/Input';
+import { GameState, Particle, LevelConfig, SKINS } from '../types';
+import { CONFIG, LEVELS } from '../constants';
 import { Player } from '../entities/Player';
-import { Level } from '../levels/Level';
-import { createLevel, TOTAL_LEVELS } from '../levels/index';
+import { Obstacle } from '../entities/Obstacle';
+import { JumpPlatform } from '../entities/JumpPlatform';
+import { Hole } from '../entities/Hole';
+import { GravityZone } from '../entities/GravityZone';
+import { MovingObstacle } from '../entities/MovingObstacle';
+import { Portal } from '../entities/Portal';
+import { Background } from '../graphics/Background';
+import { AudioSystem } from '../audio/AudioSystem';
+import { SaveManager } from '../storage/SaveManager';
 
 export class Game {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private input: InputManager;
 
   private state: GameState = {
     currentLevel: 1,
-    lives: 3,
     score: 0,
+    jumpCount: 0,
     gameStatus: 'menu',
+    bpm: CONFIG.BASE_BPM
   };
 
   private player!: Player;
-  private level!: Level;
+  private obstacles: Obstacle[] = [];
+  private platforms: JumpPlatform[] = [];
+  private holes: Hole[] = [];
+  private gravityZones: GravityZone[] = [];
+  private movingObstacles: MovingObstacle[] = [];
+  private portals: Portal[] = [];
+  private particles: Particle[] = [];
+  private background!: Background;
 
-  private lastTime = 0;
-  private deathTimer = 0;
+  private audio: AudioSystem;
+  private saveManager: SaveManager;
+
+  private lastObstacleX = 0;
+  private lastPlatformX = 0;
+  private lastHoleX = 0;
+  private lastGravityX = 0;
+  private lastMovingX = 0;
+  private lastPortalX = 0;
+
+  private holdingJump = false;
+  private levelConfig!: LevelConfig;
+  private attemptNumber = 1;
+
+  private selectedMenuLevel = 1;
+  private selectedSkinIndex = 0;
+  private skinKeys: string[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.canvas.width = GAME_WIDTH;
-    this.canvas.height = GAME_HEIGHT;
+    this.canvas.width = CONFIG.WIDTH;
+    this.canvas.height = CONFIG.HEIGHT;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Could not get 2D context');
-    }
+    if (!ctx) throw new Error('Could not get 2D context');
     this.ctx = ctx;
 
-    this.input = new InputManager();
-    this.loadLevel(1);
+    this.audio = new AudioSystem();
+    this.saveManager = new SaveManager();
 
-    // Setup keyboard for menu
-    window.addEventListener('keydown', (e) => this.handleMenuInput(e));
+    this.skinKeys = Object.keys(SKINS);
+    this.selectedSkinIndex = this.skinKeys.indexOf(this.saveManager.getCurrentSkin());
+    if (this.selectedSkinIndex < 0) this.selectedSkinIndex = 0;
+
+    this.loadLevel(1);
+    this.setupInputHandlers();
   }
 
   private loadLevel(levelId: number): void {
-    this.level = createLevel(levelId);
-    this.player = new Player(this.level.playerStart);
+    this.levelConfig = LEVELS[levelId - 1] || LEVELS[0];
     this.state.currentLevel = levelId;
+
+    this.background = new Background(this.levelConfig.background);
+    this.audio.setLevelConfig(this.levelConfig.beatConfig);
+
+    this.player = new Player(this.saveManager.getCurrentSkin());
   }
 
-  private handleMenuInput(e: KeyboardEvent): void {
+  private setupInputHandlers(): void {
+    // Keyboard
+    document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+
+    // Touch
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.handleTouchStart();
+    });
+    this.canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.holdingJump = false;
+    });
+
+    // Mouse
+    this.canvas.addEventListener('mousedown', () => this.handleTouchStart());
+    this.canvas.addEventListener('mouseup', () => { this.holdingJump = false; });
+  }
+
+  private handleKeyDown(e: KeyboardEvent): void {
     if (this.state.gameStatus === 'menu') {
-      if (e.code === 'Enter' || e.code === 'Space') {
-        this.startGame();
-      } else if (e.code === 'Digit1') {
-        this.state.currentLevel = 1;
-        this.startGame();
-      } else if (e.code === 'Digit2') {
-        this.state.currentLevel = 2;
-        this.startGame();
-      } else if (e.code === 'Digit3') {
-        this.state.currentLevel = 3;
-        this.startGame();
-      } else if (e.code === 'Digit4') {
-        this.state.currentLevel = 4;
-        this.startGame();
-      } else if (e.code === 'Digit5') {
-        this.state.currentLevel = 5;
-        this.startGame();
-      } else if (e.code === 'Digit6') {
-        this.state.currentLevel = 6;
-        this.startGame();
+      this.handleMenuKeyDown(e);
+    } else if (this.state.gameStatus === 'playing') {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        this.holdingJump = true;
+        this.tryJump();
       }
     } else if (this.state.gameStatus === 'gameOver') {
-      if (e.code === 'Enter' || e.code === 'Space') {
-        this.resetGame();
+      if (e.code === 'Space' || e.code === 'Enter') {
+        this.startGame();
       }
-    } else if (this.state.gameStatus === 'levelComplete') {
-      if (e.code === 'Enter' || e.code === 'Space') {
-        this.nextLevel();
+    }
+  }
+
+  private handleMenuKeyDown(e: KeyboardEvent): void {
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      this.startGame();
+    } else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+      // Navigate levels up
+      const unlockedLevels = this.saveManager.getUnlockedLevels();
+      const currentIdx = unlockedLevels.indexOf(this.selectedMenuLevel);
+      if (currentIdx > 0) {
+        this.selectedMenuLevel = unlockedLevels[currentIdx - 1];
       }
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      // Navigate levels down
+      const unlockedLevels = this.saveManager.getUnlockedLevels();
+      const currentIdx = unlockedLevels.indexOf(this.selectedMenuLevel);
+      if (currentIdx < unlockedLevels.length - 1) {
+        this.selectedMenuLevel = unlockedLevels[currentIdx + 1];
+      }
+    } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      // Navigate skins left
+      this.navigateSkin(-1);
+    } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      // Navigate skins right
+      this.navigateSkin(1);
+    } else if (e.code.startsWith('Digit')) {
+      const num = parseInt(e.code.replace('Digit', ''));
+      if (num >= 1 && num <= 6 && this.saveManager.isLevelUnlocked(num)) {
+        this.selectedMenuLevel = num;
+        this.startGame();
+      }
+    }
+  }
+
+  private navigateSkin(direction: number): void {
+    const unlockedSkins = this.saveManager.getUnlockedSkins();
+    let newIndex = this.selectedSkinIndex + direction;
+
+    // Find next unlocked skin
+    while (newIndex >= 0 && newIndex < this.skinKeys.length) {
+      if (unlockedSkins.includes(this.skinKeys[newIndex])) {
+        this.selectedSkinIndex = newIndex;
+        this.saveManager.setCurrentSkin(this.skinKeys[newIndex]);
+        break;
+      }
+      newIndex += direction;
+    }
+  }
+
+  private handleKeyUp(e: KeyboardEvent): void {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+      this.holdingJump = false;
+    }
+  }
+
+  private handleTouchStart(): void {
+    if (this.state.gameStatus === 'menu') {
+      this.startGame();
     } else if (this.state.gameStatus === 'playing') {
-      if (e.code === 'Escape') {
-        this.state.gameStatus = 'paused';
-      }
-    } else if (this.state.gameStatus === 'paused') {
-      if (e.code === 'Escape' || e.code === 'Enter') {
-        this.state.gameStatus = 'playing';
-      }
+      this.holdingJump = true;
+      this.tryJump();
+    } else if (this.state.gameStatus === 'gameOver') {
+      this.startGame();
     }
   }
 
-  private startGame(): void {
-    this.loadLevel(this.state.currentLevel);
-    this.state.lives = 3;
-    this.state.score = 0;
-    this.state.gameStatus = 'playing';
-  }
+  private tryJump(): void {
+    if (this.player.jump()) {
+      // Successful jump
+      this.particles.push(...this.player.createJumpParticles());
+      this.audio.onJump();
 
-  private resetGame(): void {
-    this.state.currentLevel = 1;
-    this.startGame();
-  }
-
-  private nextLevel(): void {
-    if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.state.currentLevel++;
-      this.loadLevel(this.state.currentLevel);
-      this.state.gameStatus = 'playing';
-    } else {
-      // Game complete - show victory or return to menu
-      this.state.gameStatus = 'menu';
+      this.state.jumpCount++;
+      this.state.score += 2; // 2 points per jump
+      this.state.bpm = this.audio.currentBPM;
     }
   }
 
-  private respawnPlayer(): void {
-    this.state.lives--;
-    if (this.state.lives <= 0) {
-      this.state.gameStatus = 'gameOver';
-    } else {
-      this.loadLevel(this.state.currentLevel);
-    }
-  }
-
-  start(): void {
-    this.lastTime = performance.now();
+  async start(): Promise<void> {
+    await this.audio.init();
+    this.attemptNumber = this.saveManager.getAttemptNumber();
     this.gameLoop();
   }
 
+  private async startGame(): Promise<void> {
+    await this.audio.init();
+    this.audio.resume();
+    this.audio.playClick();
+
+    this.loadLevel(this.selectedMenuLevel);
+    this.player = new Player(this.saveManager.getCurrentSkin());
+
+    // Reset game state
+    this.obstacles = [];
+    this.platforms = [];
+    this.holes = [];
+    this.gravityZones = [];
+    this.movingObstacles = [];
+    this.portals = [];
+    this.particles = [];
+
+    this.state.score = 0;
+    this.state.jumpCount = 0;
+    this.state.bpm = CONFIG.BASE_BPM;
+
+    // Initialize spawning positions
+    this.lastObstacleX = CONFIG.WIDTH + 200;
+    this.lastPlatformX = CONFIG.WIDTH + 400;
+    this.lastHoleX = CONFIG.WIDTH + 600;
+    this.lastGravityX = CONFIG.WIDTH + 800;
+    this.lastMovingX = CONFIG.WIDTH + 1000;
+    this.lastPortalX = CONFIG.WIDTH + 1200;
+
+    // Spawn initial obstacles
+    for (let i = 0; i < 5; i++) {
+      this.spawnObstacle();
+    }
+
+    // Spawn level-specific elements
+    if (this.levelConfig.features.includes('platforms')) {
+      for (let i = 0; i < 3; i++) this.spawnPlatform();
+    }
+    if (this.levelConfig.features.includes('holes')) {
+      this.spawnHole();
+    }
+    if (this.levelConfig.features.includes('gravity')) {
+      this.spawnGravityZone();
+    }
+    if (this.levelConfig.features.includes('moving')) {
+      this.spawnMovingObstacle();
+    }
+    if (this.levelConfig.features.includes('portals')) {
+      this.spawnPortalPair();
+    }
+
+    this.attemptNumber = this.saveManager.incrementAttempt();
+    this.audio.start();
+    this.state.gameStatus = 'playing';
+  }
+
+  private spawnObstacle(): void {
+    const gap = CONFIG.MIN_OBSTACLE_GAP + Math.random() * (CONFIG.MAX_OBSTACLE_GAP - CONFIG.MIN_OBSTACLE_GAP);
+    this.lastObstacleX += gap;
+    this.obstacles.push(new Obstacle(this.lastObstacleX, undefined, this.state.jumpCount));
+  }
+
+  private spawnPlatform(): void {
+    const gap = CONFIG.MIN_PLATFORM_GAP + Math.random() * (CONFIG.MAX_PLATFORM_GAP - CONFIG.MIN_PLATFORM_GAP);
+    this.lastPlatformX += gap;
+    this.platforms.push(new JumpPlatform(this.lastPlatformX, undefined, undefined, this.levelConfig.background.lineColor));
+  }
+
+  private spawnHole(): void {
+    this.lastHoleX += 400 + Math.random() * 300;
+    this.holes.push(new Hole(this.lastHoleX));
+  }
+
+  private spawnGravityZone(): void {
+    this.lastGravityX += 500 + Math.random() * 400;
+    this.gravityZones.push(new GravityZone(this.lastGravityX));
+  }
+
+  private spawnMovingObstacle(): void {
+    this.lastMovingX += 400 + Math.random() * 300;
+    this.movingObstacles.push(new MovingObstacle(this.lastMovingX));
+  }
+
+  private spawnPortalPair(): void {
+    this.lastPortalX += 600 + Math.random() * 400;
+    const portal1 = new Portal(this.lastPortalX);
+    const portal2X = this.lastPortalX + 200 + Math.random() * 150;
+    const portal2 = new Portal(portal2X);
+    portal1.link(portal2);
+    this.portals.push(portal1, portal2);
+    this.lastPortalX = portal2X;
+  }
+
+  private gameOver(): void {
+    this.state.gameStatus = 'gameOver';
+    this.particles.push(...this.player.createDeathParticles());
+    this.audio.playCrash();
+
+    // Submit score (save manager handles unlock checks internally)
+    this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+  }
+
   private gameLoop = (): void => {
-    const currentTime = performance.now();
-    const deltaTime = Math.min(currentTime - this.lastTime, 50);
-    this.lastTime = currentTime;
-
-    this.update(deltaTime);
+    this.update();
     this.render();
-
     requestAnimationFrame(this.gameLoop);
   };
 
-  private update(deltaTime: number): void {
+  private update(): void {
+    const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
+
+    // Update background
+    this.background.update(gameSpeed);
+
     if (this.state.gameStatus !== 'playing') {
-      // Still update background animations for visual effect
-      this.level.update(deltaTime);
+      // Update particles even when not playing
+      this.updateParticles(gameSpeed);
       return;
     }
-
-    const inputState = this.input.update();
-
-    // Update level (platforms, background)
-    this.level.update(deltaTime);
 
     // Update player
-    this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+    this.player.update(gameSpeed);
 
-    // Check for death
-    if (this.player.isDead) {
-      this.deathTimer += deltaTime;
-      if (this.deathTimer > 1000) {
-        this.deathTimer = 0;
-        this.respawnPlayer();
+    // Auto-jump when holding
+    if (this.holdingJump && this.player.isGrounded) {
+      this.tryJump();
+    }
+
+    // Check gravity zones (Level 4+)
+    let inGravityZone = false;
+    for (const zone of this.gravityZones) {
+      if (zone.isPlayerInside(this.player.x, this.player.width)) {
+        inGravityZone = true;
+        this.player.setLowGravity(true, zone.multiplier);
       }
-      return;
+    }
+    if (!inGravityZone) {
+      this.player.setLowGravity(false);
     }
 
-    // Check for goal
-    if (this.level.checkGoal(this.player)) {
-      this.state.score += 1000;
-      this.state.gameStatus = 'levelComplete';
+    // Check platform landings (Level 2+)
+    for (const platform of this.platforms) {
+      if (platform.checkLanding(this.player.x, this.player.y, this.player.width, this.player.height, this.player.velocityY)) {
+        this.player.landOnPlatform(platform.y);
+      }
     }
 
-    // Screen boundaries
-    if (this.player.x < 0) this.player.x = 0;
-    if (this.player.x > GAME_WIDTH - this.player.width) {
-      this.player.x = GAME_WIDTH - this.player.width;
+    // Check portal teleportation (Level 6)
+    for (const portal of this.portals) {
+      if (portal.canTeleport() && portal.checkContact(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        const exit = portal.linkedPortal!.getExitPosition();
+        this.player.x = exit.x - this.player.width / 2;
+        this.player.y = exit.y - this.player.height;
+        portal.triggerCooldown();
+        this.audio.playPortal();
+        break;
+      }
+    }
+
+    // Update and check obstacles
+    for (const obstacle of this.obstacles) {
+      obstacle.update(gameSpeed);
+
+      if (obstacle.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        this.player.die();
+        this.gameOver();
+        return;
+      }
+
+      if (!obstacle.passed && obstacle.x + obstacle.width < this.player.x) {
+        obstacle.passed = true;
+        this.state.score += 50;
+        this.audio.playScore();
+      }
+    }
+
+    // Update and check holes (Level 3+)
+    for (const hole of this.holes) {
+      hole.update(gameSpeed);
+      if (hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        this.player.die();
+        this.gameOver();
+        return;
+      }
+    }
+
+    // Update and check moving obstacles (Level 5+)
+    for (const moving of this.movingObstacles) {
+      moving.update(gameSpeed);
+      if (moving.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        this.player.die();
+        this.gameOver();
+        return;
+      }
+    }
+
+    // Update platforms
+    for (const platform of this.platforms) {
+      platform.update(gameSpeed);
+    }
+
+    // Update gravity zones
+    for (const zone of this.gravityZones) {
+      zone.update(gameSpeed);
+    }
+
+    // Update portals
+    for (const portal of this.portals) {
+      portal.update(gameSpeed, 16);
+    }
+
+    // Remove off-screen elements and spawn new ones
+    this.obstacles = this.obstacles.filter(o => o.x > -100);
+    while (this.obstacles.length < 5) {
+      this.spawnObstacle();
+    }
+
+    if (this.levelConfig.features.includes('platforms')) {
+      this.platforms = this.platforms.filter(p => p.x > -150);
+      while (this.platforms.length < 3) {
+        this.spawnPlatform();
+      }
+    }
+
+    if (this.levelConfig.features.includes('holes')) {
+      this.holes = this.holes.filter(h => h.x > -150);
+      if (this.holes.length < 2) {
+        this.spawnHole();
+      }
+    }
+
+    if (this.levelConfig.features.includes('gravity')) {
+      this.gravityZones = this.gravityZones.filter(g => g.x > -300);
+      if (this.gravityZones.length < 1) {
+        this.spawnGravityZone();
+      }
+    }
+
+    if (this.levelConfig.features.includes('moving')) {
+      this.movingObstacles = this.movingObstacles.filter(m => m.baseX > -100);
+      if (this.movingObstacles.length < 2) {
+        this.spawnMovingObstacle();
+      }
+    }
+
+    if (this.levelConfig.features.includes('portals')) {
+      this.portals = this.portals.filter(p => p.x > -100);
+      // Count portal pairs
+      const pairs = this.portals.length / 2;
+      if (pairs < 1) {
+        this.spawnPortalPair();
+      }
+    }
+
+    // Update particles
+    this.updateParticles(gameSpeed);
+  }
+
+  private updateParticles(gameSpeed: number): void {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.velocityX * gameSpeed;
+      p.y += p.velocityY * gameSpeed;
+      p.velocityY += 0.2 * gameSpeed;
+      p.life -= 0.03 * Math.max(gameSpeed, 0.3);
+
+      if (p.life <= 0) {
+        this.particles.splice(i, 1);
+      }
     }
   }
 
   private render(): void {
-    // Clear canvas
-    this.ctx.fillStyle = '#000';
-    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
 
-    // Render level
-    this.level.render(this.ctx);
+    // Render background
+    this.background.render(this.ctx, this.state.gameStatus === 'playing', gameSpeed);
+
+    // Render holes (behind everything)
+    for (const hole of this.holes) {
+      hole.render(this.ctx, this.levelConfig.background.groundColor);
+    }
+
+    // Render gravity zones
+    for (const zone of this.gravityZones) {
+      zone.render(this.ctx);
+    }
+
+    // Render platforms
+    for (const platform of this.platforms) {
+      platform.render(this.ctx);
+    }
+
+    // Render portals
+    for (const portal of this.portals) {
+      portal.render(this.ctx);
+    }
+
+    // Render obstacles
+    for (const obstacle of this.obstacles) {
+      obstacle.render(this.ctx);
+    }
+
+    // Render moving obstacles
+    for (const moving of this.movingObstacles) {
+      moving.render(this.ctx);
+    }
 
     // Render player
-    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'paused') {
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'gameOver') {
       this.player.render(this.ctx);
     }
+
+    // Render particles
+    this.renderParticles();
 
     // Render UI
     this.renderUI();
 
-    // Render overlays based on game state
-    switch (this.state.gameStatus) {
-      case 'menu':
-        this.renderMenu();
-        break;
-      case 'paused':
-        this.renderPaused();
-        break;
-      case 'gameOver':
-        this.renderGameOver();
-        break;
-      case 'levelComplete':
-        this.renderLevelComplete();
-        break;
+    // Render overlays
+    if (this.state.gameStatus === 'menu') {
+      this.renderMenu();
+    } else if (this.state.gameStatus === 'gameOver') {
+      this.renderGameOver();
+    }
+  }
+
+  private renderParticles(): void {
+    const skin = SKINS[this.saveManager.getCurrentSkin()];
+
+    for (const p of this.particles) {
+      if (skin.trail === 'rainbow') {
+        this.ctx.fillStyle = `hsla(${p.hue + this.player.getRainbowHue()}, 100%, 50%, ${p.life})`;
+      } else {
+        this.ctx.fillStyle = `${skin.glow}${Math.floor(p.life * 255).toString(16).padStart(2, '0')}`;
+      }
+      this.ctx.fillRect(p.x, p.y, p.size, p.size);
     }
   }
 
   private renderUI(): void {
-    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'paused') {
-      return;
-    }
+    if (this.state.gameStatus !== 'playing') return;
 
     this.ctx.save();
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
-    this.ctx.textAlign = 'left';
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.shadowColor = COLORS.UI_SHADOW;
-    this.ctx.shadowBlur = 4;
-
-    // Level name
-    this.ctx.fillText(`Level ${this.state.currentLevel}: ${this.level.name}`, 20, 35);
-
-    // Lives
-    this.ctx.fillText(`Lives: ${'♥'.repeat(this.state.lives)}`, 20, 65);
 
     // Score
-    this.ctx.textAlign = 'right';
-    this.ctx.fillText(`Score: ${this.state.score}`, GAME_WIDTH - 20, 35);
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'left';
+    this.ctx.shadowColor = this.levelConfig.background.lineColor;
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(`Score: ${this.state.score}`, 20, 35);
 
-    // Controls hint
+    // Jump count
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = this.levelConfig.background.lineColor;
+    this.ctx.fillText(`Jumps: ${this.state.jumpCount}`, 20, 55);
+
+    // BPM
+    this.ctx.textAlign = 'right';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = this.getBPMColor();
+    this.ctx.fillText(`♪ ${this.state.bpm} BPM`, CONFIG.WIDTH - 20, 35);
+
+    // High score
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.fillText(`Best: ${this.saveManager.getLevelHighScore(this.state.currentLevel)}`, CONFIG.WIDTH - 20, 55);
+
+    // Level name
+    this.ctx.textAlign = 'center';
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Arrow keys / WASD to move, Space to jump', GAME_WIDTH - 20, 65);
+    this.ctx.fillText(`Level ${this.state.currentLevel}: ${this.levelConfig.name}`, CONFIG.WIDTH / 2, 25);
+
+    // Attempt number
+    this.ctx.textAlign = 'left';
+    this.ctx.fillStyle = '#666666';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
 
     this.ctx.restore();
+  }
+
+  private getBPMColor(): string {
+    const jumps = this.state.jumpCount;
+    if (jumps < 10) return '#0088ff';
+    if (jumps < 20) return '#00aaff';
+    if (jumps < 40) return '#00ffff';
+    if (jumps < 60) return '#00ff88';
+    if (jumps < 80) return '#00ff00';
+    if (jumps < 100) return '#ffff00';
+    return '#ff4400';
   }
 
   private renderMenu(): void {
-    this.renderOverlay();
+    // Dark overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 
     this.ctx.save();
     this.ctx.textAlign = 'center';
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.shadowColor = '#00ffff';
-    this.ctx.shadowBlur = 20;
 
     // Title
-    this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('TEMPO DASH', GAME_WIDTH / 2, 80);
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('🟦 BLOCK DASH', CONFIG.WIDTH / 2, 60);
 
     // Subtitle
-    this.ctx.font = '20px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 10;
-    this.ctx.fillText('A Rhythm Platformer', GAME_WIDTH / 2, 115);
-
-    // Level selection
     this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 5;
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    this.ctx.fillText('Select Level (1-6) or press ENTER to start from Level 1', GAME_WIDTH / 2, 160);
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillStyle = '#888888';
+    this.ctx.fillText('Rhythm Runner', CONFIG.WIDTH / 2, 85);
 
-    // Level grid - 2 columns
-    const levels = [
-      { num: 1, name: 'City Nights', color: '#e94560' },
-      { num: 2, name: 'Neon Dreams', color: '#ff00ff' },
-      { num: 3, name: 'Crystal Caverns', color: '#00ffff' },
-      { num: 4, name: 'Zero-G Station', color: '#3b82f6' },
-      { num: 5, name: 'Storm Surge', color: '#fbbf24' },
-      { num: 6, name: 'Digital Realm', color: '#00ff00' },
-    ];
+    // Feature text
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.font = '13px "Segoe UI", sans-serif';
+    this.ctx.fillText('🎵 Jump = Beat! You make the music!', CONFIG.WIDTH / 2, 110);
+    this.ctx.fillText('🎨 Unlock skins as you play!', CONFIG.WIDTH / 2, 128);
 
-    const startY = 200;
-    const colWidth = 300;
-    const rowHeight = 55;
+    // Skin selector
+    this.renderSkinSelector();
 
-    for (let i = 0; i < levels.length; i++) {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = GAME_WIDTH / 2 + (col === 0 ? -colWidth / 2 - 50 : colWidth / 2 - 50);
-      const y = startY + row * rowHeight;
+    // Level selector
+    this.renderLevelSelector();
 
-      // Level box
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      this.ctx.fillRect(x - 100, y - 20, 200, 45);
-      this.ctx.strokeStyle = levels[i].color;
-      this.ctx.lineWidth = 2;
-      this.ctx.strokeRect(x - 100, y - 20, 200, 45);
+    // Total points
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.fillText(`Total Points: ${this.saveManager.getTotalPoints().toLocaleString()}`, CONFIG.WIDTH / 2, CONFIG.HEIGHT - 60);
 
-      // Level number
-      this.ctx.fillStyle = levels[i].color;
-      this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
-      this.ctx.textAlign = 'left';
-      this.ctx.fillText(`[${levels[i].num}]`, x - 85, y + 10);
-
-      // Level name
-      this.ctx.fillStyle = COLORS.UI_TEXT;
-      this.ctx.font = '18px "Segoe UI", sans-serif';
-      this.ctx.fillText(levels[i].name, x - 40, y + 10);
-    }
-
-    // Controls
-    this.ctx.textAlign = 'center';
-    this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Controls: Arrow keys or WASD to move, Space to jump, ESC to pause', GAME_WIDTH / 2, GAME_HEIGHT - 30);
+    // Start instruction
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText('TAP TO PLAY or press SPACE', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 30);
 
     this.ctx.restore();
   }
 
-  private renderPaused(): void {
-    this.renderOverlay();
+  private renderSkinSelector(): void {
+    const startX = CONFIG.WIDTH / 2 - (this.skinKeys.length * 55) / 2;
+    const y = 165;
 
-    this.ctx.save();
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('← A/D to select skin →', CONFIG.WIDTH / 2, y - 15);
+
+    for (let i = 0; i < this.skinKeys.length; i++) {
+      const skinId = this.skinKeys[i];
+      const skin = SKINS[skinId];
+      const x = startX + i * 55;
+      const isUnlocked = this.saveManager.isSkinUnlocked(skinId);
+      const isSelected = i === this.selectedSkinIndex;
+
+      // Skin box
+      this.ctx.save();
+
+      if (!isUnlocked) {
+        this.ctx.globalAlpha = 0.3;
+      }
+
+      // Background
+      if (skin.colors[0] === 'rainbow') {
+        const gradient = this.ctx.createLinearGradient(x, y, x + 45, y + 45);
+        gradient.addColorStop(0, '#ff0000');
+        gradient.addColorStop(0.2, '#ff8800');
+        gradient.addColorStop(0.4, '#ffff00');
+        gradient.addColorStop(0.6, '#00ff00');
+        gradient.addColorStop(0.8, '#0088ff');
+        gradient.addColorStop(1, '#8800ff');
+        this.ctx.fillStyle = gradient;
+      } else {
+        const gradient = this.ctx.createLinearGradient(x, y, x + 45, y + 45);
+        gradient.addColorStop(0, skin.colors[0]);
+        gradient.addColorStop(1, skin.colors[1]);
+        this.ctx.fillStyle = gradient;
+      }
+
+      this.ctx.fillRect(x, y, 45, 45);
+
+      // Border
+      this.ctx.strokeStyle = isSelected ? '#ffffff' : 'transparent';
+      this.ctx.lineWidth = isSelected ? 3 : 0;
+      if (isSelected) {
+        this.ctx.shadowColor = '#ffffff';
+        this.ctx.shadowBlur = 10;
+      }
+      this.ctx.strokeRect(x, y, 45, 45);
+
+      this.ctx.restore();
+
+      // Lock icon
+      if (!isUnlocked) {
+        this.ctx.font = '16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('🔒', x + 22, y + 30);
+      }
+    }
+
+    // Show cost of hovered skin
+    const hoveredSkin = SKINS[this.skinKeys[this.selectedSkinIndex]];
+    if (!this.saveManager.isSkinUnlocked(this.skinKeys[this.selectedSkinIndex])) {
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillText(`${hoveredSkin.name}: ${hoveredSkin.cost.toLocaleString()} pts needed`, CONFIG.WIDTH / 2, y + 60);
+    } else {
+      this.ctx.fillStyle = '#00ff00';
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillText(`${hoveredSkin.name}`, CONFIG.WIDTH / 2, y + 60);
+    }
+  }
+
+  private renderLevelSelector(): void {
+    const startY = 250;
+    const unlockedLevels = this.saveManager.getUnlockedLevels();
+
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('↑ W/S to select level ↓', CONFIG.WIDTH / 2, startY - 10);
+
+    for (let i = 0; i < LEVELS.length; i++) {
+      const level = LEVELS[i];
+      const y = startY + i * 28;
+      const isUnlocked = unlockedLevels.includes(level.id);
+      const isSelected = level.id === this.selectedMenuLevel;
+
+      const boxWidth = 350;
+      const x = (CONFIG.WIDTH - boxWidth) / 2;
+
+      // Background
+      this.ctx.fillStyle = isSelected ? 'rgba(0, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.4)';
+      this.ctx.fillRect(x, y, boxWidth, 24);
+
+      // Border
+      if (isSelected) {
+        this.ctx.strokeStyle = level.background.lineColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(x, y, boxWidth, 24);
+      }
+
+      // Level number
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillStyle = isUnlocked ? level.background.lineColor : '#555555';
+      this.ctx.fillText(`[${level.id}]`, x + 10, y + 17);
+
+      // Level name
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : '#555555';
+      this.ctx.fillText(isUnlocked ? level.name : '???', x + 45, y + 17);
+
+      // Subtitle or lock info
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      if (isUnlocked) {
+        this.ctx.fillStyle = '#888888';
+        this.ctx.fillText(level.subtitle, x + boxWidth - 70, y + 17);
+        // High score
+        const highScore = this.saveManager.getLevelHighScore(level.id);
+        if (highScore > 0) {
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.fillText(`${highScore}`, x + boxWidth - 10, y + 17);
+        }
+      } else {
+        this.ctx.fillStyle = '#ff6666';
+        this.ctx.fillText(`🔒 ${level.unlockScore.toLocaleString()} pts`, x + boxWidth - 10, y + 17);
+      }
+    }
+
     this.ctx.textAlign = 'center';
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.shadowColor = '#ff00ff';
-    this.ctx.shadowBlur = 15;
-
-    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
-    this.ctx.fillText('PAUSED', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20);
-
-    this.ctx.font = '20px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 5;
-    this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
-
-    this.ctx.restore();
   }
 
   private renderGameOver(): void {
-    this.renderOverlay();
+    // Dark overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 
     this.ctx.save();
     this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff4444';
     this.ctx.shadowColor = '#ff0000';
     this.ctx.shadowBlur = 20;
+    this.ctx.fillText('💥 CRASHED!', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 60);
 
-    this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40);
-
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.font = '24px "Segoe UI", sans-serif';
+    // Score
+    this.ctx.font = '28px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
     this.ctx.shadowBlur = 10;
-    this.ctx.fillText(`Final Score: ${this.state.score}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
+    this.ctx.fillText(`Score: ${this.state.score}`, CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2);
 
-    this.ctx.font = '20px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Press ENTER or SPACE to restart', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
-
-    this.ctx.restore();
-  }
-
-  private renderLevelComplete(): void {
-    this.renderOverlay();
-
-    this.ctx.save();
-    this.ctx.textAlign = 'center';
-    this.ctx.fillStyle = COLORS.GOAL;
-    this.ctx.shadowColor = '#ffd700';
-    this.ctx.shadowBlur = 25;
-
-    this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40);
-
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.font = '24px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 10;
-    this.ctx.fillText(`Score: ${this.state.score}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
-
-    this.ctx.font = '20px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-
-    if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.ctx.fillText('Press ENTER or SPACE for next level', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
-    } else {
-      this.ctx.fillText('Congratulations! You beat the game!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60);
-      this.ctx.fillText('Press ENTER or SPACE to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 95);
+    // New high score?
+    const highScore = this.saveManager.getLevelHighScore(this.state.currentLevel);
+    if (this.state.score >= highScore && this.state.score > 0) {
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.shadowColor = '#ffd700';
+      this.ctx.fillText('🎉 NEW HIGH SCORE!', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 35);
     }
 
-    this.ctx.restore();
-  }
+    // Restart instruction
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
 
-  private renderOverlay(): void {
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.ctx.restore();
   }
 }
