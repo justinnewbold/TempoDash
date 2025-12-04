@@ -109,10 +109,14 @@ export class Game {
         e.preventDefault();
         this.holdingJump = true;
         this.tryJump();
+      } else if (e.code === 'Escape') {
+        this.returnToMenu();
       }
     } else if (this.state.gameStatus === 'gameOver') {
       if (e.code === 'Space' || e.code === 'Enter') {
         this.startGame();
+      } else if (e.code === 'Escape') {
+        this.returnToMenu();
       }
     }
   }
@@ -300,6 +304,17 @@ export class Game {
 
     // Submit score (save manager handles unlock checks internally)
     this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+  }
+
+  private returnToMenu(): void {
+    // Submit current score before returning
+    if (this.state.score > 0) {
+      this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+    }
+
+    this.state.gameStatus = 'menu';
+    this.holdingJump = false;
+    this.audio.playClick();
   }
 
   private gameLoop = (): void => {
@@ -580,6 +595,11 @@ export class Game {
     this.ctx.fillStyle = '#666666';
     this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
+
+    // Exit hint
+    this.ctx.textAlign = 'right';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    this.ctx.fillText('ESC to exit', CONFIG.WIDTH - 20, CONFIG.HEIGHT - 15);
 
     this.ctx.restore();
   }
