@@ -606,9 +606,8 @@ export class Background {
     ctx.stroke();
   }
 
-  private drawStormBackground(ctx: CanvasRenderingContext2D): void {
+  private drawStormBackground(_ctx: CanvasRenderingContext2D): void {
     // Dark stormy gradient already applied by base gradient
-
     // Storm clouds rendered in effects
   }
 

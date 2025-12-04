@@ -22,7 +22,6 @@ export class Game {
 
   private lastTime = 0;
   private deathTimer = 0;
-  private levelCompleteTimer = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -167,7 +166,6 @@ export class Game {
     if (this.level.checkGoal(this.player)) {
       this.state.score += 1000;
       this.state.gameStatus = 'levelComplete';
-      this.levelCompleteTimer = 0;
     }
 
     // Screen boundaries
