@@ -11,9 +11,9 @@ export class JumpPlatform {
 
   constructor(x: number, y?: number, width?: number, color?: string, tier: number = 0) {
     this.x = x;
-    // Default height: 50-90 pixels from ground (reachable with a single jump)
+    // Default height: 70-110 pixels from ground (reachable with a jump)
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
-    this.y = y ?? groundY - (50 + Math.random() * 40);
+    this.y = y ?? groundY - (70 + Math.random() * 40);
     this.width = width ?? 80 + Math.random() * 40;
     this.height = 15;
     this.color = color ?? '#00ffff';

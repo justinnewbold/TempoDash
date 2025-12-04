@@ -339,8 +339,8 @@ export class Game {
     const tiers = 2 + Math.floor(Math.random() * 3); // 2-4 tiers
     const goingUp = Math.random() > 0.5; // 50% ascending, 50% descending
 
-    // Starting height for first platform
-    const baseHeight = goingUp ? 60 : 60 + (tiers - 1) * 50; // Lower start if going up, higher if going down
+    // Starting height for first platform (80px base, higher if descending)
+    const baseHeight = goingUp ? 80 : 80 + (tiers - 1) * 50;
     const heightStep = 45; // Height difference between tiers (jumpable)
     const xStep = 100 + Math.random() * 30; // Horizontal spacing between platforms
 
