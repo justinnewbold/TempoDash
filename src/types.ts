@@ -1,4 +1,4 @@
-// Core game types for Block Dash / TempoDash
+// Core game types for TempoDash
 
 export interface Vector2 {
   x: number;

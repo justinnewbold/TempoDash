@@ -472,6 +472,133 @@ export class AudioSystem {
     });
   }
 
+  // Cave-specific sounds
+
+  playWaterDrip(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // High pitched drip with resonance
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(2000 + Math.random() * 500, time);
+    osc.frequency.exponentialRampToValueAtTime(800, time + 0.05);
+
+    filter.type = 'bandpass';
+    filter.frequency.value = 1500;
+    filter.Q.value = 10;
+
+    gain.gain.setValueAtTime(0.15, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.compressor);
+    osc.start(time);
+    osc.stop(time + 0.15);
+  }
+
+  playCrystalChime(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Crystalline shimmer - multiple harmonics
+    const fundamentals = [1200, 1500, 1800, 2400];
+
+    fundamentals.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = freq + Math.random() * 50;
+
+      const t = time + i * 0.01;
+      const volume = 0.08 / (i + 1);
+      gain.gain.setValueAtTime(volume, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+
+      osc.connect(gain);
+      gain.connect(this.compressor!);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    });
+  }
+
+  playHoleWarning(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Low, ominous pulse
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(100, time);
+    osc.frequency.linearRampToValueAtTime(80, time + 0.2);
+
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(0.2, time + 0.05);
+    gain.gain.linearRampToValueAtTime(0.15, time + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+
+    osc.connect(gain);
+    gain.connect(this.compressor);
+    osc.start(time);
+    osc.stop(time + 0.25);
+  }
+
+  playFallIntoHole(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Falling pitch sweep
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, time);
+    osc.frequency.exponentialRampToValueAtTime(50, time + 0.5);
+
+    gain.gain.setValueAtTime(0.4, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+
+    osc.connect(gain);
+    gain.connect(this.compressor);
+    osc.start(time);
+    osc.stop(time + 0.6);
+
+    // Echo/reverb effect
+    const echoDelay = this.ctx.createDelay();
+    echoDelay.delayTime.value = 0.15;
+
+    const echoGain = this.ctx.createGain();
+    echoGain.gain.value = 0.3;
+
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(300, time + 0.1);
+    osc2.frequency.exponentialRampToValueAtTime(30, time + 0.7);
+
+    gain2.gain.setValueAtTime(0.2, time + 0.1);
+    gain2.gain.exponentialRampToValueAtTime(0.001, time + 0.8);
+
+    osc2.connect(echoDelay);
+    echoDelay.connect(echoGain);
+    echoGain.connect(gain2);
+    gain2.connect(this.compressor);
+    osc2.start(time + 0.1);
+    osc2.stop(time + 0.8);
+  }
+
   toggle(): boolean {
     this.enabled = !this.enabled;
     return this.enabled;

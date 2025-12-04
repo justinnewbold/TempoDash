@@ -166,10 +166,10 @@ export const LEVELS: LevelConfig[] = [
 
 // Storage keys
 export const STORAGE_KEYS = {
-  TOTAL_POINTS: 'blockDashTotalPoints',
-  LEVEL_HIGH_SCORES: 'blockDashLevelHighScores',
-  SKINS: 'blockDashSkins',
-  CURRENT_SKIN: 'blockDashCurrentSkin',
-  UNLOCKED_LEVELS: 'blockDashUnlockedLevels',
-  ATTEMPTS: 'blockDashAttempts'
+  TOTAL_POINTS: 'tempoDashTotalPoints',
+  LEVEL_HIGH_SCORES: 'tempoDashLevelHighScores',
+  SKINS: 'tempoDashSkins',
+  CURRENT_SKIN: 'tempoDashCurrentSkin',
+  UNLOCKED_LEVELS: 'tempoDashUnlockedLevels',
+  ATTEMPTS: 'tempoDashAttempts'
 };

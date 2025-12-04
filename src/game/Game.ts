@@ -61,6 +61,10 @@ export class Game {
   private comboTimeout = 2000; // 2 seconds to maintain combo
   private beatPulse = 0;
 
+  // Cave ambient sounds
+  private lastAmbientSound = 0;
+  private ambientSoundInterval = 3000; // 3 seconds between ambient sounds
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -579,11 +583,28 @@ export class Game {
 
     // Update and check holes (Level 3+)
     for (const hole of this.holes) {
-      hole.update(gameSpeed);
+      hole.update(gameSpeed, this.beatPulse);
       if (hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
+        this.audio.playFallIntoHole();
         this.gameOver();
         return;
+      }
+    }
+
+    // Cave ambient sounds (Level 3)
+    if (this.levelConfig.background.type === 'cave') {
+      const now = Date.now();
+      if (now - this.lastAmbientSound > this.ambientSoundInterval) {
+        this.lastAmbientSound = now;
+        // Randomly play water drip or crystal chime
+        if (Math.random() > 0.5) {
+          this.audio.playWaterDrip();
+        } else {
+          this.audio.playCrystalChime();
+        }
+        // Vary the interval for more natural feel
+        this.ambientSoundInterval = 2000 + Math.random() * 3000;
       }
     }
 
@@ -891,7 +912,7 @@ export class Game {
     this.ctx.fillStyle = '#00ffff';
     this.ctx.shadowColor = '#00ffff';
     this.ctx.shadowBlur = 20;
-    this.ctx.fillText('🟦 BLOCK DASH', CONFIG.WIDTH / 2, 60);
+    this.ctx.fillText('🎵 TEMPO DASH', CONFIG.WIDTH / 2, 60);
 
     // Subtitle
     this.ctx.font = '16px "Segoe UI", sans-serif';

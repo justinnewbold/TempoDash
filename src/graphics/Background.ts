@@ -28,6 +28,31 @@ interface NeonSign {
   hue: number;
 }
 
+// Level 3 cave-specific elements
+interface CaveCrystal {
+  x: number;
+  y: number;
+  size: number;
+  hue: number;
+  pulsePhase: number;
+  angle: number;
+}
+
+interface CaveMushroom {
+  x: number;
+  y: number;
+  size: number;
+  hue: number;
+  glowPhase: number;
+}
+
+interface WaterDrip {
+  x: number;
+  y: number;
+  speed: number;
+  size: number;
+}
+
 export class Background {
   private config: BackgroundConfig;
   private bgElements: BgElement[] = [];
@@ -39,6 +64,11 @@ export class Background {
   private neonSigns: NeonSign[] = [];
   private particleRain: { x: number; y: number; speed: number; size: number }[] = [];
   private beatPulse = 0;
+
+  // Level 3 cave-specific elements
+  private caveCrystals: CaveCrystal[] = [];
+  private caveMushrooms: CaveMushroom[] = [];
+  private waterDrips: WaterDrip[] = [];
 
   constructor(config: BackgroundConfig) {
     this.config = config;
@@ -60,6 +90,46 @@ export class Background {
     // Initialize neon-specific elements for Level 2
     if (this.config.type === 'neon') {
       this.initNeonElements();
+    }
+
+    // Initialize cave-specific elements for Level 3
+    if (this.config.type === 'cave') {
+      this.initCaveElements();
+    }
+  }
+
+  private initCaveElements(): void {
+    // Large glowing crystals (background decorations)
+    for (let i = 0; i < 10; i++) {
+      this.caveCrystals.push({
+        x: Math.random() * CONFIG.WIDTH,
+        y: 50 + Math.random() * 150,
+        size: 20 + Math.random() * 40,
+        hue: 180 + Math.random() * 80, // Cyan to purple range
+        pulsePhase: Math.random() * Math.PI * 2,
+        angle: (Math.random() - 0.5) * 0.5 // Slight tilt
+      });
+    }
+
+    // Bioluminescent mushrooms along the ground
+    for (let i = 0; i < 8; i++) {
+      this.caveMushrooms.push({
+        x: Math.random() * CONFIG.WIDTH,
+        y: CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 5,
+        size: 8 + Math.random() * 12,
+        hue: 280 + Math.random() * 60, // Purple to magenta
+        glowPhase: Math.random() * Math.PI * 2
+      });
+    }
+
+    // Water drips from ceiling
+    for (let i = 0; i < 15; i++) {
+      this.waterDrips.push({
+        x: Math.random() * CONFIG.WIDTH,
+        y: Math.random() * (CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT),
+        speed: 1.5 + Math.random() * 2,
+        size: 1 + Math.random() * 2
+      });
     }
   }
 
@@ -138,8 +208,46 @@ export class Background {
       this.updateNeonElements(gameSpeed);
     }
 
+    // Update cave-specific elements
+    if (this.config.type === 'cave') {
+      this.updateCaveElements(gameSpeed);
+    }
+
     // Decay beat pulse
     this.beatPulse *= 0.9;
+  }
+
+  private updateCaveElements(gameSpeed: number): void {
+    // Update crystal glow phases
+    for (const crystal of this.caveCrystals) {
+      crystal.pulsePhase += 0.03 * gameSpeed;
+      crystal.x -= 0.3 * gameSpeed;
+      if (crystal.x < -60) {
+        crystal.x = CONFIG.WIDTH + 60;
+        crystal.y = 50 + Math.random() * 150;
+        crystal.size = 20 + Math.random() * 40;
+      }
+    }
+
+    // Update mushroom glow phases
+    for (const mushroom of this.caveMushrooms) {
+      mushroom.glowPhase += 0.05 * gameSpeed;
+      mushroom.x -= 0.5 * gameSpeed;
+      if (mushroom.x < -20) {
+        mushroom.x = CONFIG.WIDTH + 20;
+        mushroom.size = 8 + Math.random() * 12;
+      }
+    }
+
+    // Update water drips
+    for (const drip of this.waterDrips) {
+      drip.y += drip.speed * gameSpeed;
+      if (drip.y > CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT) {
+        drip.y = -10;
+        drip.x = Math.random() * CONFIG.WIDTH;
+        drip.size = 1 + Math.random() * 2;
+      }
+    }
   }
 
   private updateNeonElements(gameSpeed: number): void {
@@ -477,30 +585,188 @@ export class Background {
   }
 
   private drawCaveBackground(ctx: CanvasRenderingContext2D): void {
-    // Stalactites from ceiling
-    ctx.fillStyle = '#0d1a2d';
-    for (let i = 0; i < 12; i++) {
-      const x = (CONFIG.WIDTH / 12) * i + 40;
-      const height = 40 + Math.sin(i * 1.2) * 30;
+    // Dark cave atmosphere overlay
+    const atmosphereGradient = ctx.createRadialGradient(
+      CONFIG.WIDTH / 2, CONFIG.HEIGHT * 0.3, 50,
+      CONFIG.WIDTH / 2, CONFIG.HEIGHT * 0.3, CONFIG.WIDTH
+    );
+    atmosphereGradient.addColorStop(0, 'rgba(30, 50, 80, 0.1)');
+    atmosphereGradient.addColorStop(1, 'rgba(0, 0, 10, 0.4)');
+    ctx.fillStyle = atmosphereGradient;
+    ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+    // Stalactites from ceiling with detail
+    for (let i = 0; i < 15; i++) {
+      const x = (CONFIG.WIDTH / 15) * i + 30;
+      const height = 30 + Math.sin(i * 1.2) * 25 + Math.cos(i * 0.8) * 15;
+
+      // Stalactite gradient
+      const stalGradient = ctx.createLinearGradient(x, 0, x, height);
+      stalGradient.addColorStop(0, '#1a2a3d');
+      stalGradient.addColorStop(0.5, '#0d1a2d');
+      stalGradient.addColorStop(1, '#0a1520');
+
+      ctx.fillStyle = stalGradient;
       ctx.beginPath();
-      ctx.moveTo(x - 15, 0);
-      ctx.lineTo(x, height);
-      ctx.lineTo(x + 15, 0);
+      ctx.moveTo(x - 12, 0);
+      ctx.quadraticCurveTo(x - 6, height * 0.4, x, height);
+      ctx.quadraticCurveTo(x + 6, height * 0.4, x + 12, 0);
       ctx.fill();
+
+      // Highlight on stalactite
+      ctx.strokeStyle = 'rgba(100, 150, 180, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - 8, 0);
+      ctx.quadraticCurveTo(x - 4, height * 0.3, x - 1, height * 0.8);
+      ctx.stroke();
     }
 
-    // Crystal glow effects
-    ctx.shadowBlur = 20;
-    for (let i = 0; i < 8; i++) {
-      const x = 80 + i * 100;
-      const y = 100 + Math.sin(i) * 50;
-      ctx.shadowColor = `hsl(${200 + i * 20}, 80%, 50%)`;
-      ctx.fillStyle = `hsla(${200 + i * 20}, 80%, 50%, 0.3)`;
+    // Draw water drips
+    this.drawWaterDrips(ctx);
+
+    // Draw animated glowing crystals
+    this.drawCaveCrystals(ctx);
+
+    // Draw bioluminescent mushrooms
+    this.drawCaveMushrooms(ctx);
+
+    // Ambient crystal light pools on ground
+    for (let i = 0; i < 6; i++) {
+      const poolX = (CONFIG.WIDTH / 6) * i + 70;
+      const poolY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 2;
+      const poolGlow = ctx.createRadialGradient(poolX, poolY, 0, poolX, poolY, 40);
+      const hue = 200 + i * 15;
+      poolGlow.addColorStop(0, `hsla(${hue}, 80%, 50%, ${0.15 + this.beatPulse * 0.1})`);
+      poolGlow.addColorStop(0.5, `hsla(${hue}, 70%, 40%, 0.05)`);
+      poolGlow.addColorStop(1, 'transparent');
+      ctx.fillStyle = poolGlow;
+      ctx.fillRect(poolX - 50, poolY - 30, 100, 35);
+    }
+
+    // Cave mist effect at bottom
+    const mistGradient = ctx.createLinearGradient(0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 60, 0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
+    mistGradient.addColorStop(0, 'transparent');
+    mistGradient.addColorStop(0.5, 'rgba(150, 180, 200, 0.05)');
+    mistGradient.addColorStop(1, 'rgba(100, 150, 180, 0.1)');
+    ctx.fillStyle = mistGradient;
+    ctx.fillRect(0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 60, CONFIG.WIDTH, 60);
+  }
+
+  private drawCaveCrystals(ctx: CanvasRenderingContext2D): void {
+    for (const crystal of this.caveCrystals) {
+      const pulse = Math.sin(crystal.pulsePhase) * 0.3 + 0.7 + this.beatPulse * 0.3;
+      const size = crystal.size * (0.9 + pulse * 0.15);
+
+      ctx.save();
+      ctx.translate(crystal.x, crystal.y);
+      ctx.rotate(crystal.angle);
+
+      // Crystal glow aura
+      ctx.shadowColor = `hsl(${crystal.hue}, 100%, 60%)`;
+      ctx.shadowBlur = 20 * pulse + this.beatPulse * 15;
+
+      // Main crystal body
+      const crystalGradient = ctx.createLinearGradient(-size / 2, size, size / 2, -size);
+      crystalGradient.addColorStop(0, `hsla(${crystal.hue}, 70%, 20%, 0.8)`);
+      crystalGradient.addColorStop(0.4, `hsla(${crystal.hue}, 80%, 40%, ${0.6 * pulse})`);
+      crystalGradient.addColorStop(0.8, `hsla(${crystal.hue}, 90%, 60%, ${0.8 * pulse})`);
+      crystalGradient.addColorStop(1, `hsla(${crystal.hue}, 100%, 80%, ${pulse})`);
+
+      ctx.fillStyle = crystalGradient;
       ctx.beginPath();
-      ctx.arc(x, y, 20 + Math.sin(this.time * 0.002 + i) * 5, 0, Math.PI * 2);
+      // Crystal shape - hexagonal prism look
+      ctx.moveTo(0, -size);
+      ctx.lineTo(size * 0.3, -size * 0.6);
+      ctx.lineTo(size * 0.35, size * 0.3);
+      ctx.lineTo(0, size * 0.5);
+      ctx.lineTo(-size * 0.35, size * 0.3);
+      ctx.lineTo(-size * 0.3, -size * 0.6);
+      ctx.closePath();
       ctx.fill();
+
+      // Crystal highlight
+      ctx.fillStyle = `hsla(${crystal.hue}, 100%, 90%, ${0.3 * pulse})`;
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.1, -size * 0.8);
+      ctx.lineTo(size * 0.15, -size * 0.5);
+      ctx.lineTo(size * 0.1, -size * 0.2);
+      ctx.lineTo(-size * 0.15, -size * 0.4);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bright tip
+      ctx.fillStyle = `hsla(${crystal.hue}, 100%, 95%, ${pulse})`;
+      ctx.beginPath();
+      ctx.arc(0, -size * 0.9, 3 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
     }
     ctx.shadowBlur = 0;
+  }
+
+  private drawCaveMushrooms(ctx: CanvasRenderingContext2D): void {
+    for (const mushroom of this.caveMushrooms) {
+      const glow = Math.sin(mushroom.glowPhase) * 0.4 + 0.6 + this.beatPulse * 0.2;
+      const size = mushroom.size;
+
+      ctx.save();
+      ctx.translate(mushroom.x, mushroom.y);
+
+      // Mushroom glow
+      ctx.shadowColor = `hsl(${mushroom.hue}, 100%, 60%)`;
+      ctx.shadowBlur = 12 * glow;
+
+      // Stem
+      ctx.fillStyle = `hsla(${mushroom.hue - 30}, 40%, 30%, 0.8)`;
+      ctx.fillRect(-size * 0.15, -size * 0.6, size * 0.3, size * 0.7);
+
+      // Cap
+      const capGradient = ctx.createRadialGradient(0, -size * 0.8, 0, 0, -size * 0.8, size * 0.6);
+      capGradient.addColorStop(0, `hsla(${mushroom.hue}, 80%, 60%, ${glow})`);
+      capGradient.addColorStop(0.5, `hsla(${mushroom.hue}, 70%, 40%, ${0.8 * glow})`);
+      capGradient.addColorStop(1, `hsla(${mushroom.hue}, 60%, 25%, 0.7)`);
+
+      ctx.fillStyle = capGradient;
+      ctx.beginPath();
+      ctx.ellipse(0, -size * 0.6, size * 0.5, size * 0.35, 0, Math.PI, 0);
+      ctx.fill();
+
+      // Glowing spots on cap
+      ctx.fillStyle = `hsla(${mushroom.hue + 20}, 100%, 80%, ${glow * 0.8})`;
+      for (let i = 0; i < 3; i++) {
+        const spotX = (i - 1) * size * 0.25;
+        const spotY = -size * 0.7 - Math.abs(i - 1) * size * 0.1;
+        ctx.beginPath();
+        ctx.arc(spotX, spotY, 2 + glow, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  private drawWaterDrips(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = `rgba(150, 200, 255, ${0.5 + this.beatPulse * 0.2})`;
+    for (const drip of this.waterDrips) {
+      // Elongated droplet shape
+      ctx.beginPath();
+      ctx.ellipse(drip.x, drip.y, drip.size, drip.size * 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Small splash effect when near ground
+      const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
+      if (drip.y > groundY - 20 && drip.y < groundY) {
+        const splashProgress = (drip.y - (groundY - 20)) / 20;
+        ctx.globalAlpha = 1 - splashProgress;
+        ctx.beginPath();
+        ctx.arc(drip.x, groundY - 2, 3 * splashProgress, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
   }
 
   private drawSpaceBackground(ctx: CanvasRenderingContext2D): void {
