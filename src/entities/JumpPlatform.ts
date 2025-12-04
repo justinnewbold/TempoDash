@@ -7,15 +7,17 @@ export class JumpPlatform {
   height: number;
   passed = false;
   color: string;
+  tier: number; // Track which tier this platform is in a sequence
 
-  constructor(x: number, y?: number, width?: number, color?: string) {
+  constructor(x: number, y?: number, width?: number, color?: string, tier: number = 0) {
     this.x = x;
-    // Random height between 100-200 pixels from ground
+    // Default height: 50-90 pixels from ground (reachable with a single jump)
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
-    this.y = y ?? groundY - (100 + Math.random() * 100);
+    this.y = y ?? groundY - (50 + Math.random() * 40);
     this.width = width ?? 80 + Math.random() * 40;
     this.height = 15;
     this.color = color ?? '#00ffff';
+    this.tier = tier;
   }
 
   update(speed: number): void {

@@ -318,7 +318,54 @@ export class Game {
   private spawnPlatform(): void {
     const gap = CONFIG.MIN_PLATFORM_GAP + Math.random() * (CONFIG.MAX_PLATFORM_GAP - CONFIG.MIN_PLATFORM_GAP);
     this.lastPlatformX += gap;
-    this.platforms.push(new JumpPlatform(this.lastPlatformX, undefined, undefined, this.levelConfig.background.lineColor));
+
+    // 40% chance to spawn a tiered sequence, 60% single platform
+    if (Math.random() < 0.4) {
+      this.spawnTieredPlatforms();
+    } else {
+      // Single platform at reachable height (50-90px from ground)
+      this.platforms.push(new JumpPlatform(
+        this.lastPlatformX,
+        undefined,
+        undefined,
+        this.levelConfig.background.lineColor,
+        0
+      ));
+    }
+  }
+
+  private spawnTieredPlatforms(): void {
+    const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
+    const tiers = 2 + Math.floor(Math.random() * 3); // 2-4 tiers
+    const goingUp = Math.random() > 0.5; // 50% ascending, 50% descending
+
+    // Starting height for first platform
+    const baseHeight = goingUp ? 60 : 60 + (tiers - 1) * 50; // Lower start if going up, higher if going down
+    const heightStep = 45; // Height difference between tiers (jumpable)
+    const xStep = 100 + Math.random() * 30; // Horizontal spacing between platforms
+
+    for (let i = 0; i < tiers; i++) {
+      const tierHeight = goingUp
+        ? baseHeight + i * heightStep
+        : baseHeight - i * heightStep;
+
+      const platformX = this.lastPlatformX + i * xStep;
+      const platformY = groundY - tierHeight;
+
+      // Slightly varying widths, getting smaller as we go higher
+      const width = 90 - i * 10 + Math.random() * 20;
+
+      this.platforms.push(new JumpPlatform(
+        platformX,
+        platformY,
+        Math.max(60, width),
+        this.levelConfig.background.lineColor,
+        i + 1
+      ));
+    }
+
+    // Update lastPlatformX to end of sequence
+    this.lastPlatformX += (tiers - 1) * xStep;
   }
 
   private spawnHole(): void {
