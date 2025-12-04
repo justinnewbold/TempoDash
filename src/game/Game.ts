@@ -65,6 +65,20 @@ export class Game {
   private lastAmbientSound = 0;
   private ambientSoundInterval = 3000; // 3 seconds between ambient sounds
 
+  // Screen shake effect
+  private screenShake = 0;
+  private screenShakeX = 0;
+  private screenShakeY = 0;
+
+  // Floating score popups
+  private scorePopups: { x: number; y: number; text: string; life: number; color: string }[] = [];
+
+  // Near miss tracking
+  private lastNearMissTime = 0;
+
+  // Speed lines
+  private speedLines: { y: number; length: number; speed: number }[] = [];
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -456,8 +470,29 @@ export class Game {
     this.particles.push(...this.player.createDeathParticles());
     this.audio.playCrash();
 
+    // Trigger screen shake
+    this.screenShake = 15;
+
     // Submit score (save manager handles unlock checks internally)
     this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+  }
+
+  private addScorePopup(x: number, y: number, points: number, label?: string): void {
+    const text = label ? `+${points} ${label}` : `+${points}`;
+    let color = '#ffffff';
+
+    if (label === 'CRYSTAL') color = '#44aaff';
+    else if (label === 'COMBO') color = '#ff44ff';
+    else if (label === 'NEAR MISS') color = '#ffff44';
+    else if (points >= 50) color = '#44ff44';
+
+    this.scorePopups.push({
+      x,
+      y: y - 20,
+      text,
+      life: 1,
+      color
+    });
   }
 
   private returnToMenu(): void {
@@ -593,7 +628,22 @@ export class Game {
 
       if (!obstacle.passed && obstacle.x + obstacle.width < this.player.x) {
         obstacle.passed = true;
-        this.state.score += 50;
+
+        // Check for near miss bonus (passed within 15px horizontally while jumping)
+        const wasClose = obstacle.x + obstacle.width > this.player.x - 20;
+        const now = Date.now();
+        let points = 50;
+        let label: string | undefined;
+
+        if (wasClose && !this.player.isGrounded && now - this.lastNearMissTime > 500) {
+          // Near miss! Extra points
+          points = 75;
+          label = 'NEAR MISS';
+          this.lastNearMissTime = now;
+        }
+
+        this.state.score += points;
+        this.addScorePopup(obstacle.x + obstacle.width / 2, obstacle.y, points, label);
         this.audio.playScore();
       }
     }
@@ -620,6 +670,8 @@ export class Game {
       if (hole.checkPassed(this.player.x)) {
         const bonus = hole.getCrossBonus();
         this.state.score += bonus;
+        const label = hole.type === 'crystal' ? 'CRYSTAL' : (hole.type === 'wide' ? 'WIDE' : undefined);
+        this.addScorePopup(hole.x + hole.width / 2, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 30, bonus, label);
         this.audio.playScore();
       }
     }
@@ -714,6 +766,67 @@ export class Game {
 
     // Update particles
     this.updateParticles(gameSpeed);
+
+    // Update screen shake
+    this.updateScreenShake();
+
+    // Update score popups
+    this.updateScorePopups(gameSpeed);
+
+    // Update speed lines at high speeds
+    this.updateSpeedLines(gameSpeed);
+  }
+
+  private updateScreenShake(): void {
+    if (this.screenShake > 0) {
+      this.screenShakeX = (Math.random() - 0.5) * this.screenShake * 2;
+      this.screenShakeY = (Math.random() - 0.5) * this.screenShake * 2;
+      this.screenShake *= 0.85; // Decay
+      if (this.screenShake < 0.5) this.screenShake = 0;
+    } else {
+      this.screenShakeX = 0;
+      this.screenShakeY = 0;
+    }
+  }
+
+  private updateScorePopups(gameSpeed: number): void {
+    for (let i = this.scorePopups.length - 1; i >= 0; i--) {
+      const popup = this.scorePopups[i];
+      popup.y -= 1.5 * gameSpeed; // Float upward
+      popup.life -= 0.02 * Math.max(gameSpeed, 0.5);
+
+      if (popup.life <= 0) {
+        this.scorePopups.splice(i, 1);
+      }
+    }
+  }
+
+  private updateSpeedLines(gameSpeed: number): void {
+    // Add new speed lines when going fast
+    if (gameSpeed > 1.5 && Math.random() < (gameSpeed - 1.5) * 0.3) {
+      this.speedLines.push({
+        y: Math.random() * CONFIG.HEIGHT,
+        length: 50 + Math.random() * 100,
+        speed: 15 + Math.random() * 10
+      });
+    }
+
+    // Update existing speed lines
+    for (let i = this.speedLines.length - 1; i >= 0; i--) {
+      const line = this.speedLines[i];
+      line.y += line.speed * gameSpeed * 0.1; // Slight vertical drift
+
+      // Remove lines that have been around too long
+      line.length -= 2 * gameSpeed;
+      if (line.length <= 0) {
+        this.speedLines.splice(i, 1);
+      }
+    }
+
+    // Limit max speed lines
+    while (this.speedLines.length > 20) {
+      this.speedLines.shift();
+    }
   }
 
   private updateParticles(gameSpeed: number): void {
@@ -764,8 +877,17 @@ export class Game {
   private render(): void {
     const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
 
+    // Apply screen shake
+    this.ctx.save();
+    if (this.screenShake > 0) {
+      this.ctx.translate(this.screenShakeX, this.screenShakeY);
+    }
+
     // Render background
     this.background.render(this.ctx, this.state.gameStatus === 'playing', gameSpeed);
+
+    // Render speed lines (behind everything else)
+    this.renderSpeedLines();
 
     // Render holes (behind everything)
     for (const hole of this.holes) {
@@ -808,11 +930,69 @@ export class Game {
     // Render UI
     this.renderUI();
 
-    // Render overlays
+    // Render score popups
+    this.renderScorePopups();
+
+    // Restore from screen shake
+    this.ctx.restore();
+
+    // Render overlays (not affected by screen shake)
     if (this.state.gameStatus === 'menu') {
       this.renderMenu();
     } else if (this.state.gameStatus === 'gameOver') {
       this.renderGameOver();
+    }
+  }
+
+  private renderSpeedLines(): void {
+    if (this.speedLines.length === 0) return;
+
+    const gameSpeed = this.audio.getGameSpeed();
+    const intensity = Math.min((gameSpeed - 1.5) / 2, 1); // 0-1 based on speed
+
+    this.ctx.save();
+    for (const line of this.speedLines) {
+      const alpha = intensity * 0.4;
+      this.ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      // Lines come from the right
+      this.ctx.moveTo(CONFIG.WIDTH + 10, line.y);
+      this.ctx.lineTo(CONFIG.WIDTH - line.length, line.y);
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
+  }
+
+  private renderScorePopups(): void {
+    for (const popup of this.scorePopups) {
+      const alpha = popup.life;
+      const scale = 0.8 + (1 - popup.life) * 0.4; // Grow slightly as it fades
+
+      this.ctx.save();
+      this.ctx.translate(popup.x, popup.y);
+      this.ctx.scale(scale, scale);
+
+      // Shadow/outline
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.5})`;
+      this.ctx.fillText(popup.text, 2, 2);
+
+      // Main text
+      this.ctx.fillStyle = popup.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba').replace('#', '');
+      // Handle hex colors
+      if (popup.color.startsWith('#')) {
+        const r = parseInt(popup.color.slice(1, 3), 16);
+        const g = parseInt(popup.color.slice(3, 5), 16);
+        const b = parseInt(popup.color.slice(5, 7), 16);
+        this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+      this.ctx.shadowColor = popup.color;
+      this.ctx.shadowBlur = 8;
+      this.ctx.fillText(popup.text, 0, 0);
+
+      this.ctx.restore();
     }
   }
 
