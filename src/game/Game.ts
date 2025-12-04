@@ -79,6 +79,17 @@ export class Game {
   // Speed lines
   private speedLines: { y: number; length: number; speed: number }[] = [];
 
+  // Milestone celebrations
+  private lastMilestone = 0;
+  private readonly milestones = [100, 250, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000];
+  private milestoneFlash = 0;
+  private milestoneText = '';
+  private milestoneParticles: { x: number; y: number; vx: number; vy: number; life: number; hue: number; size: number }[] = [];
+
+  // Beat visualizer
+  private beatVisualizerPulse = 0;
+  private beatRings: { radius: number; alpha: number }[] = [];
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -272,6 +283,10 @@ export class Game {
       // Trigger beat pulse for background
       this.beatPulse = 1;
       this.background.setBeatPulse(1);
+
+      // Trigger beat visualizer
+      this.beatVisualizerPulse = 1;
+      this.beatRings.push({ radius: 30, alpha: 1 });
     }
   }
 
@@ -306,6 +321,12 @@ export class Game {
     this.platformCombo = 0;
     this.lastPlatformLandTime = 0;
     this.beatPulse = 0;
+
+    // Reset milestone tracking
+    this.lastMilestone = 0;
+    this.milestoneFlash = 0;
+    this.milestoneText = '';
+    this.milestoneParticles = [];
 
     // Initialize spawning positions
     this.lastObstacleX = CONFIG.WIDTH + 200;
@@ -775,6 +796,13 @@ export class Game {
 
     // Update speed lines at high speeds
     this.updateSpeedLines(gameSpeed);
+
+    // Check and update milestone celebrations
+    this.checkMilestones();
+    this.updateMilestoneEffects(gameSpeed);
+
+    // Update beat visualizer
+    this.updateBeatVisualizer(gameSpeed);
   }
 
   private updateScreenShake(): void {
@@ -826,6 +854,110 @@ export class Game {
     // Limit max speed lines
     while (this.speedLines.length > 20) {
       this.speedLines.shift();
+    }
+  }
+
+  private checkMilestones(): void {
+    // Find the highest milestone we've passed
+    for (const milestone of this.milestones) {
+      if (this.state.score >= milestone && this.lastMilestone < milestone) {
+        this.celebrateMilestone(milestone);
+        this.lastMilestone = milestone;
+        break; // Only celebrate one at a time
+      }
+    }
+  }
+
+  private celebrateMilestone(milestone: number): void {
+    // Set up celebration
+    this.milestoneFlash = 1;
+    this.milestoneText = `${milestone} POINTS!`;
+
+    // Play celebration sound
+    this.audio.playMilestone(milestone);
+
+    // Create celebration particles (firework burst)
+    const centerX = CONFIG.WIDTH / 2;
+    const centerY = CONFIG.HEIGHT / 3;
+    const particleCount = 30 + Math.floor(milestone / 100);
+
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2 + Math.random() * 0.2;
+      const speed = 3 + Math.random() * 5;
+      const hue = (milestone / 50) % 360; // Color based on milestone
+
+      this.milestoneParticles.push({
+        x: centerX,
+        y: centerY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 2, // Slight upward bias
+        life: 1,
+        hue: hue + Math.random() * 60,
+        size: 3 + Math.random() * 5
+      });
+    }
+
+    // Add extra burst for big milestones
+    if (milestone >= 1000) {
+      for (let i = 0; i < 20; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 6 + Math.random() * 4;
+
+        this.milestoneParticles.push({
+          x: centerX,
+          y: centerY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          hue: 45 + Math.random() * 30, // Gold color
+          size: 4 + Math.random() * 6
+        });
+      }
+    }
+  }
+
+  private updateMilestoneEffects(gameSpeed: number): void {
+    // Decay milestone flash
+    if (this.milestoneFlash > 0) {
+      this.milestoneFlash -= 0.02 * Math.max(gameSpeed, 0.5);
+      if (this.milestoneFlash < 0) this.milestoneFlash = 0;
+    }
+
+    // Update milestone particles
+    for (let i = this.milestoneParticles.length - 1; i >= 0; i--) {
+      const p = this.milestoneParticles[i];
+      p.x += p.vx * gameSpeed;
+      p.y += p.vy * gameSpeed;
+      p.vy += 0.15 * gameSpeed; // Gravity
+      p.life -= 0.015 * Math.max(gameSpeed, 0.5);
+
+      if (p.life <= 0) {
+        this.milestoneParticles.splice(i, 1);
+      }
+    }
+  }
+
+  private updateBeatVisualizer(gameSpeed: number): void {
+    // Decay visualizer pulse
+    if (this.beatVisualizerPulse > 0) {
+      this.beatVisualizerPulse -= 0.05 * Math.max(gameSpeed, 0.5);
+      if (this.beatVisualizerPulse < 0) this.beatVisualizerPulse = 0;
+    }
+
+    // Update expanding rings
+    for (let i = this.beatRings.length - 1; i >= 0; i--) {
+      const ring = this.beatRings[i];
+      ring.radius += 3 * gameSpeed;
+      ring.alpha -= 0.03 * Math.max(gameSpeed, 0.5);
+
+      if (ring.alpha <= 0) {
+        this.beatRings.splice(i, 1);
+      }
+    }
+
+    // Limit max rings
+    while (this.beatRings.length > 5) {
+      this.beatRings.shift();
     }
   }
 
@@ -930,8 +1062,14 @@ export class Game {
     // Render UI
     this.renderUI();
 
+    // Render beat visualizer
+    this.renderBeatVisualizer();
+
     // Render score popups
     this.renderScorePopups();
+
+    // Render milestone celebration effects
+    this.renderMilestoneEffects();
 
     // Restore from screen shake
     this.ctx.restore();
@@ -991,6 +1129,153 @@ export class Game {
       this.ctx.shadowColor = popup.color;
       this.ctx.shadowBlur = 8;
       this.ctx.fillText(popup.text, 0, 0);
+
+      this.ctx.restore();
+    }
+  }
+
+  private renderBeatVisualizer(): void {
+    if (this.state.gameStatus !== 'playing') return;
+
+    // Position in bottom right corner
+    const centerX = CONFIG.WIDTH - 60;
+    const centerY = CONFIG.HEIGHT - 80;
+
+    this.ctx.save();
+
+    // Draw expanding rings from beats
+    for (const ring of this.beatRings) {
+      this.ctx.strokeStyle = `rgba(${this.getBPMColorRGB()}, ${ring.alpha * 0.6})`;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(centerX, centerY, ring.radius, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    // Draw central beat indicator
+    const pulseScale = 1 + this.beatVisualizerPulse * 0.3;
+    const baseRadius = 15;
+
+    // Outer glow
+    const bpmColor = this.getBPMColor();
+    this.ctx.shadowColor = bpmColor;
+    this.ctx.shadowBlur = 20 * (0.5 + this.beatVisualizerPulse * 0.5);
+
+    // Pulsing circle
+    this.ctx.fillStyle = bpmColor;
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, baseRadius * pulseScale, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Inner bright spot
+    this.ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + this.beatVisualizerPulse * 0.7})`;
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, (baseRadius * pulseScale) * 0.5, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Beat bars around the circle (like an equalizer)
+    const barCount = 8;
+    for (let i = 0; i < barCount; i++) {
+      const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+      const barHeight = 8 + this.beatVisualizerPulse * 12 * Math.sin(Date.now() * 0.01 + i);
+      const innerRadius = baseRadius * pulseScale + 4;
+
+      const x1 = centerX + Math.cos(angle) * innerRadius;
+      const y1 = centerY + Math.sin(angle) * innerRadius;
+      const x2 = centerX + Math.cos(angle) * (innerRadius + Math.max(2, barHeight));
+      const y2 = centerY + Math.sin(angle) * (innerRadius + Math.max(2, barHeight));
+
+      this.ctx.strokeStyle = `rgba(255, 255, 255, ${0.5 + this.beatVisualizerPulse * 0.5})`;
+      this.ctx.lineWidth = 3;
+      this.ctx.lineCap = 'round';
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1);
+      this.ctx.lineTo(x2, y2);
+      this.ctx.stroke();
+    }
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.restore();
+  }
+
+  private getBPMColorRGB(): string {
+    const jumps = this.state.jumpCount;
+    if (jumps < 10) return '0, 136, 255';
+    if (jumps < 20) return '0, 170, 255';
+    if (jumps < 40) return '0, 255, 255';
+    if (jumps < 60) return '0, 255, 136';
+    if (jumps < 80) return '0, 255, 0';
+    if (jumps < 100) return '255, 255, 0';
+    return '255, 68, 0';
+  }
+
+  private renderMilestoneEffects(): void {
+    // Render milestone particles
+    for (const p of this.milestoneParticles) {
+      this.ctx.save();
+      this.ctx.globalAlpha = p.life;
+      this.ctx.fillStyle = `hsl(${p.hue}, 100%, 60%)`;
+      this.ctx.shadowColor = `hsl(${p.hue}, 100%, 50%)`;
+      this.ctx.shadowBlur = 10;
+
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+    }
+
+    // Render milestone text and flash
+    if (this.milestoneFlash > 0) {
+      this.ctx.save();
+
+      // Screen flash overlay
+      const flashAlpha = this.milestoneFlash * 0.3;
+      this.ctx.fillStyle = `rgba(255, 255, 200, ${flashAlpha})`;
+      this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+      // Milestone text
+      const textAlpha = Math.min(this.milestoneFlash * 2, 1);
+      const scale = 1 + (1 - this.milestoneFlash) * 0.3; // Grow as it fades
+      const y = CONFIG.HEIGHT / 3 + (1 - this.milestoneFlash) * 20; // Float upward
+
+      this.ctx.textAlign = 'center';
+      this.ctx.translate(CONFIG.WIDTH / 2, y);
+      this.ctx.scale(scale, scale);
+
+      // Glow effect
+      this.ctx.shadowColor = '#ffd700';
+      this.ctx.shadowBlur = 30;
+
+      // Text outline
+      this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+      this.ctx.strokeStyle = `rgba(0, 0, 0, ${textAlpha * 0.8})`;
+      this.ctx.lineWidth = 4;
+      this.ctx.strokeText(this.milestoneText, 0, 0);
+
+      // Main text with gradient
+      const gradient = this.ctx.createLinearGradient(-100, -20, 100, 20);
+      gradient.addColorStop(0, '#ffd700');
+      gradient.addColorStop(0.5, '#ffffff');
+      gradient.addColorStop(1, '#ffd700');
+      this.ctx.fillStyle = gradient;
+      this.ctx.globalAlpha = textAlpha;
+      this.ctx.fillText(this.milestoneText, 0, 0);
+
+      // Sparkle effect around text
+      if (this.milestoneFlash > 0.5) {
+        const sparkleCount = Math.floor(this.milestoneFlash * 8);
+        for (let i = 0; i < sparkleCount; i++) {
+          const angle = (i / sparkleCount) * Math.PI * 2 + Date.now() * 0.005;
+          const radius = 80 + Math.sin(Date.now() * 0.01 + i) * 20;
+          const sx = Math.cos(angle) * radius;
+          const sy = Math.sin(angle) * radius * 0.5;
+
+          this.ctx.fillStyle = `rgba(255, 255, 255, ${this.milestoneFlash * 0.8})`;
+          this.ctx.beginPath();
+          this.ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
 
       this.ctx.restore();
     }

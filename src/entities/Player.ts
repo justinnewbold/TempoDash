@@ -5,6 +5,8 @@ interface TrailPoint {
   x: number;
   y: number;
   alpha: number;
+  size: number;
+  velocityY: number;
 }
 
 export class Player {
@@ -81,14 +83,22 @@ export class Player {
       this.rotation += 0.15 * gameSpeed;
     }
 
-    // Update trail
+    // Update trail - more points when moving fast
+    const speed = Math.abs(this.velocityY);
+    const trailSize = 3 + Math.min(speed * 0.3, 5); // Bigger trail at high speed
+
     this.trail.unshift({
       x: this.x,
       y: this.y + this.height / 2,
-      alpha: 1
+      alpha: 1,
+      size: trailSize,
+      velocityY: this.velocityY
     });
-    if (this.trail.length > 15) this.trail.pop();
-    this.trail.forEach(t => t.alpha -= 0.07);
+
+    // Keep more trail points when moving fast
+    const maxTrail = this.isGrounded ? 10 : 20;
+    while (this.trail.length > maxTrail) this.trail.pop();
+    this.trail.forEach(t => t.alpha -= this.isGrounded ? 0.1 : 0.05);
 
     // Update rainbow hue
     this.rainbowHue = (this.rainbowHue + 3) % 360;
@@ -162,18 +172,35 @@ export class Player {
   render(ctx: CanvasRenderingContext2D): void {
     const skin = this.currentSkin;
 
-    // Draw trail
+    // Draw enhanced trail
     this.trail.forEach((t, i) => {
       if (t.alpha > 0) {
+        // Trail stretches based on velocity
+        const stretch = Math.abs(t.velocityY) * 0.15;
+        const offsetX = i * 4;
+
         ctx.beginPath();
-        ctx.arc(t.x - i * 3, t.y, 3, 0, Math.PI * 2);
+        if (stretch > 1) {
+          // Elongated trail when moving fast
+          ctx.ellipse(t.x - offsetX, t.y, t.size * 0.8, t.size + stretch, 0, 0, Math.PI * 2);
+        } else {
+          ctx.arc(t.x - offsetX, t.y, t.size, 0, Math.PI * 2);
+        }
 
         if (skin.trail === 'rainbow') {
-          ctx.fillStyle = `hsla(${(this.rainbowHue + i * 20) % 360}, 100%, 50%, ${t.alpha * 0.5})`;
+          ctx.fillStyle = `hsla(${(this.rainbowHue + i * 25) % 360}, 100%, 60%, ${t.alpha * 0.6})`;
         } else {
-          ctx.fillStyle = `${skin.trail}${Math.floor(t.alpha * 127).toString(16).padStart(2, '0')}`;
+          ctx.fillStyle = `${skin.trail}${Math.floor(t.alpha * 150).toString(16).padStart(2, '0')}`;
         }
         ctx.fill();
+
+        // Add glow for fast movement
+        if (t.size > 5) {
+          ctx.shadowColor = skin.glow;
+          ctx.shadowBlur = t.size;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
       }
     });
 

@@ -599,6 +599,72 @@ export class AudioSystem {
     osc2.stop(time + 0.8);
   }
 
+  playMilestone(milestoneValue: number): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Grand fanfare - more elaborate for higher milestones
+    const intensity = Math.min(milestoneValue / 1000, 3); // Scale with milestone value
+
+    // Rising arpeggio chord
+    const notes = [0, 4, 7, 12, 16]; // Major chord with octave
+    notes.forEach((semitone, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      const baseFreq = 440 + intensity * 100;
+      osc.type = 'sine';
+      osc.frequency.value = baseFreq * Math.pow(2, semitone / 12);
+
+      const t = time + i * 0.04;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.2, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+
+      osc.connect(gain);
+      gain.connect(this.compressor!);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    });
+
+    // Shimmering high notes
+    for (let i = 0; i < 3 + intensity; i++) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = 1200 + Math.random() * 800;
+
+      const t = time + 0.15 + i * 0.03;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.1, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+      osc.connect(gain);
+      gain.connect(this.compressor);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    }
+
+    // Final triumphant note
+    const finalOsc = this.ctx.createOscillator();
+    const finalGain = this.ctx.createGain();
+
+    finalOsc.type = 'sine';
+    finalOsc.frequency.value = 880 + intensity * 110;
+
+    const finalT = time + 0.3;
+    finalGain.gain.setValueAtTime(0, finalT);
+    finalGain.gain.linearRampToValueAtTime(0.25, finalT + 0.05);
+    finalGain.gain.exponentialRampToValueAtTime(0.001, finalT + 0.5);
+
+    finalOsc.connect(finalGain);
+    finalGain.connect(this.compressor);
+    finalOsc.start(finalT);
+    finalOsc.stop(finalT + 0.5);
+  }
+
   toggle(): boolean {
     this.enabled = !this.enabled;
     return this.enabled;
