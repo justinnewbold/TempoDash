@@ -20,6 +20,11 @@ export class Hole {
   private glowPhase = Math.random() * Math.PI * 2;
   private drips: { x: number; y: number; speed: number }[] = [];
 
+  // Warning system
+  private warningPlayed = false;
+  private warningIntensity = 0;
+  private readonly warningDistance = 150; // How far ahead to start warning
+
   constructor(x: number, width?: number, type?: HoleType) {
     this.x = x;
     this.type = type ?? (Math.random() > 0.7 ? 'crystal' : 'normal');
@@ -99,9 +104,65 @@ export class Hole {
     return false;
   }
 
+  // Check if player is approaching the hole (for warning)
+  checkApproaching(playerX: number, playerWidth: number): boolean {
+    const playerRight = playerX + playerWidth;
+    const distanceToHole = this.x - playerRight;
+
+    // Calculate warning intensity based on distance
+    if (distanceToHole > 0 && distanceToHole < this.warningDistance) {
+      this.warningIntensity = 1 - (distanceToHole / this.warningDistance);
+      return !this.warningPlayed;
+    }
+
+    // Reset warning when player passes or is far away
+    if (distanceToHole < -this.width) {
+      this.warningPlayed = false;
+    }
+
+    this.warningIntensity = 0;
+    return false;
+  }
+
+  // Mark warning as played
+  markWarningPlayed(): void {
+    this.warningPlayed = true;
+  }
+
+  // Check if player successfully crossed the hole
+  checkPassed(playerX: number): boolean {
+    if (!this.passed && playerX > this.x + this.width) {
+      this.passed = true;
+      return true;
+    }
+    return false;
+  }
+
+  // Get bonus points for crossing (crystal holes worth more)
+  getCrossBonus(): number {
+    switch (this.type) {
+      case 'crystal':
+        return 75; // More valuable
+      case 'wide':
+        return 50; // Harder to cross
+      default:
+        return 30; // Normal holes
+    }
+  }
+
+  // Get current warning intensity (0-1)
+  getWarningIntensity(): number {
+    return this.warningIntensity;
+  }
+
   render(ctx: CanvasRenderingContext2D, _groundColor: string): void {
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
     const glowIntensity = Math.sin(this.glowPhase) * 0.3 + 0.7;
+
+    // Warning effect when player approaches
+    if (this.warningIntensity > 0) {
+      this.renderWarningEffect(ctx, groundY);
+    }
 
     // Draw the hole (dark pit)
     ctx.fillStyle = '#000000';
@@ -237,5 +298,69 @@ export class Hole {
       );
       ctx.fill();
     }
+  }
+
+  private renderWarningEffect(ctx: CanvasRenderingContext2D, groundY: number): void {
+    const intensity = this.warningIntensity;
+    const dangerColor = this.type === 'crystal' ? [68, 170, 255] : [255, 80, 80];
+
+    // Pulsing warning glow ahead of the hole
+    const pulseRate = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+    const glowAlpha = intensity * pulseRate * 0.4;
+
+    // Warning beam from above
+    const beamGradient = ctx.createLinearGradient(
+      this.x + this.width / 2, 0,
+      this.x + this.width / 2, groundY
+    );
+    beamGradient.addColorStop(0, `rgba(${dangerColor.join(',')}, 0)`);
+    beamGradient.addColorStop(0.7, `rgba(${dangerColor.join(',')}, ${glowAlpha * 0.3})`);
+    beamGradient.addColorStop(1, `rgba(${dangerColor.join(',')}, ${glowAlpha})`);
+
+    ctx.fillStyle = beamGradient;
+    ctx.fillRect(this.x - 10, 0, this.width + 20, groundY);
+
+    // Danger indicator arrows
+    if (intensity > 0.3) {
+      const arrowY = groundY - 40 - Math.sin(Date.now() * 0.008) * 10;
+      const arrowAlpha = (intensity - 0.3) * 1.4;
+
+      ctx.save();
+      ctx.translate(this.x + this.width / 2, arrowY);
+
+      // Arrow pointing down
+      ctx.fillStyle = `rgba(${dangerColor.join(',')}, ${arrowAlpha})`;
+      ctx.beginPath();
+      ctx.moveTo(0, 15);
+      ctx.lineTo(-10, 0);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-4, -15);
+      ctx.lineTo(4, -15);
+      ctx.lineTo(4, 0);
+      ctx.lineTo(10, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Glow
+      ctx.shadowColor = `rgb(${dangerColor.join(',')})`;
+      ctx.shadowBlur = 10 * intensity;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+    }
+
+    // Edge warning pulses
+    const edgePulse = Math.sin(Date.now() * 0.015) * 0.5 + 0.5;
+    ctx.strokeStyle = `rgba(${dangerColor.join(',')}, ${intensity * edgePulse * 0.6})`;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(this.x, groundY - 30);
+    ctx.lineTo(this.x, groundY);
+    ctx.moveTo(this.x + this.width, groundY - 30);
+    ctx.lineTo(this.x + this.width, groundY);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }

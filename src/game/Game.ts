@@ -3,7 +3,7 @@ import { CONFIG, LEVELS } from '../constants';
 import { Player } from '../entities/Player';
 import { Obstacle } from '../entities/Obstacle';
 import { JumpPlatform, PlatformType } from '../entities/JumpPlatform';
-import { Hole } from '../entities/Hole';
+import { Hole, HoleType } from '../entities/Hole';
 import { GravityZone } from '../entities/GravityZone';
 import { MovingObstacle } from '../entities/MovingObstacle';
 import { Portal } from '../entities/Portal';
@@ -411,7 +411,24 @@ export class Game {
 
   private spawnHole(): void {
     this.lastHoleX += 400 + Math.random() * 300;
-    this.holes.push(new Hole(this.lastHoleX));
+
+    // Determine hole type based on progression
+    let holeType: HoleType = 'normal';
+    const score = this.state.score;
+
+    if (score > 500) {
+      // After 500 points, introduce variety
+      const roll = Math.random();
+      if (score > 1500 && roll > 0.7) {
+        // Wide holes appear after 1500 points (30% chance)
+        holeType = 'wide';
+      } else if (roll > 0.5) {
+        // Crystal holes (20-50% chance based on score)
+        holeType = 'crystal';
+      }
+    }
+
+    this.holes.push(new Hole(this.lastHoleX, undefined, holeType));
   }
 
   private spawnGravityZone(): void {
@@ -584,11 +601,26 @@ export class Game {
     // Update and check holes (Level 3+)
     for (const hole of this.holes) {
       hole.update(gameSpeed, this.beatPulse);
+
+      // Check if player is approaching (for warning)
+      if (hole.checkApproaching(this.player.x, this.player.width)) {
+        this.audio.playHoleWarning();
+        hole.markWarningPlayed();
+      }
+
+      // Check for death
       if (hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.audio.playFallIntoHole();
         this.gameOver();
         return;
+      }
+
+      // Check if player successfully crossed the hole
+      if (hole.checkPassed(this.player.x)) {
+        const bonus = hole.getCrossBonus();
+        this.state.score += bonus;
+        this.audio.playScore();
       }
     }
 

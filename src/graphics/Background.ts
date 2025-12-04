@@ -332,15 +332,28 @@ export class Background {
   }
 
   private drawGround(ctx: CanvasRenderingContext2D, gameRunning: boolean, gameSpeed: number): void {
-    // Ground gradient
-    const groundGradient = ctx.createLinearGradient(
-      0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT,
-      0, CONFIG.HEIGHT
-    );
-    groundGradient.addColorStop(0, this.config.groundColor);
-    groundGradient.addColorStop(1, this.config.secondaryColor);
+    const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
+
+    // Ground gradient - customized for cave
+    const groundGradient = ctx.createLinearGradient(0, groundY, 0, CONFIG.HEIGHT);
+
+    if (this.config.type === 'cave') {
+      // Rocky cave floor gradient
+      groundGradient.addColorStop(0, '#1a2838');
+      groundGradient.addColorStop(0.3, '#0d1a28');
+      groundGradient.addColorStop(1, '#050a10');
+    } else {
+      groundGradient.addColorStop(0, this.config.groundColor);
+      groundGradient.addColorStop(1, this.config.secondaryColor);
+    }
+
     ctx.fillStyle = groundGradient;
-    ctx.fillRect(0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT, CONFIG.WIDTH, CONFIG.GROUND_HEIGHT);
+    ctx.fillRect(0, groundY, CONFIG.WIDTH, CONFIG.GROUND_HEIGHT);
+
+    // Cave-specific ground details
+    if (this.config.type === 'cave') {
+      this.drawCaveGroundDetails(ctx, groundY, gameRunning, gameSpeed);
+    }
 
     // Ground line
     ctx.strokeStyle = this.config.lineColor;
@@ -348,20 +361,87 @@ export class Background {
     ctx.shadowColor = this.config.lineColor;
     ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.moveTo(0, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
-    ctx.lineTo(CONFIG.WIDTH, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
+    ctx.moveTo(0, groundY);
+    ctx.lineTo(CONFIG.WIDTH, groundY);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Ground pattern lines
-    ctx.strokeStyle = `${this.config.lineColor}33`;
-    ctx.lineWidth = 1;
-    const offset = gameRunning ? (this.time / 20 * gameSpeed) % 50 : 0;
-    for (let i = 0; i < CONFIG.WIDTH; i += 50) {
+    // Ground pattern lines (skip for cave - it has its own pattern)
+    if (this.config.type !== 'cave') {
+      ctx.strokeStyle = `${this.config.lineColor}33`;
+      ctx.lineWidth = 1;
+      const offset = gameRunning ? (this.time / 20 * gameSpeed) % 50 : 0;
+      for (let i = 0; i < CONFIG.WIDTH; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i - offset, groundY);
+        ctx.lineTo(i - offset + 30, CONFIG.HEIGHT);
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawCaveGroundDetails(ctx: CanvasRenderingContext2D, groundY: number, gameRunning: boolean, gameSpeed: number): void {
+    const offset = gameRunning ? (this.time / 15 * gameSpeed) % 80 : 0;
+
+    // Embedded crystals in the ground
+    for (let i = 0; i < CONFIG.WIDTH + 80; i += 80) {
+      const x = i - offset;
+      if (x < -40 || x > CONFIG.WIDTH + 40) continue;
+
+      // Small embedded crystals
+      const crystalY = groundY + 15 + Math.sin(i * 0.1) * 5;
+      const crystalSize = 8 + Math.sin(i * 0.2) * 3;
+      const hue = 180 + (i % 60);
+      const pulse = Math.sin(this.time * 0.003 + i * 0.1) * 0.3 + 0.7 + this.beatPulse * 0.2;
+
+      // Crystal glow
+      ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+      ctx.shadowBlur = 8 * pulse;
+
+      // Crystal shape
+      const crystalGradient = ctx.createLinearGradient(x, crystalY + crystalSize, x, crystalY - crystalSize);
+      crystalGradient.addColorStop(0, `hsla(${hue}, 60%, 20%, 0.6)`);
+      crystalGradient.addColorStop(0.5, `hsla(${hue}, 80%, 40%, ${0.5 * pulse})`);
+      crystalGradient.addColorStop(1, `hsla(${hue}, 100%, 60%, ${0.8 * pulse})`);
+
+      ctx.fillStyle = crystalGradient;
       ctx.beginPath();
-      ctx.moveTo(i - offset, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
-      ctx.lineTo(i - offset + 30, CONFIG.HEIGHT);
+      ctx.moveTo(x, crystalY - crystalSize);
+      ctx.lineTo(x + crystalSize * 0.4, crystalY);
+      ctx.lineTo(x, crystalY + crystalSize * 0.3);
+      ctx.lineTo(x - crystalSize * 0.4, crystalY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.shadowBlur = 0;
+
+    // Rocky texture lines
+    ctx.strokeStyle = 'rgba(100, 130, 160, 0.15)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < CONFIG.WIDTH + 60; i += 60) {
+      const x = i - offset * 0.8;
+      if (x < -30 || x > CONFIG.WIDTH + 30) continue;
+
+      // Jagged rock lines
+      ctx.beginPath();
+      ctx.moveTo(x, groundY + 5);
+      ctx.lineTo(x + 10, groundY + 20 + Math.sin(i) * 8);
+      ctx.lineTo(x + 25, groundY + 35);
+      ctx.lineTo(x + 40, groundY + 50 + Math.cos(i) * 10);
       ctx.stroke();
+    }
+
+    // Small pebbles/stones
+    ctx.fillStyle = 'rgba(60, 80, 100, 0.4)';
+    for (let i = 0; i < CONFIG.WIDTH + 40; i += 40) {
+      const x = (i - offset * 1.2 + 1000) % (CONFIG.WIDTH + 40);
+      const stoneY = groundY + 25 + Math.sin(i * 0.3) * 15;
+      const stoneSize = 3 + Math.sin(i * 0.5) * 2;
+
+      ctx.beginPath();
+      ctx.ellipse(x, stoneY, stoneSize, stoneSize * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
