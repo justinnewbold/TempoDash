@@ -18,6 +18,9 @@ export interface PlatformConfig {
   type: PlatformType;
   movePattern?: MovePattern;
   color?: string;
+  linkedId?: string;        // For teleporters
+  direction?: 'left' | 'right';  // For conveyors
+  windStrength?: number;    // For wind platforms
 }
 
 export type PlatformType =
@@ -27,7 +30,16 @@ export type PlatformType =
   | 'moving'     // Moving platform
   | 'ice'        // Slippery platform
   | 'lava'       // Deadly platform
-  | 'phase';     // Phases in and out
+  | 'phase'      // Phases in and out
+  | 'conveyor'   // Pushes player left/right
+  | 'lowgravity' // Reduced gravity zone
+  | 'reverse'    // Reverses gravity
+  | 'wind'       // Periodic wind gusts
+  | 'lightning'  // Electrified periodically (deadly when active)
+  | 'cloud'      // Sinks when standing on it
+  | 'teleporter' // Warps to linked teleporter
+  | 'speedboost' // Launches player forward
+  | 'glitch';    // Unpredictable behavior
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -58,8 +70,10 @@ export interface BackgroundConfig {
 export type BackgroundType =
   | 'city'       // Level 1 - City night
   | 'neon'       // Level 2 - Neon synthwave
-  | 'space'      // Level 3 - Space
-  | 'forest';    // Level 4 - Mystical forest
+  | 'crystal'    // Level 3 - Crystal Caverns
+  | 'space'      // Level 4 - Zero-G Station
+  | 'storm'      // Level 5 - Storm Surge
+  | 'digital';   // Level 6 - Digital Realm
 
 export interface ParticleConfig {
   count: number;
@@ -78,7 +92,14 @@ export type BackgroundEffect =
   | 'grid'
   | 'pulse'
   | 'aurora'
-  | 'scanlines';
+  | 'scanlines'
+  | 'crystals'
+  | 'lightning'
+  | 'datastream'
+  | 'nebula'
+  | 'stormclouds'
+  | 'circuitboard'
+  | 'glitcheffect';
 
 export interface GameState {
   currentLevel: number;

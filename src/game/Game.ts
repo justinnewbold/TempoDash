@@ -58,6 +58,18 @@ export class Game {
       } else if (e.code === 'Digit2') {
         this.state.currentLevel = 2;
         this.startGame();
+      } else if (e.code === 'Digit3') {
+        this.state.currentLevel = 3;
+        this.startGame();
+      } else if (e.code === 'Digit4') {
+        this.state.currentLevel = 4;
+        this.startGame();
+      } else if (e.code === 'Digit5') {
+        this.state.currentLevel = 5;
+        this.startGame();
+      } else if (e.code === 'Digit6') {
+        this.state.currentLevel = 6;
+        this.startGame();
       }
     } else if (this.state.gameStatus === 'gameOver') {
       if (e.code === 'Enter' || e.code === 'Space') {
@@ -238,25 +250,64 @@ export class Game {
     this.ctx.shadowBlur = 20;
 
     // Title
-    this.ctx.font = 'bold 64px "Segoe UI", sans-serif';
-    this.ctx.fillText('TEMPO DASH', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80);
+    this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
+    this.ctx.fillText('TEMPO DASH', GAME_WIDTH / 2, 80);
 
     // Subtitle
-    this.ctx.font = '24px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 10;
-    this.ctx.fillText('A Rhythm Platformer', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
-
-    // Instructions
     this.ctx.font = '20px "Segoe UI", sans-serif';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('A Rhythm Platformer', GAME_WIDTH / 2, 115);
+
+    // Level selection
+    this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 5;
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Press ENTER or SPACE to start', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
-    this.ctx.fillText('Press 1 for Level 1, 2 for Level 2', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    this.ctx.fillText('Select Level (1-6) or press ENTER to start from Level 1', GAME_WIDTH / 2, 160);
+
+    // Level grid - 2 columns
+    const levels = [
+      { num: 1, name: 'City Nights', color: '#e94560' },
+      { num: 2, name: 'Neon Dreams', color: '#ff00ff' },
+      { num: 3, name: 'Crystal Caverns', color: '#00ffff' },
+      { num: 4, name: 'Zero-G Station', color: '#3b82f6' },
+      { num: 5, name: 'Storm Surge', color: '#fbbf24' },
+      { num: 6, name: 'Digital Realm', color: '#00ff00' },
+    ];
+
+    const startY = 200;
+    const colWidth = 300;
+    const rowHeight = 55;
+
+    for (let i = 0; i < levels.length; i++) {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = GAME_WIDTH / 2 + (col === 0 ? -colWidth / 2 - 50 : colWidth / 2 - 50);
+      const y = startY + row * rowHeight;
+
+      // Level box
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.fillRect(x - 100, y - 20, 200, 45);
+      this.ctx.strokeStyle = levels[i].color;
+      this.ctx.lineWidth = 2;
+      this.ctx.strokeRect(x - 100, y - 20, 200, 45);
+
+      // Level number
+      this.ctx.fillStyle = levels[i].color;
+      this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(`[${levels[i].num}]`, x - 85, y + 10);
+
+      // Level name
+      this.ctx.fillStyle = COLORS.UI_TEXT;
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillText(levels[i].name, x - 40, y + 10);
+    }
 
     // Controls
-    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Controls: Arrow keys or WASD to move, Space to jump', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130);
+    this.ctx.fillText('Controls: Arrow keys or WASD to move, Space to jump, ESC to pause', GAME_WIDTH / 2, GAME_HEIGHT - 30);
 
     this.ctx.restore();
   }
