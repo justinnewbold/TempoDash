@@ -51,6 +51,10 @@ export class Game {
   private selectedSkinIndex = 0;
   private skinKeys: string[] = [];
 
+  // Mobile detection and touch state
+  private isMobile: boolean;
+  private exitButtonBounds = { x: 0, y: 0, width: 70, height: 30 };
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -59,6 +63,10 @@ export class Game {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get 2D context');
     this.ctx = ctx;
+
+    // Detect mobile devices
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      || (window.innerWidth <= 850);
 
     this.audio = new AudioSystem();
     this.saveManager = new SaveManager();
@@ -82,23 +90,41 @@ export class Game {
   }
 
   private setupInputHandlers(): void {
-    // Keyboard
+    // Keyboard (desktop)
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
     document.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
-    // Touch
-    this.canvas.addEventListener('touchstart', (e) => {
+    // Touch - use document level for "tap anywhere" on mobile
+    document.addEventListener('touchstart', (e) => {
       e.preventDefault();
-      this.handleTouchStart();
-    });
-    this.canvas.addEventListener('touchend', (e) => {
+      this.handleTouchStart(e);
+    }, { passive: false });
+
+    document.addEventListener('touchend', (e) => {
       e.preventDefault();
       this.holdingJump = false;
-    });
+    }, { passive: false });
 
-    // Mouse
-    this.canvas.addEventListener('mousedown', () => this.handleTouchStart());
+    // Mouse (also works on desktop)
+    this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.canvas.addEventListener('mouseup', () => { this.holdingJump = false; });
+  }
+
+  private getCanvasCoords(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
+    };
+  }
+
+  private isInExitButton(x: number, y: number): boolean {
+    return x >= this.exitButtonBounds.x &&
+           x <= this.exitButtonBounds.x + this.exitButtonBounds.width &&
+           y >= this.exitButtonBounds.y &&
+           y <= this.exitButtonBounds.y + this.exitButtonBounds.height;
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
@@ -175,7 +201,17 @@ export class Game {
     }
   }
 
-  private handleTouchStart(): void {
+  private handleTouchStart(e?: TouchEvent): void {
+    // Check if touch is on exit button (mobile only, during gameplay)
+    if (e && this.state.gameStatus === 'playing' && this.isMobile) {
+      const touch = e.touches[0];
+      const coords = this.getCanvasCoords(touch.clientX, touch.clientY);
+      if (this.isInExitButton(coords.x, coords.y)) {
+        this.returnToMenu();
+        return;
+      }
+    }
+
     if (this.state.gameStatus === 'menu') {
       this.startGame();
     } else if (this.state.gameStatus === 'playing') {
@@ -184,6 +220,19 @@ export class Game {
     } else if (this.state.gameStatus === 'gameOver') {
       this.startGame();
     }
+  }
+
+  private handleMouseDown(e: MouseEvent): void {
+    // Check if click is on exit button (during gameplay)
+    if (this.state.gameStatus === 'playing') {
+      const coords = this.getCanvasCoords(e.clientX, e.clientY);
+      if (this.isInExitButton(coords.x, coords.y)) {
+        this.returnToMenu();
+        return;
+      }
+    }
+
+    this.handleTouchStart();
   }
 
   private tryJump(): void {
@@ -596,10 +645,41 @@ export class Game {
     this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
 
-    // Exit hint
-    this.ctx.textAlign = 'right';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.fillText('ESC to exit', CONFIG.WIDTH - 20, CONFIG.HEIGHT - 15);
+    // Exit button/hint - show touch button on mobile, keyboard hint on desktop
+    if (this.isMobile) {
+      // Touch-friendly exit button
+      const btnX = CONFIG.WIDTH - 80;
+      const btnY = CONFIG.HEIGHT - 40;
+      const btnW = 70;
+      const btnH = 30;
+
+      // Store bounds for touch detection
+      this.exitButtonBounds = { x: btnX, y: btnY, width: btnW, height: btnH };
+
+      // Button background
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, btnY, btnW, btnH, 6);
+      this.ctx.fill();
+
+      // Button border
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = 1;
+      this.ctx.stroke();
+
+      // Button text
+      this.ctx.textAlign = 'center';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.shadowBlur = 0;
+      this.ctx.fillText('EXIT', btnX + btnW / 2, btnY + btnH / 2 + 4);
+    } else {
+      // Desktop: show ESC hint
+      this.ctx.textAlign = 'right';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      this.ctx.shadowBlur = 0;
+      this.ctx.fillText('ESC to exit', CONFIG.WIDTH - 20, CONFIG.HEIGHT - 15);
+    }
 
     this.ctx.restore();
   }
@@ -653,12 +733,16 @@ export class Game {
     this.ctx.fillStyle = '#aaaaaa';
     this.ctx.fillText(`Total Points: ${this.saveManager.getTotalPoints().toLocaleString()}`, CONFIG.WIDTH / 2, CONFIG.HEIGHT - 60);
 
-    // Start instruction
+    // Start instruction - simplified for mobile
     this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
     this.ctx.shadowColor = '#00ffff';
     this.ctx.shadowBlur = 15;
-    this.ctx.fillText('TAP TO PLAY or press SPACE', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 30);
+    if (this.isMobile) {
+      this.ctx.fillText('TAP TO PLAY', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 30);
+    } else {
+      this.ctx.fillText('TAP TO PLAY or press SPACE', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 30);
+    }
 
     this.ctx.restore();
   }
@@ -667,9 +751,12 @@ export class Game {
     const startX = CONFIG.WIDTH / 2 - (this.skinKeys.length * 55) / 2;
     const y = 165;
 
-    this.ctx.font = '12px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('← A/D to select skin →', CONFIG.WIDTH / 2, y - 15);
+    // Only show keyboard hints on desktop
+    if (!this.isMobile) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('← A/D to select skin →', CONFIG.WIDTH / 2, y - 15);
+    }
 
     for (let i = 0; i < this.skinKeys.length; i++) {
       const skinId = this.skinKeys[i];
@@ -741,9 +828,12 @@ export class Game {
     const startY = 250;
     const unlockedLevels = this.saveManager.getUnlockedLevels();
 
-    this.ctx.font = '12px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('↑ W/S to select level ↓', CONFIG.WIDTH / 2, startY - 10);
+    // Only show keyboard hints on desktop
+    if (!this.isMobile) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('↑ W/S to select level ↓', CONFIG.WIDTH / 2, startY - 10);
+    }
 
     for (let i = 0; i < LEVELS.length; i++) {
       const level = LEVELS[i];
@@ -827,11 +917,15 @@ export class Game {
       this.ctx.fillText('🎉 NEW HIGH SCORE!', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 35);
     }
 
-    // Restart instruction
+    // Restart instruction - simplified for mobile
     this.ctx.font = '18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#888888';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+    if (this.isMobile) {
+      this.ctx.fillText('TAP to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+    } else {
+      this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+    }
 
     this.ctx.restore();
   }
