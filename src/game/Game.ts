@@ -2,7 +2,7 @@ import { GameState, Particle, LevelConfig, SKINS } from '../types';
 import { CONFIG, LEVELS } from '../constants';
 import { Player } from '../entities/Player';
 import { Obstacle } from '../entities/Obstacle';
-import { JumpPlatform } from '../entities/JumpPlatform';
+import { JumpPlatform, PlatformType } from '../entities/JumpPlatform';
 import { Hole } from '../entities/Hole';
 import { GravityZone } from '../entities/GravityZone';
 import { MovingObstacle } from '../entities/MovingObstacle';
@@ -54,6 +54,12 @@ export class Game {
   // Mobile detection and touch state
   private isMobile: boolean;
   private exitButtonBounds = { x: 0, y: 0, width: 70, height: 30 };
+
+  // Platform combo system
+  private platformCombo = 0;
+  private lastPlatformLandTime = 0;
+  private comboTimeout = 2000; // 2 seconds to maintain combo
+  private beatPulse = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -244,6 +250,10 @@ export class Game {
       this.state.jumpCount++;
       this.state.score += 2; // 2 points per jump
       this.state.bpm = this.audio.currentBPM;
+
+      // Trigger beat pulse for background
+      this.beatPulse = 1;
+      this.background.setBeatPulse(1);
     }
   }
 
@@ -273,6 +283,11 @@ export class Game {
     this.state.score = 0;
     this.state.jumpCount = 0;
     this.state.bpm = CONFIG.BASE_BPM;
+
+    // Reset combo
+    this.platformCombo = 0;
+    this.lastPlatformLandTime = 0;
+    this.beatPulse = 0;
 
     // Initialize spawning positions
     this.lastObstacleX = CONFIG.WIDTH + 200;
@@ -323,12 +338,22 @@ export class Game {
     if (Math.random() < 0.4) {
       this.spawnTieredPlatforms();
     } else {
-      // Single platform at reachable height (50-90px from ground)
+      // Determine platform type: 60% normal, 25% bouncy, 15% crumbling
+      const typeRoll = Math.random();
+      let platformType: PlatformType = 'normal';
+      if (typeRoll > 0.85) {
+        platformType = 'crumbling';
+      } else if (typeRoll > 0.6) {
+        platformType = 'bouncy';
+      }
+
       this.platforms.push(new JumpPlatform(
         this.lastPlatformX,
         undefined,
         undefined,
         this.levelConfig.background.lineColor,
+        0,
+        platformType,
         0
       ));
     }
@@ -338,6 +363,7 @@ export class Game {
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
     const tiers = 2 + Math.floor(Math.random() * 3); // 2-4 tiers
     const goingUp = Math.random() > 0.5; // 50% ascending, 50% descending
+    const direction = goingUp ? 1 : -1;
 
     // Starting height for first platform (80px base, higher if descending)
     const baseHeight = goingUp ? 80 : 80 + (tiers - 1) * 50;
@@ -355,12 +381,23 @@ export class Game {
       // Slightly varying widths, getting smaller as we go higher
       const width = 90 - i * 10 + Math.random() * 20;
 
+      // Random type for tiered platforms (less crumbling in sequences)
+      const typeRoll = Math.random();
+      let platformType: PlatformType = 'normal';
+      if (typeRoll > 0.9) {
+        platformType = 'crumbling';
+      } else if (typeRoll > 0.7) {
+        platformType = 'bouncy';
+      }
+
       this.platforms.push(new JumpPlatform(
         platformX,
         platformY,
         Math.max(60, width),
         this.levelConfig.background.lineColor,
-        i + 1
+        i + 1,
+        platformType,
+        direction
       ));
     }
 
@@ -454,7 +491,60 @@ export class Game {
     // Check platform landings (Level 2+)
     for (const platform of this.platforms) {
       if (platform.checkLanding(this.player.x, this.player.y, this.player.width, this.player.height, this.player.velocityY)) {
-        this.player.landOnPlatform(platform.y);
+        // Handle bouncy platform
+        if (platform.type === 'bouncy') {
+          this.player.landOnPlatform(platform.y);
+          // Immediately jump with extra force
+          this.player.velocityY = CONFIG.JUMP_FORCE * platform.getBounceMultiplier();
+          this.player.isGrounded = false;
+          this.audio.playPlatformLand(true);
+        } else {
+          this.player.landOnPlatform(platform.y);
+          this.audio.playPlatformLand(false);
+        }
+
+        // Handle crumbling platform
+        if (platform.type === 'crumbling' && !platform.isCrumbling) {
+          platform.startCrumbling();
+          this.audio.playCrumble();
+        }
+
+        // Create landing particles
+        this.particles.push(...this.createLandingParticles(platform));
+
+        // Award points for landing
+        const now = Date.now();
+        const timeSinceLastLand = now - this.lastPlatformLandTime;
+
+        // Check combo
+        if (timeSinceLastLand < this.comboTimeout) {
+          this.platformCombo++;
+        } else {
+          this.platformCombo = 1;
+        }
+        this.lastPlatformLandTime = now;
+
+        // Base points + combo multiplier
+        const basePoints = 15;
+        const tierBonus = platform.tier * 5;
+        const comboMultiplier = Math.min(this.platformCombo, 10);
+        const totalPoints = (basePoints + tierBonus) * comboMultiplier;
+        this.state.score += totalPoints;
+
+        // Play combo sound if combo > 1
+        if (this.platformCombo > 1) {
+          this.audio.playCombo(this.platformCombo);
+        }
+
+        break; // Only land on one platform
+      }
+    }
+
+    // Reset combo if on ground and not landing on platform
+    if (this.player.isGrounded && this.player.y >= CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - this.player.height - 5) {
+      const now = Date.now();
+      if (now - this.lastPlatformLandTime > this.comboTimeout) {
+        this.platformCombo = 0;
       }
     }
 
@@ -507,10 +597,13 @@ export class Game {
       }
     }
 
-    // Update platforms
+    // Update platforms with beat pulse
     for (const platform of this.platforms) {
-      platform.update(gameSpeed);
+      platform.update(gameSpeed, this.beatPulse);
     }
+
+    // Decay beat pulse
+    this.beatPulse *= 0.95;
 
     // Update gravity zones
     for (const zone of this.gravityZones) {
@@ -529,7 +622,8 @@ export class Game {
     }
 
     if (this.levelConfig.features.includes('platforms')) {
-      this.platforms = this.platforms.filter(p => p.x > -150);
+      // Remove off-screen and fully crumbled platforms
+      this.platforms = this.platforms.filter(p => p.x > -150 && !p.shouldRemove());
       while (this.platforms.length < 3) {
         this.spawnPlatform();
       }
@@ -581,6 +675,37 @@ export class Game {
         this.particles.splice(i, 1);
       }
     }
+  }
+
+  private createLandingParticles(platform: JumpPlatform): Particle[] {
+    const particles: Particle[] = [];
+    const particleCount = platform.type === 'bouncy' ? 12 : 8;
+
+    for (let i = 0; i < particleCount; i++) {
+      // Position particles at player's feet on the platform
+      const x = this.player.x + Math.random() * this.player.width;
+      const y = platform.y;
+
+      // Different colors based on platform type
+      let hue = 180; // Default cyan
+      if (platform.type === 'bouncy') {
+        hue = 140; // Green
+      } else if (platform.type === 'crumbling') {
+        hue = 30; // Orange
+      }
+
+      particles.push({
+        x,
+        y,
+        velocityX: (Math.random() - 0.5) * 6,
+        velocityY: Math.random() * -4 - 1,
+        life: 1,
+        size: Math.random() * 5 + 2,
+        hue: hue + Math.random() * 30
+      });
+    }
+
+    return particles;
   }
 
   private render(): void {
@@ -685,6 +810,17 @@ export class Game {
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.fillText(`Level ${this.state.currentLevel}: ${this.levelConfig.name}`, CONFIG.WIDTH / 2, 25);
+
+    // Combo display (when active)
+    if (this.platformCombo > 1) {
+      const comboScale = 1 + Math.min(this.platformCombo, 10) * 0.05;
+      this.ctx.font = `bold ${Math.floor(20 * comboScale)}px "Segoe UI", sans-serif`;
+      this.ctx.fillStyle = `hsl(${280 + this.platformCombo * 10}, 100%, 60%)`;
+      this.ctx.shadowColor = `hsl(${280 + this.platformCombo * 10}, 100%, 50%)`;
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText(`${this.platformCombo}x COMBO!`, CONFIG.WIDTH / 2, 50);
+      this.ctx.shadowBlur = 0;
+    }
 
     // Attempt number
     this.ctx.textAlign = 'left';

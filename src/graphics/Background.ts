@@ -1,10 +1,44 @@
 import { BackgroundConfig, BgElement } from '../types';
 import { CONFIG } from '../constants';
 
+interface NeonShape {
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
+  type: 'triangle' | 'circle' | 'diamond' | 'hexagon';
+  hue: number;
+  pulsePhase: number;
+}
+
+interface LightBeam {
+  x: number;
+  angle: number;
+  width: number;
+  speed: number;
+  hue: number;
+}
+
+interface NeonSign {
+  x: number;
+  y: number;
+  text: string;
+  flickerPhase: number;
+  hue: number;
+}
+
 export class Background {
   private config: BackgroundConfig;
   private bgElements: BgElement[] = [];
   private time = 0;
+
+  // Level 2 neon-specific elements
+  private neonShapes: NeonShape[] = [];
+  private lightBeams: LightBeam[] = [];
+  private neonSigns: NeonSign[] = [];
+  private particleRain: { x: number; y: number; speed: number; size: number }[] = [];
+  private beatPulse = 0;
 
   constructor(config: BackgroundConfig) {
     this.config = config;
@@ -22,6 +56,65 @@ export class Background {
         alpha: Math.random() * 0.3 + 0.1
       });
     }
+
+    // Initialize neon-specific elements for Level 2
+    if (this.config.type === 'neon') {
+      this.initNeonElements();
+    }
+  }
+
+  private initNeonElements(): void {
+    // Floating geometric shapes
+    const shapeTypes: NeonShape['type'][] = ['triangle', 'circle', 'diamond', 'hexagon'];
+    for (let i = 0; i < 12; i++) {
+      this.neonShapes.push({
+        x: Math.random() * CONFIG.WIDTH,
+        y: Math.random() * (CONFIG.HEIGHT * 0.5) + 30,
+        size: 15 + Math.random() * 25,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.02,
+        type: shapeTypes[Math.floor(Math.random() * shapeTypes.length)],
+        hue: Math.random() * 60 + 280, // Purple to pink range
+        pulsePhase: Math.random() * Math.PI * 2
+      });
+    }
+
+    // Light beams
+    for (let i = 0; i < 4; i++) {
+      this.lightBeams.push({
+        x: CONFIG.WIDTH * (0.2 + i * 0.2),
+        angle: -0.3 + Math.random() * 0.6,
+        width: 30 + Math.random() * 20,
+        speed: 0.003 + Math.random() * 0.002,
+        hue: 280 + Math.random() * 60
+      });
+    }
+
+    // Neon signs
+    const signs = ['NEON', 'DASH', '♪', '★', '◆'];
+    for (let i = 0; i < 3; i++) {
+      this.neonSigns.push({
+        x: 100 + i * 280,
+        y: 40 + Math.random() * 30,
+        text: signs[Math.floor(Math.random() * signs.length)],
+        flickerPhase: Math.random() * 100,
+        hue: 300 + Math.random() * 40
+      });
+    }
+
+    // Particle rain
+    for (let i = 0; i < 40; i++) {
+      this.particleRain.push({
+        x: Math.random() * CONFIG.WIDTH,
+        y: Math.random() * CONFIG.HEIGHT,
+        speed: 1 + Math.random() * 2,
+        size: 1 + Math.random() * 2
+      });
+    }
+  }
+
+  setBeatPulse(pulse: number): void {
+    this.beatPulse = pulse;
   }
 
   setConfig(config: BackgroundConfig): void {
@@ -37,6 +130,50 @@ export class Background {
       if (el.x < -50) {
         el.x = CONFIG.WIDTH + 50;
         el.y = Math.random() * (CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - 100) + 50;
+      }
+    }
+
+    // Update neon-specific elements
+    if (this.config.type === 'neon') {
+      this.updateNeonElements(gameSpeed);
+    }
+
+    // Decay beat pulse
+    this.beatPulse *= 0.9;
+  }
+
+  private updateNeonElements(gameSpeed: number): void {
+    // Update floating shapes
+    for (const shape of this.neonShapes) {
+      shape.rotation += shape.rotationSpeed * gameSpeed;
+      shape.pulsePhase += 0.05 * gameSpeed;
+      shape.x -= 0.5 * gameSpeed;
+      if (shape.x < -50) {
+        shape.x = CONFIG.WIDTH + 50;
+        shape.y = Math.random() * (CONFIG.HEIGHT * 0.5) + 30;
+      }
+    }
+
+    // Update light beams (sweeping motion)
+    for (const beam of this.lightBeams) {
+      beam.angle = Math.sin(this.time * beam.speed) * 0.5;
+    }
+
+    // Update neon signs
+    for (const sign of this.neonSigns) {
+      sign.flickerPhase += 0.1 * gameSpeed;
+    }
+
+    // Update particle rain
+    for (const particle of this.particleRain) {
+      particle.y += particle.speed * gameSpeed;
+      particle.x -= 0.3 * gameSpeed;
+      if (particle.y > CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT) {
+        particle.y = -10;
+        particle.x = Math.random() * CONFIG.WIDTH;
+      }
+      if (particle.x < 0) {
+        particle.x = CONFIG.WIDTH;
       }
     }
   }
@@ -151,19 +288,26 @@ export class Background {
   }
 
   private drawNeonBackground(ctx: CanvasRenderingContext2D): void {
-    // Synthwave sun
+    // Light beams (behind everything)
+    this.drawLightBeams(ctx);
+
+    // Particle rain
+    this.drawParticleRain(ctx);
+
+    // Synthwave sun with beat pulse
     const sunX = CONFIG.WIDTH / 2;
     const sunY = CONFIG.HEIGHT * 0.5;
-    const sunRadius = 100;
+    const sunRadius = 100 + this.beatPulse * 10;
 
-    // Sun glow
-    const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius * 2);
-    sunGlow.addColorStop(0, 'rgba(255, 100, 50, 0.4)');
-    sunGlow.addColorStop(0.5, 'rgba(255, 0, 100, 0.2)');
+    // Sun glow - pulses with beat
+    const glowSize = sunRadius * 2 + this.beatPulse * 30;
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, glowSize);
+    sunGlow.addColorStop(0, `rgba(255, 100, 50, ${0.4 + this.beatPulse * 0.2})`);
+    sunGlow.addColorStop(0.5, `rgba(255, 0, 100, ${0.2 + this.beatPulse * 0.1})`);
     sunGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = sunGlow;
     ctx.beginPath();
-    ctx.arc(sunX, sunY, sunRadius * 2, 0, Math.PI * 2);
+    ctx.arc(sunX, sunY, glowSize, 0, Math.PI * 2);
     ctx.fill();
 
     // Sun with stripes
@@ -190,6 +334,117 @@ export class Background {
 
     // Neon grid perspective
     this.drawPerspectiveGrid(ctx);
+
+    // Floating geometric shapes
+    this.drawNeonShapes(ctx);
+
+    // Neon signs
+    this.drawNeonSigns(ctx);
+  }
+
+  private drawLightBeams(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    for (const beam of this.lightBeams) {
+      const gradient = ctx.createLinearGradient(
+        beam.x, CONFIG.HEIGHT,
+        beam.x + Math.sin(beam.angle) * 300, 0
+      );
+      gradient.addColorStop(0, `hsla(${beam.hue}, 100%, 50%, ${0.1 + this.beatPulse * 0.1})`);
+      gradient.addColorStop(0.5, `hsla(${beam.hue}, 100%, 50%, ${0.05 + this.beatPulse * 0.05})`);
+      gradient.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(beam.x - beam.width / 2, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
+      ctx.lineTo(beam.x + Math.sin(beam.angle) * 400 - beam.width * 2, 0);
+      ctx.lineTo(beam.x + Math.sin(beam.angle) * 400 + beam.width * 2, 0);
+      ctx.lineTo(beam.x + beam.width / 2, CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawParticleRain(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = `rgba(255, 0, 255, ${0.3 + this.beatPulse * 0.2})`;
+    for (const particle of this.particleRain) {
+      ctx.fillRect(particle.x, particle.y, particle.size, particle.size * 3);
+    }
+  }
+
+  private drawNeonShapes(ctx: CanvasRenderingContext2D): void {
+    for (const shape of this.neonShapes) {
+      const pulse = Math.sin(shape.pulsePhase) * 0.3 + 0.7 + this.beatPulse * 0.3;
+      const size = shape.size * (0.9 + pulse * 0.2);
+
+      ctx.save();
+      ctx.translate(shape.x, shape.y);
+      ctx.rotate(shape.rotation);
+
+      ctx.strokeStyle = `hsla(${shape.hue}, 100%, 60%, ${pulse * 0.8})`;
+      ctx.shadowColor = `hsl(${shape.hue}, 100%, 50%)`;
+      ctx.shadowBlur = 10 + this.beatPulse * 10;
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      switch (shape.type) {
+        case 'triangle':
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.866, size * 0.5);
+          ctx.lineTo(-size * 0.866, size * 0.5);
+          ctx.closePath();
+          break;
+        case 'circle':
+          ctx.arc(0, 0, size * 0.7, 0, Math.PI * 2);
+          break;
+        case 'diamond':
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.6, 0);
+          ctx.lineTo(0, size);
+          ctx.lineTo(-size * 0.6, 0);
+          ctx.closePath();
+          break;
+        case 'hexagon':
+          for (let i = 0; i < 6; i++) {
+            const angle = (i * Math.PI) / 3;
+            const px = Math.cos(angle) * size * 0.6;
+            const py = Math.sin(angle) * size * 0.6;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          break;
+      }
+      ctx.stroke();
+
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  private drawNeonSigns(ctx: CanvasRenderingContext2D): void {
+    for (const sign of this.neonSigns) {
+      // Flicker effect
+      const flicker = Math.sin(sign.flickerPhase * 3) > -0.8 ? 1 : 0.3;
+      const brightness = flicker * (0.8 + this.beatPulse * 0.2);
+
+      ctx.save();
+      ctx.font = 'bold 24px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+
+      // Glow
+      ctx.shadowColor = `hsl(${sign.hue}, 100%, 50%)`;
+      ctx.shadowBlur = 15 + this.beatPulse * 10;
+      ctx.fillStyle = `hsla(${sign.hue}, 100%, 70%, ${brightness})`;
+      ctx.fillText(sign.text, sign.x, sign.y);
+
+      // Bright center
+      ctx.shadowBlur = 5;
+      ctx.fillStyle = `rgba(255, 255, 255, ${brightness * 0.8})`;
+      ctx.fillText(sign.text, sign.x, sign.y);
+
+      ctx.restore();
+    }
   }
 
   private drawPerspectiveGrid(ctx: CanvasRenderingContext2D): void {
