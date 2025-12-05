@@ -106,6 +106,9 @@ export class Game {
   private beatInterval = 500; // ms between beats (based on BPM)
   private perfectStreak = 0;
 
+  // Fullscreen tracking
+  private isFullscreen = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -128,6 +131,88 @@ export class Game {
 
     this.loadLevel(1);
     this.setupInputHandlers();
+
+    // Setup fullscreen for mobile landscape
+    if (this.isMobile) {
+      this.setupMobileFullscreen();
+    }
+  }
+
+  private setupMobileFullscreen(): void {
+    // Listen for orientation changes
+    window.addEventListener('orientationchange', () => {
+      this.handleOrientationChange();
+    });
+
+    // Also listen for resize as a fallback
+    window.addEventListener('resize', () => {
+      this.handleOrientationChange();
+    });
+
+    // Listen for fullscreen changes
+    document.addEventListener('fullscreenchange', () => {
+      this.isFullscreen = !!document.fullscreenElement;
+      if (this.isFullscreen) {
+        this.lockToLandscape();
+      }
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      this.isFullscreen = !!(document as any).webkitFullscreenElement;
+      if (this.isFullscreen) {
+        this.lockToLandscape();
+      }
+    });
+  }
+
+  private handleOrientationChange(): void {
+    if (!this.isMobile) return;
+
+    const isLandscape = window.innerWidth > window.innerHeight;
+
+    // Auto-request fullscreen when going landscape (will work after user interaction)
+    if (isLandscape && !this.isFullscreen) {
+      this.requestFullscreen();
+    }
+  }
+
+  private requestFullscreen(): void {
+    const elem = document.documentElement;
+
+    // Try different fullscreen methods for cross-browser support
+    const requestMethod = elem.requestFullscreen
+      || (elem as any).webkitRequestFullscreen
+      || (elem as any).mozRequestFullScreen
+      || (elem as any).msRequestFullscreen;
+
+    if (requestMethod) {
+      requestMethod.call(elem).then(() => {
+        this.isFullscreen = true;
+        this.lockToLandscape();
+      }).catch(() => {
+        // Fullscreen request failed (might need user interaction)
+        this.isFullscreen = false;
+      });
+    }
+  }
+
+  private lockToLandscape(): void {
+    // Try to lock screen orientation to landscape
+    const screen = window.screen as any;
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {
+        // Orientation lock not supported or failed
+      });
+    }
+  }
+
+  // Call this on first user interaction to enable fullscreen
+  private tryEnableFullscreen(): void {
+    if (this.isMobile && !this.isFullscreen) {
+      const isLandscape = window.innerWidth > window.innerHeight;
+      if (isLandscape) {
+        this.requestFullscreen();
+      }
+    }
   }
 
   private loadLevel(levelId: number): void {
@@ -253,6 +338,9 @@ export class Game {
   }
 
   private handleTouchStart(e?: TouchEvent): void {
+    // Try to enable fullscreen on first interaction
+    this.tryEnableFullscreen();
+
     // Check if touch is on exit button (mobile only, during gameplay)
     if (e && this.state.gameStatus === 'playing' && this.isMobile) {
       const touch = e.touches[0];
