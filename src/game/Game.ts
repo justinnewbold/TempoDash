@@ -108,6 +108,7 @@ export class Game {
 
   // Fullscreen tracking
   private isFullscreen = false;
+  private fullscreenButtonBounds = { x: 0, y: 0, width: 40, height: 40 };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -263,6 +264,35 @@ export class Game {
            y <= this.exitButtonBounds.y + this.exitButtonBounds.height;
   }
 
+  private isInFullscreenButton(x: number, y: number): boolean {
+    return x >= this.fullscreenButtonBounds.x &&
+           x <= this.fullscreenButtonBounds.x + this.fullscreenButtonBounds.width &&
+           y >= this.fullscreenButtonBounds.y &&
+           y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height;
+  }
+
+  private toggleFullscreen(): void {
+    if (this.isFullscreen) {
+      this.exitFullscreen();
+    } else {
+      this.requestFullscreen();
+    }
+  }
+
+  private exitFullscreen(): void {
+    const exitMethod = document.exitFullscreen
+      || (document as any).webkitExitFullscreen
+      || (document as any).mozCancelFullScreen
+      || (document as any).msExitFullscreen;
+
+    if (exitMethod) {
+      exitMethod.call(document).catch(() => {
+        // Exit fullscreen failed
+      });
+    }
+    this.isFullscreen = false;
+  }
+
   private handleKeyDown(e: KeyboardEvent): void {
     if (this.state.gameStatus === 'menu') {
       this.handleMenuKeyDown(e);
@@ -341,11 +371,19 @@ export class Game {
     // Try to enable fullscreen on first interaction
     this.tryEnableFullscreen();
 
-    // Check if touch is on exit button (mobile only, during gameplay)
-    if (e && this.state.gameStatus === 'playing' && this.isMobile) {
+    // Check if touch is on UI buttons
+    if (e && this.state.gameStatus === 'playing') {
       const touch = e.touches[0];
       const coords = this.getCanvasCoords(touch.clientX, touch.clientY);
-      if (this.isInExitButton(coords.x, coords.y)) {
+
+      // Check fullscreen button
+      if (this.isInFullscreenButton(coords.x, coords.y)) {
+        this.toggleFullscreen();
+        return;
+      }
+
+      // Check exit button (mobile only)
+      if (this.isMobile && this.isInExitButton(coords.x, coords.y)) {
         this.returnToMenu();
         return;
       }
@@ -362,9 +400,17 @@ export class Game {
   }
 
   private handleMouseDown(e: MouseEvent): void {
-    // Check if click is on exit button (during gameplay)
+    // Check if click is on UI buttons (during gameplay)
     if (this.state.gameStatus === 'playing') {
       const coords = this.getCanvasCoords(e.clientX, e.clientY);
+
+      // Check fullscreen button
+      if (this.isInFullscreenButton(coords.x, coords.y)) {
+        this.toggleFullscreen();
+        return;
+      }
+
+      // Check exit button
       if (this.isInExitButton(coords.x, coords.y)) {
         this.returnToMenu();
         return;
@@ -1738,6 +1784,87 @@ export class Game {
     this.ctx.fillStyle = '#666666';
     this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
+
+    // Fullscreen toggle button (top-right corner)
+    const fsBtnSize = 36;
+    const fsBtnX = CONFIG.WIDTH - fsBtnSize - 10;
+    const fsBtnY = 10;
+    this.fullscreenButtonBounds = { x: fsBtnX, y: fsBtnY, width: fsBtnSize, height: fsBtnSize };
+
+    // Button background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(fsBtnX, fsBtnY, fsBtnSize, fsBtnSize, 6);
+    this.ctx.fill();
+
+    // Button border
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    // Draw expand/collapse icon
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    this.ctx.lineWidth = 2;
+    this.ctx.lineCap = 'round';
+    const iconPadding = 10;
+    const iconX = fsBtnX + iconPadding;
+    const iconY = fsBtnY + iconPadding;
+    const iconSize = fsBtnSize - iconPadding * 2;
+
+    if (this.isFullscreen) {
+      // Collapse icon (arrows pointing inward)
+      // Top-left corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + 5, iconY);
+      this.ctx.lineTo(iconX, iconY);
+      this.ctx.lineTo(iconX, iconY + 5);
+      this.ctx.stroke();
+      // Top-right corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + iconSize - 5, iconY);
+      this.ctx.lineTo(iconX + iconSize, iconY);
+      this.ctx.lineTo(iconX + iconSize, iconY + 5);
+      this.ctx.stroke();
+      // Bottom-left corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX, iconY + iconSize - 5);
+      this.ctx.lineTo(iconX, iconY + iconSize);
+      this.ctx.lineTo(iconX + 5, iconY + iconSize);
+      this.ctx.stroke();
+      // Bottom-right corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + iconSize, iconY + iconSize - 5);
+      this.ctx.lineTo(iconX + iconSize, iconY + iconSize);
+      this.ctx.lineTo(iconX + iconSize - 5, iconY + iconSize);
+      this.ctx.stroke();
+    } else {
+      // Expand icon (arrows pointing outward)
+      // Top-left corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + 5, iconY);
+      this.ctx.lineTo(iconX, iconY);
+      this.ctx.lineTo(iconX, iconY + 5);
+      this.ctx.stroke();
+      // Top-right corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + iconSize - 5, iconY);
+      this.ctx.lineTo(iconX + iconSize, iconY);
+      this.ctx.lineTo(iconX + iconSize, iconY + 5);
+      this.ctx.stroke();
+      // Bottom-left corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX, iconY + iconSize - 5);
+      this.ctx.lineTo(iconX, iconY + iconSize);
+      this.ctx.lineTo(iconX + 5, iconY + iconSize);
+      this.ctx.stroke();
+      // Bottom-right corner
+      this.ctx.beginPath();
+      this.ctx.moveTo(iconX + iconSize, iconY + iconSize - 5);
+      this.ctx.lineTo(iconX + iconSize, iconY + iconSize);
+      this.ctx.lineTo(iconX + iconSize - 5, iconY + iconSize);
+      this.ctx.stroke();
+    }
+    this.ctx.lineCap = 'butt';
 
     // Exit button/hint - show touch button on mobile, keyboard hint on desktop
     if (this.isMobile) {
