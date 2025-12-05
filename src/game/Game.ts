@@ -7,6 +7,7 @@ import { Hole, HoleType } from '../entities/Hole';
 import { GravityZone } from '../entities/GravityZone';
 import { MovingObstacle } from '../entities/MovingObstacle';
 import { Portal } from '../entities/Portal';
+import { Gem } from '../entities/Gem';
 import { Background } from '../graphics/Background';
 import { AudioSystem } from '../audio/AudioSystem';
 import { SaveManager } from '../storage/SaveManager';
@@ -30,6 +31,7 @@ export class Game {
   private gravityZones: GravityZone[] = [];
   private movingObstacles: MovingObstacle[] = [];
   private portals: Portal[] = [];
+  private gems: Gem[] = [];
   private particles: Particle[] = [];
   private background!: Background;
 
@@ -42,6 +44,7 @@ export class Game {
   private lastGravityX = 0;
   private lastMovingX = 0;
   private lastPortalX = 0;
+  private lastGemX = 0;
 
   private holdingJump = false;
   private levelConfig!: LevelConfig;
@@ -89,6 +92,19 @@ export class Game {
   // Beat visualizer
   private beatVisualizerPulse = 0;
   private beatRings: { radius: number; alpha: number }[] = [];
+
+  // Combo flames
+  private comboFlames: { x: number; y: number; vx: number; vy: number; life: number; size: number }[] = [];
+
+  // Screen edge warning
+  private edgeWarningIntensity = 0;
+
+  // Perfect beat timing
+  private lastBeatTime = 0;
+  private perfectBeatWindow = 100; // ms window for perfect timing
+  private goodBeatWindow = 200; // ms window for good timing
+  private beatInterval = 500; // ms between beats (based on BPM)
+  private perfectStreak = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -277,8 +293,53 @@ export class Game {
       this.audio.onJump();
 
       this.state.jumpCount++;
-      this.state.score += 2; // 2 points per jump
       this.state.bpm = this.audio.currentBPM;
+
+      // Calculate beat interval based on current BPM
+      this.beatInterval = 60000 / this.state.bpm;
+
+      // Check beat timing for bonus
+      const now = Date.now();
+      const timeSinceLastBeat = now - this.lastBeatTime;
+      const timeToNextBeat = this.beatInterval - (timeSinceLastBeat % this.beatInterval);
+      const nearestBeatDelta = Math.min(timeSinceLastBeat % this.beatInterval, timeToNextBeat);
+
+      let jumpPoints = 2; // Base points
+      let beatLabel: string | undefined;
+
+      if (nearestBeatDelta <= this.perfectBeatWindow) {
+        // Perfect timing!
+        jumpPoints = 10;
+        beatLabel = 'PERFECT';
+        this.perfectStreak++;
+        this.audio.playPerfectBeat();
+      } else if (nearestBeatDelta <= this.goodBeatWindow) {
+        // Good timing
+        jumpPoints = 5;
+        beatLabel = 'GOOD';
+        this.perfectStreak = Math.max(0, this.perfectStreak - 1);
+      } else {
+        // Regular jump
+        this.perfectStreak = 0;
+      }
+
+      // Streak bonus
+      if (this.perfectStreak >= 3) {
+        jumpPoints += this.perfectStreak;
+        if (this.perfectStreak >= 5 && beatLabel === 'PERFECT') {
+          beatLabel = `PERFECT x${this.perfectStreak}`;
+        }
+      }
+
+      this.state.score += jumpPoints;
+
+      // Show popup for beat timing bonus
+      if (beatLabel) {
+        this.addScorePopup(this.player.x + this.player.width / 2, this.player.y, jumpPoints, beatLabel);
+      }
+
+      // Update last beat time
+      this.lastBeatTime = now;
 
       // Trigger beat pulse for background
       this.beatPulse = 1;
@@ -311,7 +372,9 @@ export class Game {
     this.gravityZones = [];
     this.movingObstacles = [];
     this.portals = [];
+    this.gems = [];
     this.particles = [];
+    this.comboFlames = [];
 
     this.state.score = 0;
     this.state.jumpCount = 0;
@@ -335,10 +398,16 @@ export class Game {
     this.lastGravityX = CONFIG.WIDTH + 800;
     this.lastMovingX = CONFIG.WIDTH + 1000;
     this.lastPortalX = CONFIG.WIDTH + 1200;
+    this.lastGemX = CONFIG.WIDTH + 300;
 
     // Spawn initial obstacles
     for (let i = 0; i < 5; i++) {
       this.spawnObstacle();
+    }
+
+    // Spawn initial gems
+    for (let i = 0; i < 3; i++) {
+      this.spawnGem();
     }
 
     // Spawn level-specific elements
@@ -486,6 +555,11 @@ export class Game {
     this.lastPortalX = portal2X;
   }
 
+  private spawnGem(): void {
+    this.lastGemX += 150 + Math.random() * 250;
+    this.gems.push(new Gem(this.lastGemX));
+  }
+
   private gameOver(): void {
     this.state.gameStatus = 'gameOver';
     this.particles.push(...this.player.createDeathParticles());
@@ -505,6 +579,11 @@ export class Game {
     if (label === 'CRYSTAL') color = '#44aaff';
     else if (label === 'COMBO') color = '#ff44ff';
     else if (label === 'NEAR MISS') color = '#ffff44';
+    else if (label?.startsWith('PERFECT')) color = '#ffdd00';
+    else if (label === 'GOOD') color = '#88ff88';
+    else if (label === 'SUPER') color = '#ff44ff';
+    else if (label === 'RARE') color = '#44ff44';
+    else if (label === 'GEM') color = '#44aaff';
     else if (points >= 50) color = '#44ff44';
 
     this.scorePopups.push({
@@ -697,6 +776,19 @@ export class Game {
       }
     }
 
+    // Update and check gems
+    for (const gem of this.gems) {
+      gem.update(gameSpeed);
+
+      if (gem.checkCollection(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        const points = gem.getPoints();
+        this.state.score += points;
+        const label = gem.type === 'super' ? 'SUPER' : (gem.type === 'rare' ? 'RARE' : 'GEM');
+        this.addScorePopup(gem.x, gem.y, points, label);
+        this.audio.playGemCollect(gem.type);
+      }
+    }
+
     // Cave ambient sounds (Level 3)
     if (this.levelConfig.background.type === 'cave') {
       const now = Date.now();
@@ -785,6 +877,12 @@ export class Game {
       }
     }
 
+    // Remove collected/off-screen gems and spawn new ones
+    this.gems = this.gems.filter(g => !g.collected && g.x > -50);
+    while (this.gems.length < 5) {
+      this.spawnGem();
+    }
+
     // Update particles
     this.updateParticles(gameSpeed);
 
@@ -803,6 +901,12 @@ export class Game {
 
     // Update beat visualizer
     this.updateBeatVisualizer(gameSpeed);
+
+    // Update combo flames
+    this.updateComboFlames(gameSpeed);
+
+    // Update screen edge warning
+    this.updateEdgeWarning();
   }
 
   private updateScreenShake(): void {
@@ -961,6 +1065,81 @@ export class Game {
     }
   }
 
+  private updateComboFlames(gameSpeed: number): void {
+    // Spawn flame particles when combo is active
+    if (this.platformCombo >= 2) {
+      const intensity = Math.min(this.platformCombo, 10);
+      const spawnRate = 0.3 + intensity * 0.1;
+
+      if (Math.random() < spawnRate * gameSpeed) {
+        // Spawn flames from sides and bottom of player
+        const side = Math.random() > 0.5 ? -1 : 1;
+        const fromBottom = Math.random() > 0.3;
+
+        this.comboFlames.push({
+          x: this.player.x + this.player.width / 2 + (fromBottom ? (Math.random() - 0.5) * this.player.width : side * this.player.width * 0.4),
+          y: this.player.y + (fromBottom ? this.player.height : this.player.height * 0.7),
+          vx: (Math.random() - 0.5) * 2 + (fromBottom ? 0 : side * -1),
+          vy: -2 - Math.random() * 3 - intensity * 0.3,
+          life: 1,
+          size: 4 + Math.random() * 4 + intensity * 0.5
+        });
+      }
+    }
+
+    // Update existing flames
+    for (let i = this.comboFlames.length - 1; i >= 0; i--) {
+      const flame = this.comboFlames[i];
+      flame.x += flame.vx * gameSpeed;
+      flame.y += flame.vy * gameSpeed;
+      flame.vy -= 0.1 * gameSpeed; // Rise faster
+      flame.life -= 0.04 * Math.max(gameSpeed, 0.5);
+      flame.size *= 0.98;
+
+      if (flame.life <= 0 || flame.size < 1) {
+        this.comboFlames.splice(i, 1);
+      }
+    }
+
+    // Limit max flames
+    while (this.comboFlames.length > 50) {
+      this.comboFlames.shift();
+    }
+  }
+
+  private updateEdgeWarning(): void {
+    // Check for nearby obstacles/dangers from the right
+    let maxIntensity = 0;
+    const warningZoneStart = CONFIG.WIDTH - 150;
+    const warningZoneEnd = CONFIG.WIDTH + 50;
+
+    // Check obstacles
+    for (const obstacle of this.obstacles) {
+      if (obstacle.x > warningZoneStart && obstacle.x < warningZoneEnd) {
+        const distance = obstacle.x - this.player.x;
+        if (distance > 0 && distance < 300) {
+          const intensity = 1 - (distance / 300);
+          maxIntensity = Math.max(maxIntensity, intensity);
+        }
+      }
+    }
+
+    // Check moving obstacles
+    for (const moving of this.movingObstacles) {
+      if (moving.baseX > warningZoneStart && moving.baseX < warningZoneEnd) {
+        const distance = moving.baseX - this.player.x;
+        if (distance > 0 && distance < 300) {
+          const intensity = 1 - (distance / 300);
+          maxIntensity = Math.max(maxIntensity, intensity);
+        }
+      }
+    }
+
+    // Smooth transition
+    const targetIntensity = maxIntensity * 0.6; // Don't make it too intense
+    this.edgeWarningIntensity += (targetIntensity - this.edgeWarningIntensity) * 0.1;
+  }
+
   private updateParticles(gameSpeed: number): void {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -1021,6 +1200,9 @@ export class Game {
     // Render speed lines (behind everything else)
     this.renderSpeedLines();
 
+    // Render edge warning
+    this.renderEdgeWarning();
+
     // Render holes (behind everything)
     for (const hole of this.holes) {
       hole.render(this.ctx, this.levelConfig.background.groundColor);
@@ -1036,6 +1218,11 @@ export class Game {
       platform.render(this.ctx);
     }
 
+    // Render gems
+    for (const gem of this.gems) {
+      gem.render(this.ctx);
+    }
+
     // Render portals
     for (const portal of this.portals) {
       portal.render(this.ctx);
@@ -1049,6 +1236,11 @@ export class Game {
     // Render moving obstacles
     for (const moving of this.movingObstacles) {
       moving.render(this.ctx);
+    }
+
+    // Render combo flames (behind player)
+    if (this.state.gameStatus === 'playing') {
+      this.renderComboFlames();
     }
 
     // Render player
@@ -1080,6 +1272,51 @@ export class Game {
     } else if (this.state.gameStatus === 'gameOver') {
       this.renderGameOver();
     }
+  }
+
+  private renderEdgeWarning(): void {
+    if (this.edgeWarningIntensity < 0.01) return;
+
+    this.ctx.save();
+
+    // Right edge warning glow
+    const gradient = this.ctx.createLinearGradient(
+      CONFIG.WIDTH - 80, 0,
+      CONFIG.WIDTH, 0
+    );
+
+    const alpha = this.edgeWarningIntensity * 0.4;
+    const pulseAlpha = alpha * (0.8 + Math.sin(Date.now() * 0.01) * 0.2);
+
+    gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+    gradient.addColorStop(0.5, `rgba(255, 50, 0, ${pulseAlpha * 0.5})`);
+    gradient.addColorStop(1, `rgba(255, 100, 0, ${pulseAlpha})`);
+
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(CONFIG.WIDTH - 80, 0, 80, CONFIG.HEIGHT);
+
+    // Add pulsing warning indicator
+    if (this.edgeWarningIntensity > 0.3) {
+      const indicatorY = CONFIG.HEIGHT / 2;
+      const indicatorX = CONFIG.WIDTH - 30;
+      const pulseSize = 10 + Math.sin(Date.now() * 0.015) * 5;
+
+      this.ctx.fillStyle = `rgba(255, 100, 0, ${this.edgeWarningIntensity * 0.8})`;
+      this.ctx.shadowColor = '#ff4400';
+      this.ctx.shadowBlur = 20;
+
+      // Triangle pointing left
+      this.ctx.beginPath();
+      this.ctx.moveTo(indicatorX + pulseSize, indicatorY - pulseSize);
+      this.ctx.lineTo(indicatorX - pulseSize, indicatorY);
+      this.ctx.lineTo(indicatorX + pulseSize, indicatorY + pulseSize);
+      this.ctx.closePath();
+      this.ctx.fill();
+
+      this.ctx.shadowBlur = 0;
+    }
+
+    this.ctx.restore();
   }
 
   private renderSpeedLines(): void {
@@ -1129,6 +1366,74 @@ export class Game {
       this.ctx.shadowColor = popup.color;
       this.ctx.shadowBlur = 8;
       this.ctx.fillText(popup.text, 0, 0);
+
+      this.ctx.restore();
+    }
+  }
+
+  private renderComboFlames(): void {
+    if (this.comboFlames.length === 0) return;
+
+    const intensity = Math.min(this.platformCombo, 10);
+
+    for (const flame of this.comboFlames) {
+      this.ctx.save();
+
+      // Flame color gradient from yellow to orange to red based on life
+      const hue = 60 - flame.life * 40; // Yellow -> Orange -> Red as life decreases
+      const saturation = 100;
+      const lightness = 50 + flame.life * 20;
+
+      this.ctx.globalAlpha = flame.life * 0.8;
+      this.ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+      this.ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+      this.ctx.shadowBlur = 15 + intensity * 2;
+
+      // Draw flame as a teardrop shape
+      this.ctx.beginPath();
+      this.ctx.moveTo(flame.x, flame.y - flame.size);
+      this.ctx.bezierCurveTo(
+        flame.x + flame.size, flame.y - flame.size * 0.5,
+        flame.x + flame.size * 0.5, flame.y + flame.size * 0.5,
+        flame.x, flame.y + flame.size
+      );
+      this.ctx.bezierCurveTo(
+        flame.x - flame.size * 0.5, flame.y + flame.size * 0.5,
+        flame.x - flame.size, flame.y - flame.size * 0.5,
+        flame.x, flame.y - flame.size
+      );
+      this.ctx.fill();
+
+      this.ctx.restore();
+    }
+
+    // Draw aura glow around player when combo is high
+    if (this.platformCombo >= 3) {
+      this.ctx.save();
+      const auraIntensity = Math.min((this.platformCombo - 2) / 8, 1);
+      const auraSize = 10 + auraIntensity * 20;
+
+      const gradient = this.ctx.createRadialGradient(
+        this.player.x + this.player.width / 2,
+        this.player.y + this.player.height / 2,
+        0,
+        this.player.x + this.player.width / 2,
+        this.player.y + this.player.height / 2,
+        this.player.width + auraSize
+      );
+
+      const hue = 40 + Math.sin(Date.now() * 0.01) * 20;
+      gradient.addColorStop(0, `hsla(${hue}, 100%, 60%, ${auraIntensity * 0.3})`);
+      gradient.addColorStop(0.5, `hsla(${hue - 20}, 100%, 50%, ${auraIntensity * 0.15})`);
+      gradient.addColorStop(1, `hsla(${hue - 40}, 100%, 40%, 0)`);
+
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(
+        this.player.x - auraSize,
+        this.player.y - auraSize,
+        this.player.width + auraSize * 2,
+        this.player.height + auraSize * 2
+      );
 
       this.ctx.restore();
     }

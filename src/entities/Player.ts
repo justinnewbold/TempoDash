@@ -27,6 +27,13 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
+  // Squash & stretch
+  private squashX = 1;
+  private squashY = 1;
+  private targetSquashX = 1;
+  private targetSquashY = 1;
+  private wasGrounded = true;
+
   constructor(skinId: string = 'cyan') {
     this.currentSkin = SKINS[skinId] || SKINS.cyan;
     this.x = 150;
@@ -47,12 +54,20 @@ export class Player {
     this.trail = [];
     this.isInLowGravity = false;
     this.gravityMultiplier = 1;
+    this.squashX = 1;
+    this.squashY = 1;
+    this.targetSquashX = 1;
+    this.targetSquashY = 1;
+    this.wasGrounded = true;
   }
 
   jump(): boolean {
     if (this.isGrounded && !this.isDead) {
       this.velocityY = CONFIG.JUMP_FORCE;
       this.isGrounded = false;
+      // Stretch on jump (taller and thinner)
+      this.targetSquashX = 0.7;
+      this.targetSquashY = 1.3;
       return true;
     }
     return false;
@@ -74,6 +89,14 @@ export class Player {
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - this.height;
     if (this.y >= groundY) {
       this.y = groundY;
+
+      // Squash on landing (wider and shorter)
+      if (!this.wasGrounded && this.velocityY > 0) {
+        const impactForce = Math.min(Math.abs(this.velocityY) / 15, 1);
+        this.targetSquashX = 1 + impactForce * 0.4; // Wider
+        this.targetSquashY = 1 - impactForce * 0.3; // Shorter
+      }
+
       this.velocityY = 0;
       this.isGrounded = true;
       // Snap rotation to nearest 90 degrees
@@ -81,6 +104,34 @@ export class Player {
     } else {
       // Rotate while in air
       this.rotation += 0.15 * gameSpeed;
+
+      // Stretch while falling fast
+      if (this.velocityY > 5) {
+        this.targetSquashX = 0.85;
+        this.targetSquashY = 1.15;
+      } else if (this.velocityY < -5) {
+        // Stretch while rising fast
+        this.targetSquashX = 0.8;
+        this.targetSquashY = 1.2;
+      } else {
+        // Return to normal in air
+        this.targetSquashX = 1;
+        this.targetSquashY = 1;
+      }
+    }
+
+    // Track grounded state
+    this.wasGrounded = this.isGrounded;
+
+    // Smoothly interpolate squash values
+    const squashSpeed = 0.2 * gameSpeed;
+    this.squashX += (this.targetSquashX - this.squashX) * squashSpeed;
+    this.squashY += (this.targetSquashY - this.squashY) * squashSpeed;
+
+    // Return to normal when grounded
+    if (this.isGrounded) {
+      this.targetSquashX = 1;
+      this.targetSquashY = 1;
     }
 
     // Update trail - more points when moving fast
@@ -205,8 +256,15 @@ export class Player {
     });
 
     ctx.save();
-    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+    // Apply squash & stretch - anchor at bottom center when grounded
+    const anchorY = this.isGrounded ? this.y + this.height : this.y + this.height / 2;
+    ctx.translate(this.x + this.width / 2, anchorY);
     ctx.rotate(this.rotation);
+    ctx.scale(this.squashX, this.squashY);
+
+    // Offset to account for squash anchor point
+    const offsetY = this.isGrounded ? -this.height / 2 : 0;
 
     // Glow effect
     ctx.shadowColor = skin.glow;
@@ -215,33 +273,33 @@ export class Player {
     // Draw block with skin colors
     let gradient: CanvasGradient;
     if (skin.colors[0] === 'rainbow') {
-      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2, this.width / 2, this.height / 2);
+      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2 + offsetY, this.width / 2, this.height / 2 + offsetY);
       gradient.addColorStop(0, `hsl(${this.rainbowHue}, 100%, 50%)`);
       gradient.addColorStop(0.5, `hsl(${(this.rainbowHue + 60) % 360}, 100%, 50%)`);
       gradient.addColorStop(1, `hsl(${(this.rainbowHue + 120) % 360}, 100%, 50%)`);
     } else {
-      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2, this.width / 2, this.height / 2);
+      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2 + offsetY, this.width / 2, this.height / 2 + offsetY);
       gradient.addColorStop(0, skin.colors[0]);
       gradient.addColorStop(1, skin.colors[1]);
     }
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+    ctx.fillRect(-this.width / 2, -this.height / 2 + offsetY, this.width, this.height);
 
     // Highlight
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fillRect(-this.width / 2 + 5, -this.height / 2 + 5, this.width - 10, this.height / 2 - 5);
+    ctx.fillRect(-this.width / 2 + 5, -this.height / 2 + 5 + offsetY, this.width - 10, this.height / 2 - 5);
 
-    // Eye
+    // Eye - adjust position based on squash
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(5, -5, 8, 0, Math.PI * 2);
+    ctx.arc(5, -5 + offsetY, 8, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.arc(7, -5, 4, 0, Math.PI * 2);
+    ctx.arc(7, -5 + offsetY, 4, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();

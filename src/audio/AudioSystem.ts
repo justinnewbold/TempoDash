@@ -599,6 +599,102 @@ export class AudioSystem {
     osc2.stop(time + 0.8);
   }
 
+  playPerfectBeat(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Bright, satisfying "ding" for perfect timing
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, time);
+    osc.frequency.exponentialRampToValueAtTime(800, time + 0.1);
+
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(0.25, time + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+    osc.connect(gain);
+    gain.connect(this.compressor);
+    osc.start(time);
+    osc.stop(time + 0.15);
+
+    // Add harmonic for richness
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+
+    osc2.type = 'sine';
+    osc2.frequency.value = 1800;
+
+    gain2.gain.setValueAtTime(0, time);
+    gain2.gain.linearRampToValueAtTime(0.1, time + 0.01);
+    gain2.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+
+    osc2.connect(gain2);
+    gain2.connect(this.compressor);
+    osc2.start(time);
+    osc2.stop(time + 0.1);
+  }
+
+  playGemCollect(gemType: string): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Different sounds based on gem type
+    let baseFreq = 800;
+    let duration = 0.15;
+
+    if (gemType === 'super') {
+      baseFreq = 1000;
+      duration = 0.25;
+    } else if (gemType === 'rare') {
+      baseFreq = 900;
+      duration = 0.2;
+    }
+
+    // Sparkly ascending notes
+    const notes = gemType === 'super' ? [0, 4, 7, 12] : (gemType === 'rare' ? [0, 4, 7] : [0, 4]);
+
+    notes.forEach((semitone, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = baseFreq * Math.pow(2, semitone / 12);
+
+      const t = time + i * 0.04;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.2, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+      osc.connect(gain);
+      gain.connect(this.compressor!);
+      osc.start(t);
+      osc.stop(t + duration);
+    });
+
+    // Add shimmer for rare/super
+    if (gemType !== 'normal') {
+      const shimmer = this.ctx.createOscillator();
+      const shimmerGain = this.ctx.createGain();
+
+      shimmer.type = 'sine';
+      shimmer.frequency.value = 2000 + Math.random() * 500;
+
+      shimmerGain.gain.setValueAtTime(0, time + 0.05);
+      shimmerGain.gain.linearRampToValueAtTime(0.1, time + 0.08);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(this.compressor);
+      shimmer.start(time + 0.05);
+      shimmer.stop(time + 0.2);
+    }
+  }
+
   playMilestone(milestoneValue: number): void {
     if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
 
