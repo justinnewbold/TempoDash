@@ -221,7 +221,7 @@ export class Game {
     this.state.currentLevel = levelId;
 
     this.background = new Background(this.levelConfig.background);
-    this.audio.setLevelConfig(this.levelConfig.beatConfig);
+    this.audio.setLevelConfig(this.levelConfig.beatConfig, levelId);
 
     this.player = new Player(this.saveManager.getCurrentSkin());
   }
@@ -697,6 +697,7 @@ export class Game {
   private gameOver(): void {
     this.state.gameStatus = 'gameOver';
     this.particles.push(...this.player.createDeathParticles());
+    this.audio.stop(); // Stop the music
     this.audio.playCrash();
 
     // Trigger screen shake
@@ -735,6 +736,7 @@ export class Game {
       this.saveManager.submitScore(this.state.currentLevel, this.state.score);
     }
 
+    this.audio.stop(); // Stop the music
     this.state.gameStatus = 'menu';
     this.holdingJump = false;
     this.audio.playClick();
