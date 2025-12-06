@@ -2,9 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#0a0a0f" />
     <title>TempoDash</title>
     <style>
       * {
@@ -18,13 +20,19 @@
         height: 100%;
         overflow: hidden;
         touch-action: manipulation;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
       }
       body {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: #0a0a0f;
         display: flex;
         justify-content: center;
         align-items: center;
         min-height: 100vh;
+        min-height: -webkit-fill-available;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       }
       #game-container {
@@ -32,6 +40,7 @@
         touch-action: manipulation;
         max-width: 100vw;
         max-height: 100vh;
+        max-height: -webkit-fill-available;
       }
       canvas {
         display: block;
@@ -39,30 +48,47 @@
         box-shadow: 0 0 40px rgba(0, 255, 255, 0.3);
         max-width: 100vw;
         max-height: 100vh;
+        max-height: -webkit-fill-available;
         touch-action: manipulation;
       }
       /* Mobile responsive sizing */
       @media (max-width: 850px) {
         #game-container {
           width: 100vw;
-          height: 56.25vw; /* 16:9 aspect ratio */
-          max-height: 100vh;
+          height: 100vh;
+          height: -webkit-fill-available;
         }
         canvas {
           width: 100% !important;
           height: 100% !important;
           border-radius: 0;
-        }
-        body {
-          background: #0a0a0f;
+          box-shadow: none;
         }
       }
       @media (max-height: 500px) and (orientation: landscape) {
         #game-container {
-          width: 177.78vh; /* 16:9 aspect ratio */
+          width: 100vw;
           height: 100vh;
-          max-width: 100vw;
+          height: -webkit-fill-available;
         }
+        canvas {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: contain;
+        }
+      }
+      /* Fullscreen mode */
+      :fullscreen #game-container,
+      :-webkit-full-screen #game-container {
+        width: 100vw;
+        height: 100vh;
+      }
+      :fullscreen canvas,
+      :-webkit-full-screen canvas {
+        width: 100% !important;
+        height: 100% !important;
+        border-radius: 0;
+        box-shadow: none;
       }
     </style>
   </head>
