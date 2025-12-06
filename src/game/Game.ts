@@ -110,6 +110,28 @@ export class Game {
   private isFullscreen = false;
   private fullscreenButtonBounds = { x: 0, y: 0, width: 40, height: 40 };
 
+  // Beat-synced camera shake
+  private beatShakeIntensity = 0;
+  private lastMusicBeat = 0;
+
+  // Chromatic aberration effect
+  private chromaticAberration = 0;
+  private chromaticTarget = 0;
+
+  // Landing particles
+  private landingParticles: { x: number; y: number; vx: number; vy: number; life: number; size: number; color: string }[] = [];
+
+  // Score multiplier system
+  private scoreMultiplier = 1;
+  private multiplierDecay = 0;
+  private maxMultiplier = 8;
+
+  // Haptic feedback
+  private hapticEnabled = true;
+
+  // Skin trail effects
+  private skinTrail: { x: number; y: number; size: number; alpha: number; color: string }[] = [];
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -811,6 +833,8 @@ export class Game {
         // Check combo
         if (timeSinceLastLand < this.comboTimeout) {
           this.platformCombo++;
+          this.boostMultiplier(); // Boost multiplier on combo
+          this.triggerHaptic(30); // Haptic feedback
         } else {
           this.platformCombo = 1;
         }
@@ -1043,6 +1067,21 @@ export class Game {
 
     // Update screen edge warning
     this.updateEdgeWarning();
+
+    // Update beat-synced camera shake
+    this.updateBeatShake();
+
+    // Update chromatic aberration based on combo/speed
+    this.updateChromaticAberration(gameSpeed);
+
+    // Update landing particles
+    this.updateLandingParticles(gameSpeed);
+
+    // Update score multiplier decay
+    this.updateMultiplier();
+
+    // Update skin trail
+    this.updateSkinTrail();
   }
 
   private updateScreenShake(): void {
@@ -1276,6 +1315,110 @@ export class Game {
     this.edgeWarningIntensity += (targetIntensity - this.edgeWarningIntensity) * 0.1;
   }
 
+  private updateBeatShake(): void {
+    // Get current beat and check if it changed
+    const currentBeat = this.audio.getCurrentBeat();
+    if (currentBeat !== this.lastMusicBeat) {
+      this.lastMusicBeat = currentBeat;
+
+      // Add shake on kick beats
+      if (this.audio.isKickBeat()) {
+        const intensity = this.audio.getMusicIntensity();
+        this.beatShakeIntensity = 2 + intensity * 3; // Subtle 2-5 pixel shake
+
+        // Trigger haptic feedback on mobile
+        if (this.isMobile && this.hapticEnabled && navigator.vibrate) {
+          navigator.vibrate(10); // Very short vibration
+        }
+      }
+    }
+
+    // Apply beat shake to screen shake system
+    if (this.beatShakeIntensity > 0) {
+      this.screenShakeX += (Math.random() - 0.5) * this.beatShakeIntensity;
+      this.screenShakeY += (Math.random() - 0.5) * this.beatShakeIntensity * 0.5;
+      this.beatShakeIntensity *= 0.7; // Faster decay than normal shake
+      if (this.beatShakeIntensity < 0.3) this.beatShakeIntensity = 0;
+    }
+  }
+
+  private updateChromaticAberration(gameSpeed: number): void {
+    // Target chromatic aberration based on combo and speed
+    const comboFactor = Math.min(this.platformCombo / 5, 1); // 0-1 based on combo
+    const speedFactor = Math.min((gameSpeed - 1) / 2, 1); // 0-1 based on speed
+    const intensity = this.audio.getMusicIntensity();
+
+    this.chromaticTarget = (comboFactor * 0.4 + speedFactor * 0.3 + intensity * 0.3) * 8; // Max 8 pixels
+
+    // Smooth transition
+    this.chromaticAberration += (this.chromaticTarget - this.chromaticAberration) * 0.1;
+  }
+
+  private updateLandingParticles(gameSpeed: number): void {
+    for (let i = this.landingParticles.length - 1; i >= 0; i--) {
+      const p = this.landingParticles[i];
+      p.x += p.vx * gameSpeed;
+      p.y += p.vy * gameSpeed;
+      p.vy += 0.3; // Gravity
+      p.life -= 0.03;
+      p.size *= 0.98;
+
+      if (p.life <= 0) {
+        this.landingParticles.splice(i, 1);
+      }
+    }
+  }
+
+  private updateMultiplier(): void {
+    // Decay multiplier over time if not maintained
+    this.multiplierDecay += 1;
+    if (this.multiplierDecay > 120) { // ~2 seconds at 60fps
+      this.scoreMultiplier = Math.max(1, this.scoreMultiplier - 0.5);
+      this.multiplierDecay = 0;
+    }
+  }
+
+  private boostMultiplier(): void {
+    this.scoreMultiplier = Math.min(this.scoreMultiplier + 0.5, this.maxMultiplier);
+    this.multiplierDecay = 0;
+  }
+
+  private updateSkinTrail(): void {
+    // Add current player position to trail
+    if (this.state.gameStatus === 'playing') {
+      const skinKey = this.saveManager.getCurrentSkin();
+      const skin = SKINS[skinKey];
+
+      this.skinTrail.push({
+        x: this.player.x + this.player.width / 2,
+        y: this.player.y + this.player.height / 2,
+        size: this.player.width * 0.8,
+        alpha: 0.6,
+        color: skin?.trail || skin?.colors?.[0] || '#00ffff'
+      });
+
+      // Limit trail length
+      while (this.skinTrail.length > 15) {
+        this.skinTrail.shift();
+      }
+    }
+
+    // Fade out trail
+    for (let i = this.skinTrail.length - 1; i >= 0; i--) {
+      this.skinTrail[i].alpha -= 0.04;
+      this.skinTrail[i].size *= 0.95;
+      if (this.skinTrail[i].alpha <= 0) {
+        this.skinTrail.splice(i, 1);
+      }
+    }
+  }
+
+  private triggerHaptic(duration: number = 20): void {
+    if (this.isMobile && this.hapticEnabled && navigator.vibrate) {
+      navigator.vibrate(duration);
+    }
+  }
+
   private updateParticles(gameSpeed: number): void {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -1379,10 +1522,18 @@ export class Game {
       this.renderComboFlames();
     }
 
+    // Render skin trail (behind player)
+    if (this.state.gameStatus === 'playing') {
+      this.renderSkinTrail();
+    }
+
     // Render player
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'gameOver') {
       this.player.render(this.ctx);
     }
+
+    // Render landing particles
+    this.renderLandingParticles();
 
     // Render particles
     this.renderParticles();
@@ -1573,6 +1724,80 @@ export class Game {
 
       this.ctx.restore();
     }
+  }
+
+  private renderSkinTrail(): void {
+    if (this.skinTrail.length === 0) return;
+
+    for (const trail of this.skinTrail) {
+      this.ctx.save();
+      this.ctx.globalAlpha = trail.alpha;
+      this.ctx.fillStyle = trail.color;
+      this.ctx.shadowColor = trail.color;
+      this.ctx.shadowBlur = 10;
+
+      this.ctx.beginPath();
+      this.ctx.arc(trail.x, trail.y, trail.size / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      this.ctx.restore();
+    }
+  }
+
+  private renderLandingParticles(): void {
+    if (this.landingParticles.length === 0) return;
+
+    for (const p of this.landingParticles) {
+      this.ctx.save();
+      this.ctx.globalAlpha = p.life;
+      this.ctx.fillStyle = p.color;
+
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      this.ctx.restore();
+    }
+  }
+
+  private renderMultiplierBar(): void {
+    if (this.scoreMultiplier <= 1) return;
+
+    const barWidth = 100;
+    const barHeight = 8;
+    const barX = CONFIG.WIDTH - barWidth - 20;
+    const barY = 75; // Below high score
+
+    this.ctx.save();
+
+    // Background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(barX, barY, barWidth, barHeight, 4);
+    this.ctx.fill();
+
+    // Fill based on multiplier
+    const fillPercent = (this.scoreMultiplier - 1) / (this.maxMultiplier - 1);
+    const fillWidth = barWidth * fillPercent;
+
+    // Gradient from green to yellow to red
+    const hue = 120 - fillPercent * 120; // Green to red
+    this.ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+    this.ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+    this.ctx.shadowBlur = 8;
+
+    this.ctx.beginPath();
+    this.ctx.roundRect(barX, barY, fillWidth, barHeight, 4);
+    this.ctx.fill();
+
+    // Multiplier text
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'right';
+    this.ctx.shadowBlur = 4;
+    this.ctx.fillText(`${this.scoreMultiplier.toFixed(1)}x`, barX - 5, barY + barHeight);
+
+    this.ctx.restore();
   }
 
   private renderBeatVisualizer(): void {
@@ -1905,6 +2130,9 @@ export class Game {
     }
 
     this.ctx.restore();
+
+    // Render multiplier bar
+    this.renderMultiplierBar();
   }
 
   private getBPMColor(): string {

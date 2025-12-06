@@ -528,6 +528,41 @@ export class AudioSystem {
     return music.bpm;
   }
 
+  // Get current beat number (0-15)
+  getCurrentBeat(): number {
+    return this.currentMusicBeat;
+  }
+
+  // Check if current beat has a kick (for visual sync)
+  isKickBeat(): boolean {
+    const music = this.levelMusic[this.currentLevel - 1] || this.levelMusic[0];
+    return music.pattern.kick[this.currentMusicBeat % 16] === 1;
+  }
+
+  // Get music intensity based on style
+  getMusicIntensity(): number {
+    const music = this.levelMusic[this.currentLevel - 1] || this.levelMusic[0];
+    switch (music.style) {
+      case 'intense': return 1.0;
+      case 'uplifting': return 0.8;
+      case 'glitch': return 0.7;
+      case 'synthwave': return 0.6;
+      case 'space': return 0.4;
+      case 'ambient': return 0.3;
+      default: return 0.5;
+    }
+  }
+
+  // Start/stop jukebox mode (play music without game)
+  startJukebox(levelId: number): void {
+    this.currentLevel = levelId;
+    this.startMusic();
+  }
+
+  stopJukebox(): void {
+    this.stopMusic();
+  }
+
   getGameSpeed(): number {
     return this.currentBPM / 60;
   }
