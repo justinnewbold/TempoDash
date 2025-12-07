@@ -27,6 +27,11 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
+  // Double jump power-up
+  hasDoubleJump = false;
+  private doubleJumpUsed = false;
+  private doubleJumpEndTime = 0;
+
   // Squash & stretch
   private squashX = 1;
   private squashY = 1;
@@ -59,15 +64,31 @@ export class Player {
     this.targetSquashX = 1;
     this.targetSquashY = 1;
     this.wasGrounded = true;
+    // Reset double jump
+    this.hasDoubleJump = false;
+    this.doubleJumpUsed = false;
+    this.doubleJumpEndTime = 0;
   }
 
   jump(): boolean {
-    if (this.isGrounded && !this.isDead) {
+    if (this.isDead) return false;
+
+    if (this.isGrounded) {
+      // Normal ground jump
       this.velocityY = CONFIG.JUMP_FORCE;
       this.isGrounded = false;
+      this.doubleJumpUsed = false; // Reset double jump on ground jump
       // Stretch on jump (taller and thinner)
       this.targetSquashX = 0.7;
       this.targetSquashY = 1.3;
+      return true;
+    } else if (this.hasDoubleJump && !this.doubleJumpUsed) {
+      // Double jump in air
+      this.velocityY = CONFIG.JUMP_FORCE * 0.85; // Slightly weaker than ground jump
+      this.doubleJumpUsed = true;
+      // More extreme stretch for double jump
+      this.targetSquashX = 0.6;
+      this.targetSquashY = 1.4;
       return true;
     }
     return false;
@@ -184,6 +205,33 @@ export class Player {
     this.gravityMultiplier = multiplier;
   }
 
+  // Activate double jump power-up
+  activateDoubleJump(duration: number): void {
+    this.hasDoubleJump = true;
+    this.doubleJumpEndTime = Date.now() + duration;
+    this.doubleJumpUsed = false;
+  }
+
+  // Update power-up timers
+  updatePowerUps(): void {
+    // Check if double jump expired
+    if (this.hasDoubleJump && Date.now() > this.doubleJumpEndTime) {
+      this.hasDoubleJump = false;
+      this.doubleJumpUsed = false;
+    }
+  }
+
+  // Get remaining double jump time (for UI)
+  getDoubleJumpTimeRemaining(): number {
+    if (!this.hasDoubleJump) return 0;
+    return Math.max(0, this.doubleJumpEndTime - Date.now());
+  }
+
+  // Check if double jump was used (for particle effects)
+  wasDoubleJumpUsed(): boolean {
+    return this.doubleJumpUsed;
+  }
+
   die(): void {
     this.isDead = true;
   }
@@ -199,6 +247,24 @@ export class Player {
         life: 1,
         size: Math.random() * 6 + 2,
         hue: Math.random() * 60
+      });
+    }
+    return particles;
+  }
+
+  createDoubleJumpParticles(): Particle[] {
+    const particles: Particle[] = [];
+    // More particles, orange/yellow hue, burst in all directions
+    for (let i = 0; i < 16; i++) {
+      const angle = (i / 16) * Math.PI * 2;
+      particles.push({
+        x: this.x + this.width / 2,
+        y: this.y + this.height / 2,
+        velocityX: Math.cos(angle) * (3 + Math.random() * 3),
+        velocityY: Math.sin(angle) * (3 + Math.random() * 3),
+        life: 1,
+        size: Math.random() * 8 + 4,
+        hue: 30 + Math.random() * 30 // Orange to yellow
       });
     }
     return particles;

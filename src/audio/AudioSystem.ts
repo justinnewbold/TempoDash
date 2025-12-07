@@ -1111,6 +1111,101 @@ export class AudioSystem {
     finalOsc.stop(finalT + 0.5);
   }
 
+  playPowerUp(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Magical power-up sound - rising chime with sparkle
+    const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5 (major arpeggio)
+
+    notes.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+
+      const t = time + i * 0.06;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.25, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+      osc.connect(gain);
+      gain.connect(this.compressor!);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+
+    // Add shimmer effect
+    for (let i = 0; i < 4; i++) {
+      const shimmer = this.ctx.createOscillator();
+      const shimmerGain = this.ctx.createGain();
+
+      shimmer.type = 'sine';
+      shimmer.frequency.value = 1200 + Math.random() * 800;
+
+      const t = time + 0.1 + i * 0.04;
+      shimmerGain.gain.setValueAtTime(0, t);
+      shimmerGain.gain.linearRampToValueAtTime(0.1, t + 0.01);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(this.compressor);
+      shimmer.start(t);
+      shimmer.stop(t + 0.15);
+    }
+  }
+
+  playDoubleJump(): void {
+    if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
+
+    const time = this.ctx.currentTime;
+
+    // Whoosh + boost sound for double jump
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, time);
+    osc.frequency.exponentialRampToValueAtTime(600, time + 0.1);
+    osc.frequency.exponentialRampToValueAtTime(400, time + 0.15);
+
+    gain.gain.setValueAtTime(0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+    osc.connect(gain);
+    gain.connect(this.compressor);
+    osc.start(time);
+    osc.stop(time + 0.2);
+
+    // Add a "whoosh" noise component
+    const bufferSize = this.ctx.sampleRate * 0.15;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 3000;
+    filter.Q.value = 2;
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.2, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.compressor);
+    noise.start(time);
+    noise.stop(time + 0.15);
+  }
+
   toggle(): boolean {
     this.enabled = !this.enabled;
     if (!this.enabled) {

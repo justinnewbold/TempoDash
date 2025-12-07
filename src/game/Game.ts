@@ -8,6 +8,7 @@ import { GravityZone } from '../entities/GravityZone';
 import { MovingObstacle } from '../entities/MovingObstacle';
 import { Portal } from '../entities/Portal';
 import { Gem } from '../entities/Gem';
+import { PowerUp } from '../entities/PowerUp';
 import { Background } from '../graphics/Background';
 import { AudioSystem } from '../audio/AudioSystem';
 import { SaveManager } from '../storage/SaveManager';
@@ -32,6 +33,7 @@ export class Game {
   private movingObstacles: MovingObstacle[] = [];
   private portals: Portal[] = [];
   private gems: Gem[] = [];
+  private powerUps: PowerUp[] = [];
   private particles: Particle[] = [];
   private background!: Background;
 
@@ -45,6 +47,7 @@ export class Game {
   private lastMovingX = 0;
   private lastPortalX = 0;
   private lastGemX = 0;
+  private lastPowerUpX = 0;
 
   private holdingJump = false;
   private levelConfig!: LevelConfig;
@@ -469,10 +472,19 @@ export class Game {
   }
 
   private tryJump(): void {
+    // Check if this will be a double jump (player in air with double jump available)
+    const isDoubleJump = !this.player.isGrounded && this.player.hasDoubleJump && !this.player.wasDoubleJumpUsed();
+
     if (this.player.jump()) {
-      // Successful jump
-      this.particles.push(...this.player.createJumpParticles());
-      this.audio.onJump();
+      // Successful jump - create different particles for double jump
+      if (isDoubleJump) {
+        this.particles.push(...this.player.createDoubleJumpParticles());
+        this.audio.playDoubleJump();
+        this.screenShake = 5; // Small shake for impact
+      } else {
+        this.particles.push(...this.player.createJumpParticles());
+        this.audio.onJump();
+      }
 
       this.state.jumpCount++;
       this.state.bpm = this.audio.currentBPM;
@@ -555,6 +567,7 @@ export class Game {
     this.movingObstacles = [];
     this.portals = [];
     this.gems = [];
+    this.powerUps = [];
     this.particles = [];
     this.comboFlames = [];
 
@@ -575,6 +588,7 @@ export class Game {
     this.lastMovingX = CONFIG.WIDTH + 1000;
     this.lastPortalX = CONFIG.WIDTH + 1200;
     this.lastGemX = CONFIG.WIDTH + 300;
+    this.lastPowerUpX = CONFIG.WIDTH + 800;
 
     // Spawn initial obstacles
     for (let i = 0; i < 5; i++) {
@@ -734,6 +748,12 @@ export class Game {
   private spawnGem(): void {
     this.lastGemX += 150 + Math.random() * 250;
     this.gems.push(new Gem(this.lastGemX));
+  }
+
+  private spawnPowerUp(): void {
+    // Power-ups spawn less frequently than gems
+    this.lastPowerUpX += 600 + Math.random() * 800;
+    this.powerUps.push(new PowerUp(this.lastPowerUpX));
   }
 
   private gameOver(): void {
@@ -969,6 +989,24 @@ export class Game {
       }
     }
 
+    // Update and check power-ups
+    for (const powerUp of this.powerUps) {
+      powerUp.update(gameSpeed);
+
+      if (powerUp.checkCollection(this.player.x, this.player.y, this.player.width, this.player.height)) {
+        if (powerUp.type === 'doubleJump') {
+          this.player.activateDoubleJump(powerUp.getDuration());
+          this.addScorePopup(powerUp.x, powerUp.y, 0, 'DOUBLE JUMP!');
+          this.audio.playPowerUp();
+          // Create collection particles
+          this.particles.push(...this.createPowerUpParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2));
+        }
+      }
+    }
+
+    // Update player power-up timers
+    this.player.updatePowerUps();
+
     // Cave ambient sounds (Level 3)
     if (this.levelConfig.background.type === 'cave') {
       const now = Date.now();
@@ -1061,6 +1099,12 @@ export class Game {
     this.gems = this.gems.filter(g => !g.collected && g.x > -50);
     while (this.gems.length < 5) {
       this.spawnGem();
+    }
+
+    // Remove collected/off-screen power-ups and spawn new ones (less frequently)
+    this.powerUps = this.powerUps.filter(p => !p.collected && p.x > -50);
+    if (this.powerUps.length < 1) {
+      this.spawnPowerUp();
     }
 
     // Update particles
@@ -1400,6 +1444,27 @@ export class Game {
     return particles;
   }
 
+  private createPowerUpParticles(x: number, y: number): Particle[] {
+    const particles: Particle[] = [];
+
+    // Burst of orange/yellow particles
+    for (let i = 0; i < 20; i++) {
+      const angle = (i / 20) * Math.PI * 2;
+      const speed = 4 + Math.random() * 4;
+      particles.push({
+        x,
+        y,
+        velocityX: Math.cos(angle) * speed,
+        velocityY: Math.sin(angle) * speed,
+        life: 1,
+        size: Math.random() * 8 + 4,
+        hue: 30 + Math.random() * 30 // Orange to yellow
+      });
+    }
+
+    return particles;
+  }
+
   private render(): void {
     const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
 
@@ -1436,6 +1501,11 @@ export class Game {
     // Render gems
     for (const gem of this.gems) {
       gem.render(this.ctx);
+    }
+
+    // Render power-ups
+    for (const powerUp of this.powerUps) {
+      powerUp.render(this.ctx);
     }
 
     // Render portals
@@ -1864,6 +1934,41 @@ export class Game {
       this.ctx.shadowColor = `hsl(${280 + this.platformCombo * 10}, 100%, 50%)`;
       this.ctx.shadowBlur = 15;
       this.ctx.fillText(`${this.platformCombo}x COMBO!`, CONFIG.WIDTH / 2, 50);
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Double jump power-up indicator
+    if (this.player.hasDoubleJump) {
+      const timeRemaining = this.player.getDoubleJumpTimeRemaining();
+      const maxDuration = 8000; // Match power-up duration
+      const progress = timeRemaining / maxDuration;
+
+      // Position below the jump count
+      const indicatorX = 20;
+      const indicatorY = 70;
+      const barWidth = 80;
+      const barHeight = 8;
+
+      // Background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(indicatorX, indicatorY, barWidth, barHeight, 4);
+      this.ctx.fill();
+
+      // Progress bar
+      const fillWidth = barWidth * progress;
+      this.ctx.fillStyle = '#ff8800';
+      this.ctx.shadowColor = '#ffaa00';
+      this.ctx.shadowBlur = 8;
+      this.ctx.beginPath();
+      this.ctx.roundRect(indicatorX, indicatorY, fillWidth, barHeight, 4);
+      this.ctx.fill();
+
+      // Icon (double arrow)
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText('2x JUMP', indicatorX, indicatorY + 20);
       this.ctx.shadowBlur = 0;
     }
 
