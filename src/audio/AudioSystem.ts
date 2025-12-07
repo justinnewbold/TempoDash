@@ -30,6 +30,15 @@ export class AudioSystem {
   private compressor: DynamicsCompressorNode | null = null;
   private musicGain: GainNode | null = null;
 
+  // Reverb effect nodes
+  private reverbGain: GainNode | null = null;
+  private reverbDelays: DelayNode[] = [];
+  private reverbFeedback: GainNode | null = null;
+
+  // Effects
+  private filterNode: BiquadFilterNode | null = null;
+  private filterLFO: OscillatorNode | null = null;
+
   public enabled = true;
   public initialized = false;
   public currentBPM = CONFIG.BASE_BPM;
