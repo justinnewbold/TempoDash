@@ -289,238 +289,546 @@ export class AudioSystem {
   private playMusicKick(time: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    // Layered kick: sub bass + body + click transient
+    const isIntense = style === 'intense';
+    const isAmbient = style === 'ambient';
 
-    osc.type = 'sine';
+    // Sub bass layer (deep low end)
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(isIntense ? 65 : 55, time);
+    subOsc.frequency.exponentialRampToValueAtTime(30, time + 0.15);
+    subGain.gain.setValueAtTime(isAmbient ? 0.5 : 0.7, time);
+    subGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+    subOsc.connect(subGain);
+    subGain.connect(this.musicGain);
+    subOsc.start(time);
+    subOsc.stop(time + 0.2);
 
-    // Different kick character per style
-    const kickFreq = style === 'intense' ? 160 : style === 'ambient' ? 80 : 120;
-    const decay = style === 'ambient' ? 0.2 : 0.15;
+    // Body layer (punch)
+    const bodyOsc = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    bodyOsc.type = 'sine';
+    bodyOsc.frequency.setValueAtTime(isIntense ? 180 : 150, time);
+    bodyOsc.frequency.exponentialRampToValueAtTime(50, time + 0.08);
+    bodyGain.gain.setValueAtTime(isAmbient ? 0.4 : 0.6, time);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+    bodyOsc.connect(bodyGain);
+    bodyGain.connect(this.musicGain);
+    bodyOsc.start(time);
+    bodyOsc.stop(time + 0.1);
 
-    osc.frequency.setValueAtTime(kickFreq, time);
-    osc.frequency.exponentialRampToValueAtTime(30, time + decay);
-
-    gain.gain.setValueAtTime(0.8, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
-
-    osc.connect(gain);
-    gain.connect(this.musicGain);
-    osc.start(time);
-    osc.stop(time + decay);
+    // Click transient (attack definition)
+    if (!isAmbient) {
+      const clickOsc = this.ctx.createOscillator();
+      const clickGain = this.ctx.createGain();
+      const clickFilter = this.ctx.createBiquadFilter();
+      clickOsc.type = 'square';
+      clickOsc.frequency.setValueAtTime(2500, time);
+      clickOsc.frequency.exponentialRampToValueAtTime(200, time + 0.015);
+      clickFilter.type = 'highpass';
+      clickFilter.frequency.value = 500;
+      clickGain.gain.setValueAtTime(0.15, time);
+      clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.02);
+      clickOsc.connect(clickFilter);
+      clickFilter.connect(clickGain);
+      clickGain.connect(this.musicGain);
+      clickOsc.start(time);
+      clickOsc.stop(time + 0.02);
+    }
   }
 
   private playMusicSnare(time: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    // Noise component
-    const bufferSize = this.ctx.sampleRate * 0.1;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const isGlitch = style === 'glitch';
+    const isAmbient = style === 'ambient';
+    const isIntense = style === 'intense';
 
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    // 1. Tonal body (the "thump" of the snare)
+    const bodyOsc = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    bodyOsc.type = 'triangle';
+    bodyOsc.frequency.setValueAtTime(isGlitch ? 280 : 220, time);
+    bodyOsc.frequency.exponentialRampToValueAtTime(120, time + 0.03);
+    bodyGain.gain.setValueAtTime(isAmbient ? 0.3 : 0.5, time);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
+    bodyOsc.connect(bodyGain);
+    bodyGain.connect(this.musicGain);
+    bodyOsc.start(time);
+    bodyOsc.stop(time + 0.06);
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = style === 'glitch' ? 6000 : 4000;
+    // 2. Noise body (the "crack" of the snare)
+    const noiseLen = isGlitch ? 0.08 : 0.12;
+    const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * noiseLen, this.ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
 
-    const gain = this.ctx.createGain();
-    const vol = style === 'ambient' ? 0.2 : 0.35;
-    gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+    const noiseSource = this.ctx.createBufferSource();
+    noiseSource.buffer = noiseBuf;
 
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    noise.start(time);
-    noise.stop(time + 0.1);
+    const noiseFilter = this.ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = isGlitch ? 5500 : 3500;
+    noiseFilter.Q.value = 1.2;
 
-    // Body tone
-    const osc = this.ctx.createOscillator();
-    const oscGain = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(style === 'glitch' ? 250 : 180, time);
-    osc.frequency.exponentialRampToValueAtTime(80, time + 0.04);
-    oscGain.gain.setValueAtTime(0.4, time);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
-    osc.connect(oscGain);
-    oscGain.connect(this.musicGain);
-    osc.start(time);
-    osc.stop(time + 0.04);
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(isAmbient ? 0.2 : 0.35, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + noiseLen);
+
+    noiseSource.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.musicGain);
+    noiseSource.start(time);
+    noiseSource.stop(time + noiseLen);
+
+    // 3. Snare rattle (high-frequency sizzle)
+    const rattleLen = 0.15;
+    const rattleBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * rattleLen, this.ctx.sampleRate);
+    const rattleData = rattleBuf.getChannelData(0);
+    for (let i = 0; i < rattleData.length; i++) {
+      rattleData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / rattleData.length, 1.5);
+    }
+
+    const rattleSource = this.ctx.createBufferSource();
+    rattleSource.buffer = rattleBuf;
+
+    const rattleFilter = this.ctx.createBiquadFilter();
+    rattleFilter.type = 'highpass';
+    rattleFilter.frequency.value = 6000;
+
+    const rattleGain = this.ctx.createGain();
+    rattleGain.gain.setValueAtTime(isAmbient ? 0.08 : (isIntense ? 0.18 : 0.12), time);
+    rattleGain.gain.exponentialRampToValueAtTime(0.001, time + rattleLen);
+
+    rattleSource.connect(rattleFilter);
+    rattleFilter.connect(rattleGain);
+    rattleGain.connect(this.musicGain);
+    rattleSource.start(time);
+    rattleSource.stop(time + rattleLen);
+
+    // 4. Click transient (attack pop)
+    if (!isAmbient) {
+      const clickOsc = this.ctx.createOscillator();
+      const clickGain = this.ctx.createGain();
+      clickOsc.type = 'sine';
+      clickOsc.frequency.setValueAtTime(1800, time);
+      clickOsc.frequency.exponentialRampToValueAtTime(400, time + 0.01);
+      clickGain.gain.setValueAtTime(0.25, time);
+      clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.015);
+      clickOsc.connect(clickGain);
+      clickGain.connect(this.musicGain);
+      clickOsc.start(time);
+      clickOsc.stop(time + 0.015);
+    }
   }
 
   private playMusicHiHat(time: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const bufferSize = this.ctx.sampleRate * 0.04;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const isAmbient = style === 'ambient';
+    const isIntense = style === 'intense';
+    const isGlitch = style === 'glitch';
+    const decay = isAmbient ? 0.06 : 0.04;
 
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    // 1. Metallic resonance layer (gives the "ting" character)
+    const metalFreqs = isGlitch ? [6500, 8200, 11000] : [5200, 7400, 9800];
+    metalFreqs.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq + (Math.random() - 0.5) * 200;
+      const vol = (isAmbient ? 0.02 : 0.04) / (i + 1);
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.8);
+      osc.connect(gain);
+      gain.connect(this.musicGain!);
+      osc.start(time);
+      osc.stop(time + decay);
+    });
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = style === 'ambient' ? 10000 : 8000;
+    // 2. Noise layer (the "shhh" character)
+    const noiseLen = decay * 1.2;
+    const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * noiseLen, this.ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseData.length; i++) {
+      noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseData.length, 2);
+    }
 
-    const gain = this.ctx.createGain();
-    const vol = style === 'intense' ? 0.12 : style === 'ambient' ? 0.06 : 0.1;
-    gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    const noiseSource = this.ctx.createBufferSource();
+    noiseSource.buffer = noiseBuf;
 
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    noise.start(time);
-    noise.stop(time + 0.04);
+    // Bandpass for characteristic hi-hat sound
+    const bandpass = this.ctx.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = isAmbient ? 10000 : 8500;
+    bandpass.Q.value = 0.8;
+
+    // High shelf to add brightness
+    const highShelf = this.ctx.createBiquadFilter();
+    highShelf.type = 'highshelf';
+    highShelf.frequency.value = 10000;
+    highShelf.gain.value = isIntense ? 6 : 3;
+
+    const noiseGain = this.ctx.createGain();
+    const vol = isIntense ? 0.14 : (isAmbient ? 0.06 : 0.1);
+    noiseGain.gain.setValueAtTime(vol, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + noiseLen);
+
+    noiseSource.connect(bandpass);
+    bandpass.connect(highShelf);
+    highShelf.connect(noiseGain);
+    noiseGain.connect(this.musicGain);
+    noiseSource.start(time);
+    noiseSource.stop(time + noiseLen);
   }
 
   private playMusicBass(time: number, freq: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const osc = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
+    const isSynthwave = style === 'synthwave';
+    const isGlitch = style === 'glitch';
+    const isAmbient = style === 'ambient';
+    const isSpace = style === 'space';
+    const isIntense = style === 'intense';
+    const decay = isSpace ? 0.3 : (isAmbient ? 0.25 : 0.18);
+    const baseVol = isAmbient ? 0.2 : 0.35;
 
-    // Different bass character per style
-    osc.type = style === 'synthwave' || style === 'glitch' ? 'sawtooth' : 'sine';
-    osc.frequency.setValueAtTime(freq, time);
+    // Sub bass layer (pure sine, low fundamental)
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.value = freq;
+    subGain.gain.setValueAtTime(baseVol * 0.6, time);
+    subGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+    subOsc.connect(subGain);
+    subGain.connect(this.musicGain);
+    subOsc.start(time);
+    subOsc.stop(time + decay);
 
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(style === 'intense' ? 600 : 400, time);
-    filter.frequency.exponentialRampToValueAtTime(100, time + 0.15);
-    filter.Q.value = style === 'synthwave' ? 10 : 5;
+    // Main bass oscillator with harmonics
+    const mainOsc = this.ctx.createOscillator();
+    const mainGain = this.ctx.createGain();
+    const mainFilter = this.ctx.createBiquadFilter();
 
-    const vol = style === 'ambient' ? 0.25 : 0.4;
-    const decay = style === 'space' ? 0.25 : 0.15;
-    gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+    mainOsc.type = (isSynthwave || isGlitch || isIntense) ? 'sawtooth' : 'triangle';
+    mainOsc.frequency.value = freq;
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    osc.start(time);
-    osc.stop(time + decay);
+    mainFilter.type = 'lowpass';
+    mainFilter.frequency.setValueAtTime(isIntense ? 800 : (isSynthwave ? 600 : 400), time);
+    mainFilter.frequency.exponentialRampToValueAtTime(80, time + decay * 0.8);
+    mainFilter.Q.value = isSynthwave ? 12 : (isIntense ? 8 : 4);
+
+    mainGain.gain.setValueAtTime(baseVol * 0.5, time);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+    mainOsc.connect(mainFilter);
+    mainFilter.connect(mainGain);
+    mainGain.connect(this.musicGain);
+    mainOsc.start(time);
+    mainOsc.stop(time + decay);
+
+    // Detune layer for thickness (slight pitch offset)
+    if (!isAmbient) {
+      const detuneOsc = this.ctx.createOscillator();
+      const detuneGain = this.ctx.createGain();
+      const detuneFilter = this.ctx.createBiquadFilter();
+
+      detuneOsc.type = 'sawtooth';
+      detuneOsc.frequency.value = freq;
+      detuneOsc.detune.value = isGlitch ? 15 : 8; // Slight detune for width
+
+      detuneFilter.type = 'lowpass';
+      detuneFilter.frequency.setValueAtTime(500, time);
+      detuneFilter.frequency.exponentialRampToValueAtTime(100, time + decay * 0.7);
+
+      detuneGain.gain.setValueAtTime(baseVol * 0.25, time);
+      detuneGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.9);
+
+      detuneOsc.connect(detuneFilter);
+      detuneFilter.connect(detuneGain);
+      detuneGain.connect(this.musicGain);
+      detuneOsc.start(time);
+      detuneOsc.stop(time + decay);
+    }
+
+    // Click transient for attack definition
+    if (isSynthwave || isIntense || isGlitch) {
+      const clickOsc = this.ctx.createOscillator();
+      const clickGain = this.ctx.createGain();
+      clickOsc.type = 'square';
+      clickOsc.frequency.value = freq * 4;
+      clickGain.gain.setValueAtTime(0.08, time);
+      clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.015);
+      clickOsc.connect(clickGain);
+      clickGain.connect(this.musicGain);
+      clickOsc.start(time);
+      clickOsc.stop(time + 0.015);
+    }
   }
 
   private playMusicMelody(time: number, freq: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const osc = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
+    const isSynthwave = style === 'synthwave';
+    const isUplifting = style === 'uplifting';
+    const isAmbient = style === 'ambient';
+    const isSpace = style === 'space';
+    const isIntense = style === 'intense';
+    const isGlitch = style === 'glitch';
 
-    // Different lead sound per style
-    switch (style) {
-      case 'synthwave':
-        osc.type = 'sawtooth';
-        filter.frequency.value = 2000;
-        break;
-      case 'uplifting':
-        osc.type = 'square';
-        filter.frequency.value = 3000;
-        break;
-      case 'ambient':
-        osc.type = 'sine';
-        filter.frequency.value = 1500;
-        break;
-      case 'space':
-        osc.type = 'triangle';
-        filter.frequency.value = 2500;
-        break;
-      case 'intense':
-        osc.type = 'sawtooth';
-        filter.frequency.value = 4000;
-        break;
-      case 'glitch':
-        osc.type = 'square';
-        filter.frequency.value = 3500;
-        break;
-      default:
-        osc.type = 'sine';
-        filter.frequency.value = 2000;
+    const decay = (isAmbient || isSpace) ? 0.35 : 0.2;
+    const baseVol = isAmbient ? 0.08 : 0.12;
+
+    // Main oscillator
+    const mainOsc = this.ctx.createOscillator();
+    const mainGain = this.ctx.createGain();
+    const mainFilter = this.ctx.createBiquadFilter();
+
+    // Style-specific oscillator type
+    if (isSynthwave || isIntense) mainOsc.type = 'sawtooth';
+    else if (isUplifting || isGlitch) mainOsc.type = 'square';
+    else if (isSpace) mainOsc.type = 'triangle';
+    else mainOsc.type = 'sine';
+
+    mainOsc.frequency.value = freq;
+
+    mainFilter.type = 'lowpass';
+    mainFilter.frequency.setValueAtTime(isIntense ? 4000 : (isSynthwave ? 2500 : 2000), time);
+    mainFilter.frequency.exponentialRampToValueAtTime(800, time + decay * 0.7);
+    mainFilter.Q.value = isSynthwave ? 4 : 2;
+
+    mainGain.gain.setValueAtTime(0, time);
+    mainGain.gain.linearRampToValueAtTime(baseVol, time + 0.008);
+    mainGain.gain.setValueAtTime(baseVol * 0.8, time + 0.05);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+    mainOsc.connect(mainFilter);
+    mainFilter.connect(mainGain);
+    mainGain.connect(this.musicGain);
+    mainOsc.start(time);
+    mainOsc.stop(time + decay);
+
+    // Detuned layer for richness (supersaw effect)
+    if (!isAmbient) {
+      [-12, 12].forEach(detuneCents => {
+        const detOsc = this.ctx!.createOscillator();
+        const detGain = this.ctx!.createGain();
+        const detFilter = this.ctx!.createBiquadFilter();
+
+        detOsc.type = mainOsc.type;
+        detOsc.frequency.value = freq;
+        detOsc.detune.value = detuneCents;
+
+        detFilter.type = 'lowpass';
+        detFilter.frequency.value = 1800;
+
+        detGain.gain.setValueAtTime(0, time);
+        detGain.gain.linearRampToValueAtTime(baseVol * 0.3, time + 0.01);
+        detGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.9);
+
+        detOsc.connect(detFilter);
+        detFilter.connect(detGain);
+        detGain.connect(this.musicGain!);
+        detOsc.start(time);
+        detOsc.stop(time + decay);
+      });
     }
 
-    osc.frequency.setValueAtTime(freq, time);
-    filter.type = 'lowpass';
+    // Sub octave for fullness (subtle)
+    if (isSynthwave || isUplifting || isIntense) {
+      const subOsc = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      subOsc.type = 'sine';
+      subOsc.frequency.value = freq / 2;
+      subGain.gain.setValueAtTime(0, time);
+      subGain.gain.linearRampToValueAtTime(baseVol * 0.2, time + 0.02);
+      subGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.7);
+      subOsc.connect(subGain);
+      subGain.connect(this.musicGain);
+      subOsc.start(time);
+      subOsc.stop(time + decay);
+    }
 
-    const vol = style === 'ambient' ? 0.1 : 0.15;
-    const decay = style === 'ambient' || style === 'space' ? 0.3 : 0.15;
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(vol, time + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    osc.start(time);
-    osc.stop(time + decay);
+    // High harmonic shimmer for bright styles
+    if (isUplifting || isGlitch) {
+      const shimmerOsc = this.ctx.createOscillator();
+      const shimmerGain = this.ctx.createGain();
+      shimmerOsc.type = 'sine';
+      shimmerOsc.frequency.value = freq * 2;
+      shimmerGain.gain.setValueAtTime(0, time);
+      shimmerGain.gain.linearRampToValueAtTime(baseVol * 0.15, time + 0.005);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.5);
+      shimmerOsc.connect(shimmerGain);
+      shimmerGain.connect(this.musicGain);
+      shimmerOsc.start(time);
+      shimmerOsc.stop(time + decay);
+    }
   }
 
   private playMusicPad(time: number, chord: number[], style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    // Pads are sustained chords - play all notes of the chord
-    chord.forEach((freq, i) => {
-      const osc = this.ctx!.createOscillator();
-      const filter = this.ctx!.createBiquadFilter();
-      const gain = this.ctx!.createGain();
+    const isAmbient = style === 'ambient';
+    const isSpace = style === 'space';
+    const isGlitch = style === 'glitch';
+    const attackTime = (isAmbient || isSpace) ? 0.4 : 0.15;
+    const sustainTime = isAmbient ? 1.8 : 1.0;
+    const releaseTime = isAmbient ? 0.8 : 0.5;
+    const totalTime = sustainTime + releaseTime;
+    const baseVol = 0.05 / chord.length;
 
-      osc.type = style === 'glitch' ? 'square' : 'sine';
-      osc.frequency.value = freq;
+    // Play each note in the chord with multiple layers
+    chord.forEach((freq, noteIndex) => {
+      // Layer 1: Main sine wave (warm foundation)
+      const mainOsc = this.ctx!.createOscillator();
+      const mainGain = this.ctx!.createGain();
+      const mainFilter = this.ctx!.createBiquadFilter();
 
-      // Slight detune for richness
-      osc.detune.value = (i - 1) * 5;
+      mainOsc.type = 'sine';
+      mainOsc.frequency.value = freq;
+      mainOsc.detune.value = (noteIndex - 1) * 3;
 
-      filter.type = 'lowpass';
-      filter.frequency.value = style === 'ambient' ? 800 : 1200;
+      mainFilter.type = 'lowpass';
+      mainFilter.frequency.value = isAmbient ? 600 : 900;
+      mainFilter.Q.value = 0.5;
 
-      const vol = 0.06 / chord.length;
-      const attackTime = style === 'ambient' || style === 'space' ? 0.3 : 0.1;
-      const sustainTime = style === 'ambient' ? 1.5 : 0.8;
+      mainGain.gain.setValueAtTime(0, time);
+      mainGain.gain.linearRampToValueAtTime(baseVol, time + attackTime);
+      mainGain.gain.setValueAtTime(baseVol * 0.85, time + sustainTime);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
 
-      gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(vol, time + attackTime);
-      gain.gain.linearRampToValueAtTime(vol * 0.7, time + sustainTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + sustainTime + 0.5);
+      mainOsc.connect(mainFilter);
+      mainFilter.connect(mainGain);
+      mainGain.connect(this.musicGain!);
+      mainOsc.start(time);
+      mainOsc.stop(time + totalTime);
 
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.musicGain!);
-      osc.start(time);
-      osc.stop(time + sustainTime + 0.5);
+      // Layer 2: Detuned saw/triangle for shimmer
+      [-8, 8].forEach(detune => {
+        const shimmerOsc = this.ctx!.createOscillator();
+        const shimmerGain = this.ctx!.createGain();
+        const shimmerFilter = this.ctx!.createBiquadFilter();
+
+        shimmerOsc.type = isGlitch ? 'square' : 'triangle';
+        shimmerOsc.frequency.value = freq;
+        shimmerOsc.detune.value = detune + (noteIndex - 1) * 2;
+
+        shimmerFilter.type = 'lowpass';
+        shimmerFilter.frequency.value = isAmbient ? 1000 : 1500;
+
+        shimmerGain.gain.setValueAtTime(0, time);
+        shimmerGain.gain.linearRampToValueAtTime(baseVol * 0.35, time + attackTime * 1.2);
+        shimmerGain.gain.setValueAtTime(baseVol * 0.3, time + sustainTime);
+        shimmerGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
+
+        shimmerOsc.connect(shimmerFilter);
+        shimmerFilter.connect(shimmerGain);
+        shimmerGain.connect(this.musicGain!);
+        shimmerOsc.start(time);
+        shimmerOsc.stop(time + totalTime);
+      });
+
+      // Layer 3: Sub octave for depth (only on root notes)
+      if (noteIndex === 0) {
+        const subOsc = this.ctx!.createOscillator();
+        const subGain = this.ctx!.createGain();
+        subOsc.type = 'sine';
+        subOsc.frequency.value = freq / 2;
+        subGain.gain.setValueAtTime(0, time);
+        subGain.gain.linearRampToValueAtTime(baseVol * 0.4, time + attackTime * 1.5);
+        subGain.gain.setValueAtTime(baseVol * 0.35, time + sustainTime);
+        subGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
+        subOsc.connect(subGain);
+        subGain.connect(this.musicGain!);
+        subOsc.start(time);
+        subOsc.stop(time + totalTime);
+      }
+
+      // Layer 4: High harmonic for air (subtle)
+      if (!isAmbient) {
+        const airOsc = this.ctx!.createOscillator();
+        const airGain = this.ctx!.createGain();
+        const airFilter = this.ctx!.createBiquadFilter();
+        airOsc.type = 'sine';
+        airOsc.frequency.value = freq * 2;
+        airFilter.type = 'lowpass';
+        airFilter.frequency.value = 3000;
+        airGain.gain.setValueAtTime(0, time);
+        airGain.gain.linearRampToValueAtTime(baseVol * 0.1, time + attackTime);
+        airGain.gain.exponentialRampToValueAtTime(0.001, time + sustainTime * 0.7);
+        airOsc.connect(airFilter);
+        airFilter.connect(airGain);
+        airGain.connect(this.musicGain!);
+        airOsc.start(time);
+        airOsc.stop(time + sustainTime);
+      }
     });
   }
 
   private playMusicArp(time: number, freq: number, style: string): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const osc = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
+    const isGlitch = style === 'glitch';
+    const isAmbient = style === 'ambient';
+    const isUplifting = style === 'uplifting';
+    const decay = isGlitch ? 0.06 : (isAmbient ? 0.12 : 0.1);
+    const baseVol = isUplifting ? 0.07 : 0.05;
 
-    // Arps are short, bright notes
-    osc.type = style === 'glitch' ? 'square' : 'sine';
-    osc.frequency.value = freq;
+    // Main arp oscillator
+    const mainOsc = this.ctx.createOscillator();
+    const mainGain = this.ctx.createGain();
+    const mainFilter = this.ctx.createBiquadFilter();
 
-    filter.type = 'lowpass';
-    filter.frequency.value = style === 'ambient' ? 2000 : 4000;
+    mainOsc.type = isGlitch ? 'square' : (isUplifting ? 'sawtooth' : 'triangle');
+    mainOsc.frequency.value = freq;
 
-    const vol = style === 'uplifting' ? 0.08 : 0.05;
-    const decay = style === 'glitch' ? 0.05 : 0.08;
+    mainFilter.type = 'lowpass';
+    mainFilter.frequency.setValueAtTime(isAmbient ? 2500 : 5000, time);
+    mainFilter.frequency.exponentialRampToValueAtTime(800, time + decay * 0.8);
+    mainFilter.Q.value = isUplifting ? 3 : 1;
 
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(vol, time + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+    mainGain.gain.setValueAtTime(0, time);
+    mainGain.gain.linearRampToValueAtTime(baseVol, time + 0.003);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-    osc.start(time);
-    osc.stop(time + decay);
+    mainOsc.connect(mainFilter);
+    mainFilter.connect(mainGain);
+    mainGain.connect(this.musicGain);
+    mainOsc.start(time);
+    mainOsc.stop(time + decay);
+
+    // Slight detune layer for thickness
+    if (!isAmbient) {
+      const detOsc = this.ctx.createOscillator();
+      const detGain = this.ctx.createGain();
+      detOsc.type = mainOsc.type;
+      detOsc.frequency.value = freq;
+      detOsc.detune.value = isGlitch ? 20 : 10;
+      detGain.gain.setValueAtTime(0, time);
+      detGain.gain.linearRampToValueAtTime(baseVol * 0.4, time + 0.005);
+      detGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.8);
+      detOsc.connect(detGain);
+      detGain.connect(this.musicGain);
+      detOsc.start(time);
+      detOsc.stop(time + decay);
+    }
+
+    // High shimmer for bright styles
+    if (isUplifting || isGlitch) {
+      const shimOsc = this.ctx.createOscillator();
+      const shimGain = this.ctx.createGain();
+      shimOsc.type = 'sine';
+      shimOsc.frequency.value = freq * 2;
+      shimGain.gain.setValueAtTime(0, time);
+      shimGain.gain.linearRampToValueAtTime(baseVol * 0.15, time + 0.002);
+      shimGain.gain.exponentialRampToValueAtTime(0.001, time + decay * 0.5);
+      shimOsc.connect(shimGain);
+      shimGain.connect(this.musicGain);
+      shimOsc.start(time);
+      shimOsc.stop(time + decay);
+    }
   }
 
   // Get beat time for syncing gameplay
@@ -597,22 +905,63 @@ export class AudioSystem {
   private playJumpSound(time: number): void {
     if (!this.ctx || !this.compressor) return;
 
-    const pitch = 300 + this.jumpCount * 1.5;
+    const basePitch = 350 + Math.min(this.jumpCount * 1.5, 300);
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    // Main tone - rising pitch
+    const mainOsc = this.ctx.createOscillator();
+    const mainGain = this.ctx.createGain();
+    const mainFilter = this.ctx.createBiquadFilter();
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(pitch, time);
-    osc.frequency.exponentialRampToValueAtTime(pitch * 2, time + 0.1);
+    mainOsc.type = 'sine';
+    mainOsc.frequency.setValueAtTime(basePitch, time);
+    mainOsc.frequency.exponentialRampToValueAtTime(basePitch * 1.8, time + 0.08);
 
-    gain.gain.setValueAtTime(0.25, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+    mainFilter.type = 'lowpass';
+    mainFilter.frequency.value = 2000;
 
-    osc.connect(gain);
-    gain.connect(this.compressor);
-    osc.start(time);
-    osc.stop(time + 0.12);
+    mainGain.gain.setValueAtTime(0.2, time);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+
+    mainOsc.connect(mainFilter);
+    mainFilter.connect(mainGain);
+    mainGain.connect(this.compressor);
+    mainOsc.start(time);
+    mainOsc.stop(time + 0.1);
+
+    // Harmonic layer for brightness
+    const harmOsc = this.ctx.createOscillator();
+    const harmGain = this.ctx.createGain();
+    harmOsc.type = 'triangle';
+    harmOsc.frequency.setValueAtTime(basePitch * 2, time);
+    harmOsc.frequency.exponentialRampToValueAtTime(basePitch * 3, time + 0.06);
+    harmGain.gain.setValueAtTime(0.08, time);
+    harmGain.gain.exponentialRampToValueAtTime(0.001, time + 0.07);
+    harmOsc.connect(harmGain);
+    harmGain.connect(this.compressor);
+    harmOsc.start(time);
+    harmOsc.stop(time + 0.07);
+
+    // Subtle "whoosh" for movement feel
+    const whooshLen = 0.06;
+    const whooshBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * whooshLen, this.ctx.sampleRate);
+    const whooshData = whooshBuf.getChannelData(0);
+    for (let i = 0; i < whooshData.length; i++) {
+      whooshData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / whooshData.length, 3);
+    }
+    const whoosh = this.ctx.createBufferSource();
+    whoosh.buffer = whooshBuf;
+    const whooshFilter = this.ctx.createBiquadFilter();
+    whooshFilter.type = 'bandpass';
+    whooshFilter.frequency.value = 4000;
+    whooshFilter.Q.value = 2;
+    const whooshGain = this.ctx.createGain();
+    whooshGain.gain.setValueAtTime(0.06, time);
+    whooshGain.gain.exponentialRampToValueAtTime(0.001, time + whooshLen);
+    whoosh.connect(whooshFilter);
+    whooshFilter.connect(whooshGain);
+    whooshGain.connect(this.compressor);
+    whoosh.start(time);
+    whoosh.stop(time + whooshLen);
   }
 
   playScore(): void {
@@ -642,47 +991,89 @@ export class AudioSystem {
   playCrash(): void {
     if (!this.initialized || !this.enabled || !this.ctx || !this.compressor) return;
 
-    // Low rumble
-    const osc = this.ctx.createOscillator();
-    const oscGain = this.ctx.createGain();
+    const time = this.ctx.currentTime;
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(80, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(15, this.ctx.currentTime + 0.6);
+    // 1. Impact thud (very low, punchy)
+    const impactOsc = this.ctx.createOscillator();
+    const impactGain = this.ctx.createGain();
+    impactOsc.type = 'sine';
+    impactOsc.frequency.setValueAtTime(100, time);
+    impactOsc.frequency.exponentialRampToValueAtTime(20, time + 0.15);
+    impactGain.gain.setValueAtTime(0.9, time);
+    impactGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+    impactOsc.connect(impactGain);
+    impactGain.connect(this.compressor);
+    impactOsc.start(time);
+    impactOsc.stop(time + 0.2);
 
-    oscGain.gain.setValueAtTime(0.8, this.ctx.currentTime);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.6);
+    // 2. Sub rumble (extended low end)
+    const rumbleOsc = this.ctx.createOscillator();
+    const rumbleGain = this.ctx.createGain();
+    rumbleOsc.type = 'sine';
+    rumbleOsc.frequency.setValueAtTime(45, time);
+    rumbleOsc.frequency.exponentialRampToValueAtTime(12, time + 0.8);
+    rumbleGain.gain.setValueAtTime(0.6, time);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, time + 0.8);
+    rumbleOsc.connect(rumbleGain);
+    rumbleGain.connect(this.compressor);
+    rumbleOsc.start(time);
+    rumbleOsc.stop(time + 0.8);
 
-    osc.connect(oscGain);
-    oscGain.connect(this.compressor);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.6);
-
-    // Noise burst
-    const bufferSize = this.ctx.sampleRate * 0.4;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 1.5);
+    // 3. Crash noise (initial burst)
+    const crashLen = 0.5;
+    const crashBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * crashLen, this.ctx.sampleRate);
+    const crashData = crashBuf.getChannelData(0);
+    for (let i = 0; i < crashData.length; i++) {
+      crashData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / crashData.length, 1.2);
     }
+    const crash = this.ctx.createBufferSource();
+    crash.buffer = crashBuf;
+    const crashFilter = this.ctx.createBiquadFilter();
+    crashFilter.type = 'lowpass';
+    crashFilter.frequency.setValueAtTime(8000, time);
+    crashFilter.frequency.exponentialRampToValueAtTime(200, time + crashLen);
+    const crashGain = this.ctx.createGain();
+    crashGain.gain.setValueAtTime(0.6, time);
+    crashGain.gain.exponentialRampToValueAtTime(0.001, time + crashLen);
+    crash.connect(crashFilter);
+    crashFilter.connect(crashGain);
+    crashGain.connect(this.compressor);
+    crash.start(time);
+    crash.stop(time + crashLen);
 
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    // 4. Metallic ring (debris sound)
+    [320, 480, 640].forEach((freq, i) => {
+      const ringOsc = this.ctx!.createOscillator();
+      const ringGain = this.ctx!.createGain();
+      ringOsc.type = 'triangle';
+      ringOsc.frequency.value = freq + Math.random() * 50;
+      ringGain.gain.setValueAtTime(0, time);
+      ringGain.gain.linearRampToValueAtTime(0.12 / (i + 1), time + 0.01);
+      ringGain.gain.exponentialRampToValueAtTime(0.001, time + 0.3 + i * 0.1);
+      ringOsc.connect(ringGain);
+      ringGain.connect(this.compressor!);
+      ringOsc.start(time);
+      ringOsc.stop(time + 0.5);
+    });
 
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(5000, this.ctx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.4);
-
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.compressor);
-    noise.start();
-    noise.stop(this.ctx.currentTime + 0.4);
+    // 5. Descending pitch sweep (dramatic effect)
+    const sweepOsc = this.ctx.createOscillator();
+    const sweepGain = this.ctx.createGain();
+    const sweepFilter = this.ctx.createBiquadFilter();
+    sweepOsc.type = 'sawtooth';
+    sweepOsc.frequency.setValueAtTime(400, time);
+    sweepOsc.frequency.exponentialRampToValueAtTime(50, time + 0.4);
+    sweepFilter.type = 'lowpass';
+    sweepFilter.frequency.setValueAtTime(2000, time);
+    sweepFilter.frequency.exponentialRampToValueAtTime(100, time + 0.4);
+    sweepFilter.Q.value = 5;
+    sweepGain.gain.setValueAtTime(0.15, time);
+    sweepGain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+    sweepOsc.connect(sweepFilter);
+    sweepFilter.connect(sweepGain);
+    sweepGain.connect(this.compressor);
+    sweepOsc.start(time);
+    sweepOsc.stop(time + 0.4);
   }
 
   playClick(): void {
@@ -1116,45 +1507,92 @@ export class AudioSystem {
 
     const time = this.ctx.currentTime;
 
-    // Magical power-up sound - rising chime with sparkle
-    const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5 (major arpeggio)
-
+    // 1. Rising arpeggio (magical feel)
+    const notes = [392, 493.88, 587.33, 783.99, 987.77]; // G4, B4, D5, G5, B5
     notes.forEach((freq, i) => {
       const osc = this.ctx!.createOscillator();
       const gain = this.ctx!.createGain();
+      const filter = this.ctx!.createBiquadFilter();
 
-      osc.type = 'sine';
+      osc.type = 'triangle';
       osc.frequency.value = freq;
 
-      const t = time + i * 0.06;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.25, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      filter.type = 'lowpass';
+      filter.frequency.value = 3000;
 
-      osc.connect(gain);
+      const t = time + i * 0.05;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.2, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+
+      osc.connect(filter);
+      filter.connect(gain);
       gain.connect(this.compressor!);
       osc.start(t);
-      osc.stop(t + 0.3);
+      osc.stop(t + 0.4);
+
+      // Add octave shimmer
+      const shimOsc = this.ctx!.createOscillator();
+      const shimGain = this.ctx!.createGain();
+      shimOsc.type = 'sine';
+      shimOsc.frequency.value = freq * 2;
+      shimGain.gain.setValueAtTime(0, t);
+      shimGain.gain.linearRampToValueAtTime(0.08, t + 0.01);
+      shimGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      shimOsc.connect(shimGain);
+      shimGain.connect(this.compressor!);
+      shimOsc.start(t);
+      shimOsc.stop(t + 0.25);
     });
 
-    // Add shimmer effect
-    for (let i = 0; i < 4; i++) {
-      const shimmer = this.ctx.createOscillator();
-      const shimmerGain = this.ctx.createGain();
-
-      shimmer.type = 'sine';
-      shimmer.frequency.value = 1200 + Math.random() * 800;
-
-      const t = time + 0.1 + i * 0.04;
-      shimmerGain.gain.setValueAtTime(0, t);
-      shimmerGain.gain.linearRampToValueAtTime(0.1, t + 0.01);
-      shimmerGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-
-      shimmer.connect(shimmerGain);
-      shimmerGain.connect(this.compressor);
-      shimmer.start(t);
-      shimmer.stop(t + 0.15);
+    // 2. Magical sparkle burst
+    for (let i = 0; i < 8; i++) {
+      const sparkle = this.ctx.createOscillator();
+      const sparkleGain = this.ctx.createGain();
+      sparkle.type = 'sine';
+      sparkle.frequency.value = 1500 + Math.random() * 1500;
+      const t = time + 0.15 + i * 0.025;
+      sparkleGain.gain.setValueAtTime(0, t);
+      sparkleGain.gain.linearRampToValueAtTime(0.06, t + 0.008);
+      sparkleGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      sparkle.connect(sparkleGain);
+      sparkleGain.connect(this.compressor);
+      sparkle.start(t);
+      sparkle.stop(t + 0.12);
     }
+
+    // 3. Low power surge (impact)
+    const surge = this.ctx.createOscillator();
+    const surgeGain = this.ctx.createGain();
+    surge.type = 'sine';
+    surge.frequency.setValueAtTime(80, time);
+    surge.frequency.exponentialRampToValueAtTime(200, time + 0.2);
+    surgeGain.gain.setValueAtTime(0.25, time);
+    surgeGain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+    surge.connect(surgeGain);
+    surgeGain.connect(this.compressor);
+    surge.start(time);
+    surge.stop(time + 0.3);
+
+    // 4. Ethereal pad swell
+    const padFreqs = [392, 493.88, 587.33]; // G major chord
+    padFreqs.forEach(freq => {
+      const pad = this.ctx!.createOscillator();
+      const padGain = this.ctx!.createGain();
+      const padFilter = this.ctx!.createBiquadFilter();
+      pad.type = 'sine';
+      pad.frequency.value = freq;
+      padFilter.type = 'lowpass';
+      padFilter.frequency.value = 800;
+      padGain.gain.setValueAtTime(0, time);
+      padGain.gain.linearRampToValueAtTime(0.04, time + 0.15);
+      padGain.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+      pad.connect(padFilter);
+      padFilter.connect(padGain);
+      padGain.connect(this.compressor!);
+      pad.start(time);
+      pad.stop(time + 0.6);
+    });
   }
 
   playDoubleJump(): void {
@@ -1162,48 +1600,76 @@ export class AudioSystem {
 
     const time = this.ctx.currentTime;
 
-    // Whoosh + boost sound for double jump
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    // 1. Main boost tone (rising pitch)
+    const mainOsc = this.ctx.createOscillator();
+    const mainGain = this.ctx.createGain();
+    const mainFilter = this.ctx.createBiquadFilter();
+    mainOsc.type = 'triangle';
+    mainOsc.frequency.setValueAtTime(250, time);
+    mainOsc.frequency.exponentialRampToValueAtTime(800, time + 0.12);
+    mainFilter.type = 'lowpass';
+    mainFilter.frequency.setValueAtTime(2000, time);
+    mainFilter.frequency.exponentialRampToValueAtTime(4000, time + 0.1);
+    mainGain.gain.setValueAtTime(0.25, time);
+    mainGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+    mainOsc.connect(mainFilter);
+    mainFilter.connect(mainGain);
+    mainGain.connect(this.compressor);
+    mainOsc.start(time);
+    mainOsc.stop(time + 0.15);
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(200, time);
-    osc.frequency.exponentialRampToValueAtTime(600, time + 0.1);
-    osc.frequency.exponentialRampToValueAtTime(400, time + 0.15);
+    // 2. Harmonic layer (adds brightness)
+    const harmOsc = this.ctx.createOscillator();
+    const harmGain = this.ctx.createGain();
+    harmOsc.type = 'sine';
+    harmOsc.frequency.setValueAtTime(500, time);
+    harmOsc.frequency.exponentialRampToValueAtTime(1600, time + 0.1);
+    harmGain.gain.setValueAtTime(0.12, time);
+    harmGain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+    harmOsc.connect(harmGain);
+    harmGain.connect(this.compressor);
+    harmOsc.start(time);
+    harmOsc.stop(time + 0.12);
 
-    gain.gain.setValueAtTime(0.3, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
-
-    osc.connect(gain);
-    gain.connect(this.compressor);
-    osc.start(time);
-    osc.stop(time + 0.2);
-
-    // Add a "whoosh" noise component
-    const bufferSize = this.ctx.sampleRate * 0.15;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+    // 3. Air whoosh (movement feel)
+    const whooshLen = 0.12;
+    const whooshBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * whooshLen, this.ctx.sampleRate);
+    const whooshData = whooshBuf.getChannelData(0);
+    for (let i = 0; i < whooshData.length; i++) {
+      const env = Math.sin((i / whooshData.length) * Math.PI);
+      whooshData[i] = (Math.random() * 2 - 1) * env;
     }
+    const whoosh = this.ctx.createBufferSource();
+    whoosh.buffer = whooshBuf;
+    const whooshFilter = this.ctx.createBiquadFilter();
+    whooshFilter.type = 'bandpass';
+    whooshFilter.frequency.setValueAtTime(2000, time);
+    whooshFilter.frequency.exponentialRampToValueAtTime(5000, time + whooshLen);
+    whooshFilter.Q.value = 1.5;
+    const whooshGain = this.ctx.createGain();
+    whooshGain.gain.setValueAtTime(0.15, time);
+    whooshGain.gain.exponentialRampToValueAtTime(0.001, time + whooshLen);
+    whoosh.connect(whooshFilter);
+    whooshFilter.connect(whooshGain);
+    whooshGain.connect(this.compressor);
+    whoosh.start(time);
+    whoosh.stop(time + whooshLen);
 
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 3000;
-    filter.Q.value = 2;
-
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.2, time);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
-
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.compressor);
-    noise.start(time);
-    noise.stop(time + 0.15);
+    // 4. Quick sparkle accents
+    [1200, 1800, 2400].forEach((freq, i) => {
+      const spark = this.ctx!.createOscillator();
+      const sparkGain = this.ctx!.createGain();
+      spark.type = 'sine';
+      spark.frequency.value = freq;
+      const t = time + 0.02 + i * 0.02;
+      sparkGain.gain.setValueAtTime(0, t);
+      sparkGain.gain.linearRampToValueAtTime(0.06, t + 0.005);
+      sparkGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      spark.connect(sparkGain);
+      sparkGain.connect(this.compressor!);
+      spark.start(t);
+      spark.stop(t + 0.06);
+    });
   }
 
   toggle(): boolean {
