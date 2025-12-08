@@ -30,20 +30,29 @@ export class AudioSystem {
   private compressor: DynamicsCompressorNode | null = null;
   private musicGain: GainNode | null = null;
 
-  // Reverb effect nodes
-  private reverbGain: GainNode | null = null;
-  private reverbDelays: DelayNode[] = [];
-  private reverbFeedback: GainNode | null = null;
+  // Reverb effect nodes (reserved for future use)
+  // @ts-ignore - reserved for reverb implementation
+  private _reverbGain: GainNode | null = null;
+  // @ts-ignore - reserved for reverb implementation
+  private _reverbDelays: DelayNode[] = [];
+  // @ts-ignore - reserved for reverb implementation
+  private _reverbFeedback: GainNode | null = null;
 
-  // Effects
-  private filterNode: BiquadFilterNode | null = null;
-  private filterLFO: OscillatorNode | null = null;
+  // Effects (reserved for future use)
+  // @ts-ignore - reserved for filter effects
+  private _filterNode: BiquadFilterNode | null = null;
+  // @ts-ignore - reserved for LFO modulation
+  private _filterLFO: OscillatorNode | null = null;
 
   public enabled = true;
   public initialized = false;
   public currentBPM = CONFIG.BASE_BPM;
   public jumpCount = 0;
   private beatCount = 0;
+
+  // Volume controls
+  private musicVolume = 0.35;
+  private sfxVolume = 0.6;
 
   private beatConfig: BeatConfig | null = null;
   private currentLevel = 1;
@@ -1687,5 +1696,34 @@ export class AudioSystem {
       this.stopMusic();
     }
     return this.enabled;
+  }
+
+  // Volume controls
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.musicGain) {
+      this.musicGain.gain.value = this.musicVolume;
+    }
+  }
+
+  setSfxVolume(volume: number): void {
+    this.sfxVolume = Math.max(0, Math.min(1, volume));
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.sfxVolume;
+    }
+  }
+
+  getMusicVolume(): number {
+    return this.musicVolume;
+  }
+
+  getSfxVolume(): number {
+    return this.sfxVolume;
+  }
+
+  // Initialize with saved volumes
+  initVolumes(musicVol: number, sfxVol: number): void {
+    this.musicVolume = musicVol;
+    this.sfxVolume = sfxVol;
   }
 }

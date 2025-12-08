@@ -143,4 +143,32 @@ export class SaveManager {
     }
     return newLevels;
   }
+
+  // Tutorial tracking
+  hasSeenTutorial(): boolean {
+    return localStorage.getItem(STORAGE_KEYS.HAS_SEEN_TUTORIAL) === 'true';
+  }
+
+  setHasSeenTutorial(): void {
+    localStorage.setItem(STORAGE_KEYS.HAS_SEEN_TUTORIAL, 'true');
+  }
+
+  // Volume settings
+  getMusicVolume(): number {
+    const saved = localStorage.getItem(STORAGE_KEYS.MUSIC_VOLUME);
+    return saved !== null ? parseFloat(saved) : 0.35;
+  }
+
+  setMusicVolume(volume: number): void {
+    localStorage.setItem(STORAGE_KEYS.MUSIC_VOLUME, volume.toString());
+  }
+
+  getSfxVolume(): number {
+    const saved = localStorage.getItem(STORAGE_KEYS.SFX_VOLUME);
+    return saved !== null ? parseFloat(saved) : 0.6;
+  }
+
+  setSfxVolume(volume: number): void {
+    localStorage.setItem(STORAGE_KEYS.SFX_VOLUME, volume.toString());
+  }
 }

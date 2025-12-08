@@ -128,6 +128,17 @@ export class Game {
   // Skin trail effects
   private skinTrail: { x: number; y: number; size: number; alpha: number; color: string }[] = [];
 
+  // Pause menu
+  private pauseButtonBounds = { x: 0, y: 0, width: 36, height: 36 };
+  private pauseMenuButtons: { id: string; x: number; y: number; width: number; height: number }[] = [];
+
+  // Tutorial overlay
+  private showTutorial = false;
+
+  // Volume sliders (stored as 0-1 values)
+  private musicVolumeSlider = { x: 0, y: 0, width: 150, height: 10, value: 0.35 };
+  private sfxVolumeSlider = { x: 0, y: 0, width: 150, height: 10, value: 0.6 };
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -143,6 +154,11 @@ export class Game {
 
     this.audio = new AudioSystem();
     this.saveManager = new SaveManager();
+
+    // Load saved volume settings
+    this.musicVolumeSlider.value = this.saveManager.getMusicVolume();
+    this.sfxVolumeSlider.value = this.saveManager.getSfxVolume();
+    this.audio.initVolumes(this.musicVolumeSlider.value, this.sfxVolumeSlider.value);
 
     this.skinKeys = Object.keys(SKINS);
     this.selectedSkinIndex = this.skinKeys.indexOf(this.saveManager.getCurrentSkin());
@@ -322,6 +338,63 @@ export class Game {
            y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height;
   }
 
+  private isInPauseButton(x: number, y: number): boolean {
+    return x >= this.pauseButtonBounds.x &&
+           x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width &&
+           y >= this.pauseButtonBounds.y &&
+           y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height;
+  }
+
+  private handlePauseMenuClick(x: number, y: number): void {
+    // Check if clicking on a pause menu button
+    for (const btn of this.pauseMenuButtons) {
+      if (x >= btn.x && x <= btn.x + btn.width && y >= btn.y && y <= btn.y + btn.height) {
+        this.audio.playClick();
+        switch (btn.id) {
+          case 'resume':
+            this.resumeGame();
+            break;
+          case 'restart':
+            this.restartGame();
+            break;
+          case 'quit':
+            this.returnToMenu();
+            break;
+        }
+        return;
+      }
+    }
+
+    // Check volume sliders
+    if (this.isOnSlider(x, y, this.musicVolumeSlider)) {
+      this.updateSliderValue(x, this.musicVolumeSlider);
+    } else if (this.isOnSlider(x, y, this.sfxVolumeSlider)) {
+      this.updateSliderValue(x, this.sfxVolumeSlider);
+    }
+  }
+
+  private isOnSlider(x: number, y: number, slider: { x: number; y: number; width: number; height: number }): boolean {
+    const padding = 15;
+    return x >= slider.x - padding && x <= slider.x + slider.width + padding &&
+           y >= slider.y - padding && y <= slider.y + slider.height + padding;
+  }
+
+  private updateSliderValue(x: number, slider: { x: number; y: number; width: number; height: number; value: number }): void {
+    const newValue = Math.max(0, Math.min(1, (x - slider.x) / slider.width));
+    slider.value = newValue;
+
+    // Apply volume changes
+    if (slider === this.musicVolumeSlider) {
+      this.audio.setMusicVolume(newValue);
+      this.saveManager.setMusicVolume(newValue);
+    } else if (slider === this.sfxVolumeSlider) {
+      this.audio.setSfxVolume(newValue);
+      this.saveManager.setSfxVolume(newValue);
+      // Play a sample sound so user can hear the change
+      this.audio.playClick();
+    }
+  }
+
   private toggleFullscreen(): void {
     if (this.isFullscreen) {
       this.exitFullscreen();
@@ -345,6 +418,13 @@ export class Game {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    // Handle tutorial dismissal
+    if (this.showTutorial) {
+      this.showTutorial = false;
+      this.saveManager.setHasSeenTutorial();
+      return;
+    }
+
     if (this.state.gameStatus === 'menu') {
       this.handleMenuKeyDown(e);
     } else if (this.state.gameStatus === 'playing') {
@@ -352,7 +432,15 @@ export class Game {
         e.preventDefault();
         this.holdingJump = true;
         this.tryJump();
-      } else if (e.code === 'Escape') {
+      } else if (e.code === 'Escape' || e.code === 'KeyP') {
+        this.pauseGame();
+      }
+    } else if (this.state.gameStatus === 'paused') {
+      if (e.code === 'Escape' || e.code === 'KeyP') {
+        this.resumeGame();
+      } else if (e.code === 'KeyR') {
+        this.restartGame();
+      } else if (e.code === 'KeyQ') {
         this.returnToMenu();
       }
     } else if (this.state.gameStatus === 'gameOver') {
@@ -422,10 +510,26 @@ export class Game {
     // Try to enable fullscreen on first interaction
     this.tryEnableFullscreen();
 
+    // Handle tutorial dismissal
+    if (this.showTutorial) {
+      this.showTutorial = false;
+      this.saveManager.setHasSeenTutorial();
+      return;
+    }
+
+    // Get touch coordinates if event provided
+    let coords: { x: number; y: number } | null = null;
+    if (e && e.touches[0]) {
+      coords = this.getCanvasCoords(e.touches[0].clientX, e.touches[0].clientY);
+    }
+
     // Check if touch is on UI buttons
-    if (e && this.state.gameStatus === 'playing') {
-      const touch = e.touches[0];
-      const coords = this.getCanvasCoords(touch.clientX, touch.clientY);
+    if (coords && this.state.gameStatus === 'playing') {
+      // Check pause button
+      if (this.isInPauseButton(coords.x, coords.y)) {
+        this.pauseGame();
+        return;
+      }
 
       // Check fullscreen button
       if (this.isInFullscreenButton(coords.x, coords.y)) {
@@ -435,9 +539,15 @@ export class Game {
 
       // Check exit button (mobile only)
       if (this.isMobile && this.isInExitButton(coords.x, coords.y)) {
-        this.returnToMenu();
+        this.pauseGame();
         return;
       }
+    }
+
+    // Handle paused state
+    if (coords && this.state.gameStatus === 'paused') {
+      this.handlePauseMenuClick(coords.x, coords.y);
+      return;
     }
 
     if (this.state.gameStatus === 'menu') {
@@ -451,9 +561,22 @@ export class Game {
   }
 
   private handleMouseDown(e: MouseEvent): void {
+    const coords = this.getCanvasCoords(e.clientX, e.clientY);
+
+    // Handle tutorial dismissal
+    if (this.showTutorial) {
+      this.showTutorial = false;
+      this.saveManager.setHasSeenTutorial();
+      return;
+    }
+
     // Check if click is on UI buttons (during gameplay)
     if (this.state.gameStatus === 'playing') {
-      const coords = this.getCanvasCoords(e.clientX, e.clientY);
+      // Check pause button
+      if (this.isInPauseButton(coords.x, coords.y)) {
+        this.pauseGame();
+        return;
+      }
 
       // Check fullscreen button
       if (this.isInFullscreenButton(coords.x, coords.y)) {
@@ -463,9 +586,15 @@ export class Game {
 
       // Check exit button
       if (this.isInExitButton(coords.x, coords.y)) {
-        this.returnToMenu();
+        this.pauseGame();
         return;
       }
+    }
+
+    // Handle paused state
+    if (this.state.gameStatus === 'paused') {
+      this.handlePauseMenuClick(coords.x, coords.y);
+      return;
     }
 
     this.handleTouchStart();
@@ -620,6 +749,11 @@ export class Game {
     this.attemptNumber = this.saveManager.incrementAttempt();
     this.audio.start();
     this.state.gameStatus = 'playing';
+
+    // Show tutorial for first-time players
+    if (!this.saveManager.hasSeenTutorial()) {
+      this.showTutorial = true;
+    }
   }
 
   private spawnObstacle(): void {
@@ -792,6 +926,29 @@ export class Game {
     });
   }
 
+  private pauseGame(): void {
+    if (this.state.gameStatus === 'playing') {
+      this.state.gameStatus = 'paused';
+      this.audio.stopMusic();
+      this.audio.playClick();
+      this.holdingJump = false;
+    }
+  }
+
+  private resumeGame(): void {
+    if (this.state.gameStatus === 'paused') {
+      this.state.gameStatus = 'playing';
+      this.audio.startMusic();
+      this.audio.playClick();
+    }
+  }
+
+  private restartGame(): void {
+    this.audio.playClick();
+    this.state.gameStatus = 'menu'; // Temporarily go to menu
+    this.startGame(); // Then start fresh
+  }
+
   private returnToMenu(): void {
     // Submit current score before returning
     if (this.state.score > 0) {
@@ -816,8 +973,8 @@ export class Game {
     // Update background
     this.background.update(gameSpeed);
 
-    if (this.state.gameStatus !== 'playing') {
-      // Update particles even when not playing
+    if (this.state.gameStatus !== 'playing' || this.showTutorial) {
+      // Update particles even when not playing or during tutorial
       this.updateParticles(gameSpeed);
       return;
     }
@@ -1534,7 +1691,7 @@ export class Game {
     }
 
     // Render player
-    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'gameOver') {
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'gameOver' || this.state.gameStatus === 'paused') {
       this.player.render(this.ctx);
     }
 
@@ -1559,8 +1716,15 @@ export class Game {
     // Render overlays (not affected by screen shake)
     if (this.state.gameStatus === 'menu') {
       this.renderMenu();
+    } else if (this.state.gameStatus === 'paused') {
+      this.renderPauseMenu();
     } else if (this.state.gameStatus === 'gameOver') {
       this.renderGameOver();
+    }
+
+    // Render tutorial on top of everything
+    if (this.showTutorial) {
+      this.renderTutorial();
     }
   }
 
@@ -2059,9 +2223,34 @@ export class Game {
     }
     this.ctx.lineCap = 'butt';
 
+    // Pause button - next to fullscreen button
+    const pauseBtnSize = 36;
+    const pauseBtnX = fsBtnX - pauseBtnSize - 8;
+    const pauseBtnY = fsBtnY;
+    this.pauseButtonBounds = { x: pauseBtnX, y: pauseBtnY, width: pauseBtnSize, height: pauseBtnSize };
+
+    // Button background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(pauseBtnX, pauseBtnY, pauseBtnSize, pauseBtnSize, 6);
+    this.ctx.fill();
+
+    // Button border
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    // Draw pause icon (two vertical bars)
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    const barWidth = 5;
+    const barHeight = 16;
+    const barY = pauseBtnY + (pauseBtnSize - barHeight) / 2;
+    this.ctx.fillRect(pauseBtnX + pauseBtnSize / 2 - barWidth - 2, barY, barWidth, barHeight);
+    this.ctx.fillRect(pauseBtnX + pauseBtnSize / 2 + 2, barY, barWidth, barHeight);
+
     // Exit button/hint - show touch button on mobile, keyboard hint on desktop
     if (this.isMobile) {
-      // Touch-friendly exit button
+      // Touch-friendly pause button
       const btnX = CONFIG.WIDTH - 80;
       const btnY = CONFIG.HEIGHT - 40;
       const btnW = 70;
@@ -2086,13 +2275,13 @@ export class Game {
       this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText('EXIT', btnX + btnW / 2, btnY + btnH / 2 + 4);
+      this.ctx.fillText('PAUSE', btnX + btnW / 2, btnY + btnH / 2 + 4);
     } else {
-      // Desktop: show ESC hint
+      // Desktop: show P/ESC hint
       this.ctx.textAlign = 'right';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText('ESC to exit', CONFIG.WIDTH - 20, CONFIG.HEIGHT - 15);
+      this.ctx.fillText('P to pause', CONFIG.WIDTH - 20, CONFIG.HEIGHT - 15);
     }
 
     this.ctx.restore();
@@ -2343,6 +2532,218 @@ export class Game {
     } else {
       this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
     }
+
+    this.ctx.restore();
+  }
+
+  private renderPauseMenu(): void {
+    // Semi-transparent dark overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('⏸ PAUSED', CONFIG.WIDTH / 2, 80);
+
+    // Current score display
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(`Score: ${this.state.score}`, CONFIG.WIDTH / 2, 115);
+    this.ctx.shadowBlur = 0;
+
+    // Menu buttons
+    const buttonWidth = 180;
+    const buttonHeight = 45;
+    const buttonX = (CONFIG.WIDTH - buttonWidth) / 2;
+    const buttonSpacing = 55;
+    let buttonY = 150;
+
+    this.pauseMenuButtons = [];
+
+    const buttons = [
+      { id: 'resume', label: 'RESUME', key: 'P' },
+      { id: 'restart', label: 'RESTART', key: 'R' },
+      { id: 'quit', label: 'QUIT TO MENU', key: 'Q' }
+    ];
+
+    buttons.forEach((btn) => {
+      // Store button bounds
+      this.pauseMenuButtons.push({
+        id: btn.id,
+        x: buttonX,
+        y: buttonY,
+        width: buttonWidth,
+        height: buttonHeight
+      });
+
+      // Button background
+      this.ctx.fillStyle = btn.id === 'resume' ? 'rgba(0, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(buttonX, buttonY, buttonWidth, buttonHeight, 8);
+      this.ctx.fill();
+
+      // Button border
+      this.ctx.strokeStyle = btn.id === 'resume' ? '#00ffff' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = btn.id === 'resume' ? 2 : 1;
+      this.ctx.stroke();
+
+      // Button text
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = btn.id === 'resume' ? '#00ffff' : '#ffffff';
+      this.ctx.fillText(btn.label, CONFIG.WIDTH / 2, buttonY + buttonHeight / 2 + 5);
+
+      // Keyboard hint (desktop only)
+      if (!this.isMobile) {
+        this.ctx.font = '11px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText(`[${btn.key}]`, buttonX + buttonWidth - 10, buttonY + buttonHeight / 2 + 4);
+        this.ctx.textAlign = 'center';
+      }
+
+      buttonY += buttonSpacing;
+    });
+
+    // Volume controls section
+    const volumeY = buttonY + 20;
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.fillText('VOLUME', CONFIG.WIDTH / 2, volumeY);
+
+    // Music volume slider
+    const sliderWidth = 150;
+    const sliderHeight = 10;
+    const sliderX = (CONFIG.WIDTH - sliderWidth) / 2;
+    const musicSliderY = volumeY + 25;
+
+    this.musicVolumeSlider.x = sliderX;
+    this.musicVolumeSlider.y = musicSliderY;
+    this.musicVolumeSlider.width = sliderWidth;
+    this.musicVolumeSlider.height = sliderHeight;
+
+    // Music label
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('Music', sliderX - 50, musicSliderY + 8);
+    this.ctx.textAlign = 'center';
+
+    // Slider background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(sliderX, musicSliderY, sliderWidth, sliderHeight, 5);
+    this.ctx.fill();
+
+    // Slider fill
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.beginPath();
+    this.ctx.roundRect(sliderX, musicSliderY, sliderWidth * this.musicVolumeSlider.value, sliderHeight, 5);
+    this.ctx.fill();
+
+    // Slider handle
+    const musicHandleX = sliderX + sliderWidth * this.musicVolumeSlider.value;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.beginPath();
+    this.ctx.arc(musicHandleX, musicSliderY + sliderHeight / 2, 8, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // SFX volume slider
+    const sfxSliderY = musicSliderY + 35;
+
+    this.sfxVolumeSlider.x = sliderX;
+    this.sfxVolumeSlider.y = sfxSliderY;
+    this.sfxVolumeSlider.width = sliderWidth;
+    this.sfxVolumeSlider.height = sliderHeight;
+
+    // SFX label
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('SFX', sliderX - 50, sfxSliderY + 8);
+    this.ctx.textAlign = 'center';
+
+    // Slider background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(sliderX, sfxSliderY, sliderWidth, sliderHeight, 5);
+    this.ctx.fill();
+
+    // Slider fill
+    this.ctx.fillStyle = '#ff8800';
+    this.ctx.beginPath();
+    this.ctx.roundRect(sliderX, sfxSliderY, sliderWidth * this.sfxVolumeSlider.value, sliderHeight, 5);
+    this.ctx.fill();
+
+    // Slider handle
+    const sfxHandleX = sliderX + sliderWidth * this.sfxVolumeSlider.value;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.beginPath();
+    this.ctx.arc(sfxHandleX, sfxSliderY + sliderHeight / 2, 8, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.restore();
+  }
+
+  private renderTutorial(): void {
+    // Semi-transparent dark overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('HOW TO PLAY', CONFIG.WIDTH / 2, 70);
+    this.ctx.shadowBlur = 0;
+
+    const startY = 120;
+    const lineHeight = 50;
+    let y = startY;
+
+    // Instructions
+    const instructions = [
+      { icon: '👆', text: this.isMobile ? 'TAP to JUMP' : 'SPACE / TAP to JUMP', color: '#00ffff' },
+      { icon: '🎵', text: 'Each JUMP plays a beat!', color: '#ff00ff' },
+      { icon: '⚡', text: 'Jump on beat for BONUS points', color: '#ffff00' },
+      { icon: '💎', text: 'Collect GEMS for extra score', color: '#44aaff' },
+      { icon: '🔥', text: 'Orange orbs give DOUBLE JUMP!', color: '#ff8800' },
+      { icon: '⚠️', text: 'Avoid obstacles and pits', color: '#ff4444' }
+    ];
+
+    instructions.forEach((inst) => {
+      // Icon
+      this.ctx.font = '28px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = inst.color;
+      this.ctx.fillText(inst.icon, CONFIG.WIDTH / 2 - 140, y + 8);
+
+      // Text
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(inst.text, CONFIG.WIDTH / 2 - 100, y + 8);
+      this.ctx.textAlign = 'center';
+
+      y += lineHeight;
+    });
+
+    // Tap to continue
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    const pulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    this.ctx.globalAlpha = pulse;
+    this.ctx.fillText(this.isMobile ? 'TAP TO START' : 'PRESS ANY KEY TO START', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 40);
+    this.ctx.globalAlpha = 1;
 
     this.ctx.restore();
   }

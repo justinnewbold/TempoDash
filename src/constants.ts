@@ -171,5 +171,8 @@ export const STORAGE_KEYS = {
   SKINS: 'tempoDashSkins',
   CURRENT_SKIN: 'tempoDashCurrentSkin',
   UNLOCKED_LEVELS: 'tempoDashUnlockedLevels',
-  ATTEMPTS: 'tempoDashAttempts'
+  ATTEMPTS: 'tempoDashAttempts',
+  HAS_SEEN_TUTORIAL: 'tempoDashHasSeenTutorial',
+  MUSIC_VOLUME: 'tempoDashMusicVolume',
+  SFX_VOLUME: 'tempoDashSfxVolume'
 };
