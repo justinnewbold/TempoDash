@@ -27,10 +27,11 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
-  // Double jump power-up (stored boosts)
+  // Double jump power-up (stored boosts with timed activation)
   private storedDoubleJumps = 0;
-  hasDoubleJump = false; // Currently active for this jump sequence
+  hasDoubleJump = false; // Currently active (timed)
   private doubleJumpUsed = false;
+  private doubleJumpEndTime = 0; // When the current boost expires
 
   // Squash & stretch
   private squashX = 1;
@@ -68,6 +69,7 @@ export class Player {
     this.storedDoubleJumps = 0;
     this.hasDoubleJump = false;
     this.doubleJumpUsed = false;
+    this.doubleJumpEndTime = 0;
   }
 
   jump(): boolean {
@@ -215,22 +217,36 @@ export class Player {
     return this.storedDoubleJumps;
   }
 
-  // Activate a stored double jump boost (manual activation)
+  // Activate a stored double jump boost (manual activation - 10 second duration)
   activateDoubleJumpBoost(): boolean {
     if (this.storedDoubleJumps > 0 && !this.hasDoubleJump) {
       this.storedDoubleJumps--;
       this.hasDoubleJump = true;
       this.doubleJumpUsed = false;
+      this.doubleJumpEndTime = Date.now() + 10000; // 10 seconds
       return true;
     }
     return false;
   }
 
+  // Get remaining time on current boost (for UI display)
+  getDoubleJumpTimeRemaining(): number {
+    if (!this.hasDoubleJump) return 0;
+    return Math.max(0, this.doubleJumpEndTime - Date.now());
+  }
+
   // Update power-up states
   updatePowerUps(): void {
-    // Deactivate double jump when landing (it was used or wasted)
-    if (this.hasDoubleJump && this.isGrounded && this.doubleJumpUsed) {
+    // Check if double jump boost has expired (10 second timer)
+    if (this.hasDoubleJump && Date.now() > this.doubleJumpEndTime) {
       this.hasDoubleJump = false;
+      this.doubleJumpUsed = false;
+      this.doubleJumpEndTime = 0;
+    }
+
+    // Reset doubleJumpUsed when landing so player can double jump again
+    // (during the 10 second window they can double jump multiple times)
+    if (this.hasDoubleJump && this.isGrounded) {
       this.doubleJumpUsed = false;
     }
   }

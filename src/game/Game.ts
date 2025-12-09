@@ -450,6 +450,9 @@ export class Game {
         e.preventDefault();
         this.holdingJump = true;
         this.tryJump();
+      } else if (e.code === 'KeyB') {
+        // Activate boost with B key
+        this.activateBoost();
       } else if (e.code === 'Escape' || e.code === 'KeyP') {
         this.pauseGame();
       }
@@ -2192,11 +2195,12 @@ export class Game {
         this.ctx.fillText('x1', boostBtnX + boostBtnSize / 2, boostBtnY + boostBtnSize - 5);
       }
 
-      // "ACTIVE" indicator when boost is on
+      // Timer display when boost is active
       if (boostActive) {
+        const timeRemaining = Math.ceil(this.player.getDoubleJumpTimeRemaining() / 1000);
         this.ctx.fillStyle = '#ffff00';
-        this.ctx.font = 'bold 9px "Segoe UI", sans-serif';
-        this.ctx.fillText('ACTIVE', boostBtnX + boostBtnSize / 2, boostBtnY - 5);
+        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.fillText(`${timeRemaining}s`, boostBtnX + boostBtnSize / 2, boostBtnY - 5);
       }
     }
 
