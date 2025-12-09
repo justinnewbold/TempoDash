@@ -54,6 +54,9 @@ export class AudioSystem {
   private musicVolume = 0.35;
   private sfxVolume = 0.6;
 
+  // Music intensity (0-1, affects volume and layering)
+  private intensity = 0;
+
   private beatConfig: BeatConfig | null = null;
   private currentLevel = 1;
 
@@ -1725,5 +1728,24 @@ export class AudioSystem {
   initVolumes(musicVol: number, sfxVol: number): void {
     this.musicVolume = musicVol;
     this.sfxVolume = sfxVol;
+  }
+
+  // Set music intensity (0-1) - affects volume and layering
+  setIntensity(intensity: number): void {
+    this.intensity = Math.max(0, Math.min(1, intensity));
+
+    // Adjust music volume based on intensity (more intense = slightly louder)
+    if (this.musicGain && this.ctx) {
+      const baseVolume = this.musicVolume;
+      const intensityBoost = this.intensity * 0.15; // Up to 15% volume boost
+      const targetVolume = Math.min(1, baseVolume + intensityBoost);
+
+      // Smooth transition
+      this.musicGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.1);
+    }
+  }
+
+  getIntensity(): number {
+    return this.intensity;
   }
 }

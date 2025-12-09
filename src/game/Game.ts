@@ -1,5 +1,5 @@
 import { GameState, Particle, LevelConfig, SKINS } from '../types';
-import { CONFIG, LEVELS } from '../constants';
+import { CONFIG, LEVELS, GameMode, HARDCORE_UNLOCK_SCORE } from '../constants';
 import { Player } from '../entities/Player';
 import { Obstacle } from '../entities/Obstacle';
 import { JumpPlatform, PlatformType } from '../entities/JumpPlatform';
@@ -142,6 +142,23 @@ export class Game {
   private musicVolumeSlider = { x: 0, y: 0, width: 150, height: 10, value: 0.35 };
   private sfxVolumeSlider = { x: 0, y: 0, width: 150, height: 10, value: 0.6 };
 
+  // Game modes
+  private gameMode: GameMode = 'normal';
+  private selectedGameMode: GameMode = 'normal';
+  private hardcoreJustUnlocked = false;
+
+  // Daily login streak
+  private streakInfo: { streak: number; isNewDay: boolean; bonusPoints: number } = { streak: 0, isNewDay: false, bonusPoints: 0 };
+  private showStreakBonus = false;
+
+  // Contextual tips
+  private currentTip: { id: string; text: string; x: number; y: number; life: number } | null = null;
+  private tipCooldown = 0;
+
+  // Music intensity (for procedural music evolution)
+  private musicIntensity = 0;
+  private targetMusicIntensity = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -166,6 +183,12 @@ export class Game {
     this.skinKeys = Object.keys(SKINS);
     this.selectedSkinIndex = this.skinKeys.indexOf(this.saveManager.getCurrentSkin());
     if (this.selectedSkinIndex < 0) this.selectedSkinIndex = 0;
+
+    // Check daily login streak
+    this.streakInfo = this.saveManager.checkAndUpdateLoginStreak();
+    if (this.streakInfo.bonusPoints > 0) {
+      this.showStreakBonus = true;
+    }
 
     this.loadLevel(1);
     this.setupInputHandlers();
@@ -476,6 +499,12 @@ export class Game {
   }
 
   private handleMenuKeyDown(e: KeyboardEvent): void {
+    // Handle popups first
+    if (this.showStreakBonus || this.hardcoreJustUnlocked) {
+      this.dismissPopups();
+      return;
+    }
+
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
       this.startGame();
@@ -499,12 +528,51 @@ export class Game {
     } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
       // Navigate skins right
       this.navigateSkin(1);
+    } else if (e.code === 'KeyQ') {
+      // Navigate game mode left
+      this.navigateGameMode(-1);
+    } else if (e.code === 'KeyE') {
+      // Navigate game mode right
+      this.navigateGameMode(1);
     } else if (e.code.startsWith('Digit')) {
       const num = parseInt(e.code.replace('Digit', ''));
       if (num >= 1 && num <= 6 && this.saveManager.isLevelUnlocked(num)) {
         this.selectedMenuLevel = num;
         this.startGame();
       }
+    }
+  }
+
+  private navigateGameMode(direction: number): void {
+    const modes: GameMode[] = ['normal', 'zen', 'hardcore'];
+    const currentIdx = modes.indexOf(this.selectedGameMode);
+    let newIdx = currentIdx + direction;
+
+    // Wrap around
+    if (newIdx < 0) newIdx = modes.length - 1;
+    if (newIdx >= modes.length) newIdx = 0;
+
+    const newMode = modes[newIdx];
+
+    // Skip locked hardcore mode
+    if (newMode === 'hardcore' && !this.saveManager.isHardcoreUnlocked()) {
+      // Try next one
+      this.selectedGameMode = modes[(newIdx + direction + modes.length) % modes.length] as GameMode;
+      if (this.selectedGameMode === 'hardcore' && !this.saveManager.isHardcoreUnlocked()) {
+        this.selectedGameMode = 'normal';
+      }
+    } else {
+      this.selectedGameMode = newMode;
+    }
+  }
+
+  private dismissPopups(): void {
+    if (this.showStreakBonus) {
+      this.saveManager.claimStreakBonus(this.streakInfo.bonusPoints);
+      this.showStreakBonus = false;
+    }
+    if (this.hardcoreJustUnlocked) {
+      this.hardcoreJustUnlocked = false;
     }
   }
 
@@ -580,6 +648,11 @@ export class Game {
     }
 
     if (this.state.gameStatus === 'menu') {
+      // Handle popups first
+      if (this.showStreakBonus || this.hardcoreJustUnlocked) {
+        this.dismissPopups();
+        return;
+      }
       this.startGame();
     } else if (this.state.gameStatus === 'playing') {
       this.holdingJump = true;
@@ -720,6 +793,11 @@ export class Game {
     this.audio.resume();
     this.audio.playClick();
 
+    // Set game mode
+    this.gameMode = this.selectedGameMode;
+    this.musicIntensity = 0;
+    this.targetMusicIntensity = 0;
+
     this.loadLevel(this.selectedMenuLevel);
     this.player = new Player(this.saveManager.getCurrentSkin());
 
@@ -744,6 +822,10 @@ export class Game {
     this.lastPlatformLandTime = 0;
     this.beatPulse = 0;
 
+    // Reset tips
+    this.currentTip = null;
+    this.tipCooldown = 0;
+
     // Initialize spawning positions
     this.lastObstacleX = CONFIG.WIDTH + 200;
     this.lastPlatformX = CONFIG.WIDTH + 400;
@@ -754,9 +836,11 @@ export class Game {
     this.lastGemX = CONFIG.WIDTH + 300;
     this.lastPowerUpX = CONFIG.WIDTH + 800;
 
-    // Spawn initial obstacles
-    for (let i = 0; i < 5; i++) {
-      this.spawnObstacle();
+    // Spawn initial obstacles (skip for Zen mode)
+    if (this.gameMode !== 'zen') {
+      for (let i = 0; i < 5; i++) {
+        this.spawnObstacle();
+      }
     }
 
     // Spawn initial gems
@@ -764,21 +848,23 @@ export class Game {
       this.spawnGem();
     }
 
-    // Spawn level-specific elements
-    if (this.levelConfig.features.includes('platforms')) {
-      for (let i = 0; i < 3; i++) this.spawnPlatform();
-    }
-    if (this.levelConfig.features.includes('holes')) {
-      this.spawnHole();
-    }
-    if (this.levelConfig.features.includes('gravity')) {
-      this.spawnGravityZone();
-    }
-    if (this.levelConfig.features.includes('moving')) {
-      this.spawnMovingObstacle();
-    }
-    if (this.levelConfig.features.includes('portals')) {
-      this.spawnPortalPair();
+    // Spawn level-specific elements (skip hazards for Zen mode)
+    if (this.gameMode !== 'zen') {
+      if (this.levelConfig.features.includes('platforms')) {
+        for (let i = 0; i < 3; i++) this.spawnPlatform();
+      }
+      if (this.levelConfig.features.includes('holes')) {
+        this.spawnHole();
+      }
+      if (this.levelConfig.features.includes('gravity')) {
+        this.spawnGravityZone();
+      }
+      if (this.levelConfig.features.includes('moving')) {
+        this.spawnMovingObstacle();
+      }
+      if (this.levelConfig.features.includes('portals')) {
+        this.spawnPortalPair();
+      }
     }
 
     this.attemptNumber = this.saveManager.incrementAttempt();
@@ -934,8 +1020,16 @@ export class Game {
     // Trigger screen shake
     this.screenShake = 15;
 
-    // Submit score (save manager handles unlock checks internally)
-    this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+    // Only submit score for normal mode (Zen mode doesn't count, Hardcore has separate tracking)
+    if (this.gameMode === 'normal') {
+      this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+
+      // Check for hardcore unlock
+      this.saveManager.updateBestScoreForHardcore(this.state.score);
+      if (this.saveManager.checkHardcoreUnlock(this.state.score)) {
+        this.hardcoreJustUnlocked = true;
+      }
+    }
   }
 
   private addScorePopup(x: number, y: number, points: number, label?: string): void {
@@ -1244,47 +1338,49 @@ export class Game {
       portal.update(gameSpeed, 16);
     }
 
-    // Remove off-screen elements and spawn new ones
-    this.obstacles = this.obstacles.filter(o => o.x > -100);
-    while (this.obstacles.length < 5) {
-      this.spawnObstacle();
-    }
-
-    if (this.levelConfig.features.includes('platforms')) {
-      // Remove off-screen and fully crumbled platforms
-      this.platforms = this.platforms.filter(p => p.x > -150 && !p.shouldRemove());
-      while (this.platforms.length < 3) {
-        this.spawnPlatform();
+    // Remove off-screen elements and spawn new ones (skip hazards for Zen mode)
+    if (this.gameMode !== 'zen') {
+      this.obstacles = this.obstacles.filter(o => o.x > -100);
+      while (this.obstacles.length < 5) {
+        this.spawnObstacle();
       }
-    }
 
-    if (this.levelConfig.features.includes('holes')) {
-      this.holes = this.holes.filter(h => h.x > -150);
-      if (this.holes.length < 2) {
-        this.spawnHole();
+      if (this.levelConfig.features.includes('platforms')) {
+        // Remove off-screen and fully crumbled platforms
+        this.platforms = this.platforms.filter(p => p.x > -150 && !p.shouldRemove());
+        while (this.platforms.length < 3) {
+          this.spawnPlatform();
+        }
       }
-    }
 
-    if (this.levelConfig.features.includes('gravity')) {
-      this.gravityZones = this.gravityZones.filter(g => g.x > -300);
-      if (this.gravityZones.length < 1) {
-        this.spawnGravityZone();
+      if (this.levelConfig.features.includes('holes')) {
+        this.holes = this.holes.filter(h => h.x > -150);
+        if (this.holes.length < 2) {
+          this.spawnHole();
+        }
       }
-    }
 
-    if (this.levelConfig.features.includes('moving')) {
-      this.movingObstacles = this.movingObstacles.filter(m => m.baseX > -100);
-      if (this.movingObstacles.length < 2) {
-        this.spawnMovingObstacle();
+      if (this.levelConfig.features.includes('gravity')) {
+        this.gravityZones = this.gravityZones.filter(g => g.x > -300);
+        if (this.gravityZones.length < 1) {
+          this.spawnGravityZone();
+        }
       }
-    }
 
-    if (this.levelConfig.features.includes('portals')) {
-      this.portals = this.portals.filter(p => p.x > -100);
-      // Count portal pairs
-      const pairs = this.portals.length / 2;
-      if (pairs < 1) {
-        this.spawnPortalPair();
+      if (this.levelConfig.features.includes('moving')) {
+        this.movingObstacles = this.movingObstacles.filter(m => m.baseX > -100);
+        if (this.movingObstacles.length < 2) {
+          this.spawnMovingObstacle();
+        }
+      }
+
+      if (this.levelConfig.features.includes('portals')) {
+        this.portals = this.portals.filter(p => p.x > -100);
+        // Count portal pairs
+        const pairs = this.portals.length / 2;
+        if (pairs < 1) {
+          this.spawnPortalPair();
+        }
       }
     }
 
@@ -1294,9 +1390,9 @@ export class Game {
       this.spawnGem();
     }
 
-    // Remove collected/off-screen power-ups and spawn new ones (less frequently)
+    // Remove collected/off-screen power-ups and spawn new ones (skip for Hardcore mode)
     this.powerUps = this.powerUps.filter(p => !p.collected && p.x > -50);
-    if (this.powerUps.length < 1) {
+    if (this.powerUps.length < 1 && this.gameMode !== 'hardcore') {
       this.spawnPowerUp();
     }
 
@@ -1335,6 +1431,28 @@ export class Game {
 
     // Update skin trail
     this.updateSkinTrail();
+
+    // Update contextual tips
+    this.updateContextualTips(16); // Approximate 16ms per frame
+
+    // Update music intensity based on score/combo
+    this.updateMusicIntensity();
+  }
+
+  private updateMusicIntensity(): void {
+    // Calculate target intensity based on score and combo
+    const scoreIntensity = Math.min(this.state.score / 500, 1); // 0-1 based on score up to 500
+    const comboIntensity = Math.min(this.platformCombo / 5, 1); // 0-1 based on combo up to 5
+    const multiplierIntensity = Math.min(this.scoreMultiplier / this.maxMultiplier, 1);
+
+    // Target is weighted average
+    this.targetMusicIntensity = (scoreIntensity * 0.4) + (comboIntensity * 0.3) + (multiplierIntensity * 0.3);
+
+    // Smooth transition to target
+    this.musicIntensity += (this.targetMusicIntensity - this.musicIntensity) * 0.02;
+
+    // Apply intensity to audio
+    this.audio.setIntensity(this.musicIntensity);
   }
 
   private updateScreenShake(): void {
@@ -2330,6 +2448,115 @@ export class Game {
 
     // Render multiplier bar
     this.renderMultiplierBar();
+
+    // Render contextual tip
+    this.renderContextualTip();
+  }
+
+  private renderContextualTip(): void {
+    if (!this.currentTip || this.currentTip.life <= 0) return;
+
+    const tip = this.currentTip;
+    const alpha = Math.min(1, tip.life);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+
+    // Background box
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    const textWidth = this.ctx.measureText(tip.text).width;
+    const boxWidth = textWidth + 30;
+    const boxHeight = 35;
+    const boxX = Math.min(Math.max(tip.x - boxWidth / 2, 10), CONFIG.WIDTH - boxWidth - 10);
+    const boxY = Math.max(tip.y - boxHeight - 20, 10);
+
+    // Box with gradient
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 8);
+    this.ctx.fill();
+
+    // Border
+    this.ctx.strokeStyle = '#00ffff';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Tip icon
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffff00';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('💡', boxX + 8, boxY + 23);
+
+    // Tip text
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(tip.text, boxX + 28, boxY + 23);
+
+    this.ctx.restore();
+  }
+
+  private showTipIfNeeded(tipId: string, text: string, x: number, y: number): void {
+    // Don't show tips too frequently or if already showing one
+    if (this.tipCooldown > 0 || this.currentTip) return;
+    if (this.saveManager.hasSeenTip(tipId)) return;
+
+    this.currentTip = { id: tipId, text, x, y, life: 4 }; // 4 second duration
+    this.saveManager.markTipSeen(tipId);
+    this.tipCooldown = 5000; // 5 second cooldown between tips
+  }
+
+  private updateContextualTips(deltaTime: number): void {
+    // Update tip life
+    if (this.currentTip) {
+      this.currentTip.life -= deltaTime / 1000;
+      if (this.currentTip.life <= 0) {
+        this.currentTip = null;
+      }
+    }
+
+    // Update cooldown
+    if (this.tipCooldown > 0) {
+      this.tipCooldown -= deltaTime;
+    }
+
+    // Check for tip triggers (only in normal mode)
+    if (this.gameMode !== 'normal') return;
+
+    // Tip: First hole approaching
+    if (this.holes.length > 0) {
+      const nearestHole = this.holes.find(h => h.x > this.player.x && h.x < this.player.x + 300);
+      if (nearestHole) {
+        this.showTipIfNeeded('first_hole', 'Jump over the gap!', nearestHole.x, 150);
+      }
+    }
+
+    // Tip: First platform
+    if (this.platforms.length > 0 && this.state.jumpCount < 30) {
+      const nearestPlatform = this.platforms.find(p => p.x > this.player.x && p.x < this.player.x + 300);
+      if (nearestPlatform) {
+        this.showTipIfNeeded('first_platform', 'Land on platforms for bonus points!', nearestPlatform.x, 120);
+      }
+    }
+
+    // Tip: First power-up
+    if (this.powerUps.length > 0) {
+      const nearestPowerUp = this.powerUps.find(p => p.x > this.player.x && p.x < this.player.x + 250);
+      if (nearestPowerUp) {
+        this.showTipIfNeeded('first_powerup', 'Collect power-ups, press B to activate!', nearestPowerUp.x, 100);
+      }
+    }
+
+    // Tip: Double jump available
+    if (this.player.getStoredDoubleJumps() > 0 && !this.player.hasDoubleJump) {
+      this.showTipIfNeeded('double_jump_available', 'Press B for 8s of double jumps!', this.player.x + 50, this.player.y - 30);
+    }
+
+    // Tip: Gravity zone
+    if (this.gravityZones.length > 0) {
+      const nearestGravity = this.gravityZones.find(g => g.x > this.player.x && g.x < this.player.x + 300);
+      if (nearestGravity) {
+        this.showTipIfNeeded('first_gravity', 'Low gravity zone ahead - float gently!', nearestGravity.x, 100);
+      }
+    }
   }
 
   private getBPMColor(): string {
@@ -2376,6 +2603,12 @@ export class Game {
     // Level selector
     this.renderLevelSelector();
 
+    // Game mode selector
+    this.renderGameModeSelector();
+
+    // Daily streak display (top right)
+    this.renderStreakDisplay();
+
     // Total points
     this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#aaaaaa';
@@ -2392,7 +2625,142 @@ export class Game {
       this.ctx.fillText('TAP TO PLAY or press SPACE', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 30);
     }
 
+    // Streak bonus popup
+    if (this.showStreakBonus) {
+      this.renderStreakBonusPopup();
+    }
+
+    // Hardcore unlock notification
+    if (this.hardcoreJustUnlocked) {
+      this.renderHardcoreUnlockNotification();
+    }
+
     this.ctx.restore();
+  }
+
+  private renderGameModeSelector(): void {
+    const modes: { id: GameMode; name: string; desc: string; color: string; locked?: boolean }[] = [
+      { id: 'normal', name: 'Normal', desc: 'Classic gameplay', color: '#00ffff' },
+      { id: 'zen', name: 'Zen', desc: 'No obstacles, just vibes', color: '#88ff88' },
+      { id: 'hardcore', name: 'Hardcore', desc: 'No power-ups!', color: '#ff4444', locked: !this.saveManager.isHardcoreUnlocked() }
+    ];
+
+    const startX = 30;
+    const startY = 250;
+
+    this.ctx.textAlign = 'left';
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('MODE', startX, startY - 10);
+
+    for (let i = 0; i < modes.length; i++) {
+      const mode = modes[i];
+      const y = startY + i * 35;
+      const isSelected = this.selectedGameMode === mode.id;
+      const isLocked = mode.locked;
+
+      // Background
+      this.ctx.fillStyle = isSelected ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)';
+      if (isLocked) this.ctx.fillStyle = 'rgba(100, 100, 100, 0.1)';
+      this.ctx.fillRect(startX, y, 100, 28);
+
+      // Border
+      if (isSelected && !isLocked) {
+        this.ctx.strokeStyle = mode.color;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(startX, y, 100, 28);
+      }
+
+      // Mode name
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isLocked ? '#666666' : (isSelected ? mode.color : '#ffffff');
+      this.ctx.fillText(isLocked ? '🔒 ' + mode.name : mode.name, startX + 8, y + 18);
+    }
+
+    // Show requirement for locked hardcore
+    if (!this.saveManager.isHardcoreUnlocked()) {
+      const progress = this.saveManager.getBestScoreForHardcoreProgress();
+      this.ctx.font = '9px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#888888';
+      this.ctx.fillText(`Score ${HARDCORE_UNLOCK_SCORE} to unlock`, startX, startY + 115);
+      this.ctx.fillText(`Best: ${progress}/${HARDCORE_UNLOCK_SCORE}`, startX, startY + 127);
+    }
+
+    // Keyboard hint
+    if (!this.isMobile) {
+      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#666666';
+      this.ctx.fillText('Q/E: mode', startX, startY + 145);
+    }
+  }
+
+  private renderStreakDisplay(): void {
+    const streak = this.streakInfo.streak;
+    if (streak === 0) return;
+
+    const x = CONFIG.WIDTH - 30;
+    const y = 100;
+
+    this.ctx.textAlign = 'right';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+
+    // Fire emoji for streaks
+    const fireEmojis = streak >= 7 ? '🔥🔥🔥' : streak >= 3 ? '🔥🔥' : '🔥';
+
+    this.ctx.fillStyle = '#ff8800';
+    this.ctx.shadowColor = '#ff4400';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(`${fireEmojis} ${streak} day streak!`, x, y);
+    this.ctx.shadowBlur = 0;
+  }
+
+  private renderStreakBonusPopup(): void {
+    // Semi-transparent overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff8800';
+    this.ctx.shadowColor = '#ff4400';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('🔥 DAILY BONUS! 🔥', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 40);
+
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(`${this.streakInfo.streak} Day Streak!`, CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2);
+
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffff00';
+    this.ctx.fillText(`+${this.streakInfo.bonusPoints} POINTS`, CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 40);
+
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('Tap anywhere to claim', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+  }
+
+  private renderHardcoreUnlockNotification(): void {
+    // Semi-transparent overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff4444';
+    this.ctx.shadowColor = '#ff0000';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('💀 HARDCORE UNLOCKED! 💀', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 - 20);
+
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('No power-ups. Pure skill.', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 20);
+
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.fillText('Tap anywhere to continue', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 60);
   }
 
   private renderSkinSelector(): void {

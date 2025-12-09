@@ -174,5 +174,20 @@ export const STORAGE_KEYS = {
   ATTEMPTS: 'tempoDashAttempts',
   HAS_SEEN_TUTORIAL: 'tempoDashHasSeenTutorial',
   MUSIC_VOLUME: 'tempoDashMusicVolume',
-  SFX_VOLUME: 'tempoDashSfxVolume'
+  SFX_VOLUME: 'tempoDashSfxVolume',
+  // Daily login streak
+  LAST_LOGIN_DATE: 'tempoDashLastLoginDate',
+  LOGIN_STREAK: 'tempoDashLoginStreak',
+  STREAK_BONUS_CLAIMED: 'tempoDashStreakBonusClaimed',
+  // Game modes
+  HARDCORE_UNLOCKED: 'tempoDashHardcoreUnlocked',
+  BEST_SCORE_FOR_HARDCORE: 'tempoDashBestScoreForHardcore',
+  // Contextual tips
+  TIPS_SEEN: 'tempoDashTipsSeen'
 };
+
+// Game modes
+export type GameMode = 'normal' | 'zen' | 'hardcore';
+
+// Hardcore unlock requirement (score 500+ in a single run)
+export const HARDCORE_UNLOCK_SCORE = 500;
