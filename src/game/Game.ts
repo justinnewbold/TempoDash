@@ -2248,36 +2248,8 @@ export class Game {
     this.ctx.fillRect(pauseBtnX + pauseBtnSize / 2 - barWidth - 2, barY, barWidth, barHeight);
     this.ctx.fillRect(pauseBtnX + pauseBtnSize / 2 + 2, barY, barWidth, barHeight);
 
-    // Exit button/hint - show touch button on mobile, keyboard hint on desktop
-    if (this.isMobile) {
-      // Touch-friendly pause button
-      const btnX = CONFIG.WIDTH - 80;
-      const btnY = CONFIG.HEIGHT - 40;
-      const btnW = 70;
-      const btnH = 30;
-
-      // Store bounds for touch detection
-      this.exitButtonBounds = { x: btnX, y: btnY, width: btnW, height: btnH };
-
-      // Button background
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-      this.ctx.beginPath();
-      this.ctx.roundRect(btnX, btnY, btnW, btnH, 6);
-      this.ctx.fill();
-
-      // Button border
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      this.ctx.lineWidth = 1;
-      this.ctx.stroke();
-
-      // Button text
-      this.ctx.textAlign = 'center';
-      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      this.ctx.shadowBlur = 0;
-      this.ctx.fillText('PAUSE', btnX + btnW / 2, btnY + btnH / 2 + 4);
-    } else {
-      // Desktop: show P/ESC hint
+    // Desktop: show P to pause hint
+    if (!this.isMobile) {
       this.ctx.textAlign = 'right';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       this.ctx.shadowBlur = 0;
