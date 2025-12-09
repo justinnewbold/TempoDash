@@ -27,10 +27,10 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
-  // Double jump power-up
-  hasDoubleJump = false;
+  // Double jump power-up (stored boosts)
+  private storedDoubleJumps = 0;
+  hasDoubleJump = false; // Currently active for this jump sequence
   private doubleJumpUsed = false;
-  private doubleJumpEndTime = 0;
 
   // Squash & stretch
   private squashX = 1;
@@ -65,9 +65,9 @@ export class Player {
     this.targetSquashY = 1;
     this.wasGrounded = true;
     // Reset double jump
+    this.storedDoubleJumps = 0;
     this.hasDoubleJump = false;
     this.doubleJumpUsed = false;
-    this.doubleJumpEndTime = 0;
   }
 
   jump(): boolean {
@@ -205,26 +205,34 @@ export class Player {
     this.gravityMultiplier = multiplier;
   }
 
-  // Activate double jump power-up
-  activateDoubleJump(duration: number): void {
-    this.hasDoubleJump = true;
-    this.doubleJumpEndTime = Date.now() + duration;
-    this.doubleJumpUsed = false;
+  // Add a double jump boost to storage
+  addDoubleJumpBoost(): void {
+    this.storedDoubleJumps++;
   }
 
-  // Update power-up timers
+  // Get number of stored double jump boosts
+  getStoredDoubleJumps(): number {
+    return this.storedDoubleJumps;
+  }
+
+  // Activate a stored double jump boost (manual activation)
+  activateDoubleJumpBoost(): boolean {
+    if (this.storedDoubleJumps > 0 && !this.hasDoubleJump) {
+      this.storedDoubleJumps--;
+      this.hasDoubleJump = true;
+      this.doubleJumpUsed = false;
+      return true;
+    }
+    return false;
+  }
+
+  // Update power-up states
   updatePowerUps(): void {
-    // Check if double jump expired
-    if (this.hasDoubleJump && Date.now() > this.doubleJumpEndTime) {
+    // Deactivate double jump when landing (it was used or wasted)
+    if (this.hasDoubleJump && this.isGrounded && this.doubleJumpUsed) {
       this.hasDoubleJump = false;
       this.doubleJumpUsed = false;
     }
-  }
-
-  // Get remaining double jump time (for UI)
-  getDoubleJumpTimeRemaining(): number {
-    if (!this.hasDoubleJump) return 0;
-    return Math.max(0, this.doubleJumpEndTime - Date.now());
   }
 
   // Check if double jump was used (for particle effects)
