@@ -2132,14 +2132,14 @@ export class Game {
       this.ctx.shadowBlur = 0;
     }
 
-    // Boost button (bottom-right corner)
+    // Boost button (top-left corner, below score/jumps)
     const storedBoosts = this.player.getStoredDoubleJumps();
     const boostActive = this.player.hasDoubleJump;
 
     // Always show button position for consistency
     const boostBtnSize = 50;
-    const boostBtnX = CONFIG.WIDTH - boostBtnSize - 15;
-    const boostBtnY = CONFIG.HEIGHT - boostBtnSize - 15;
+    const boostBtnX = 20;
+    const boostBtnY = 70;
     this.boostButtonBounds = { x: boostBtnX, y: boostBtnY, width: boostBtnSize, height: boostBtnSize };
 
     if (storedBoosts > 0 || boostActive) {
