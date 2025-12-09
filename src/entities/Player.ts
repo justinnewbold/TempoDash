@@ -217,13 +217,13 @@ export class Player {
     return this.storedDoubleJumps;
   }
 
-  // Activate a stored double jump boost (manual activation - 10 second duration)
+  // Activate a stored double jump boost (manual activation - 8 second duration)
   activateDoubleJumpBoost(): boolean {
     if (this.storedDoubleJumps > 0 && !this.hasDoubleJump) {
       this.storedDoubleJumps--;
       this.hasDoubleJump = true;
       this.doubleJumpUsed = false;
-      this.doubleJumpEndTime = Date.now() + 10000; // 10 seconds
+      this.doubleJumpEndTime = Date.now() + 8000; // 8 seconds
       return true;
     }
     return false;

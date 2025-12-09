@@ -132,8 +132,8 @@ export class Game {
   private pauseButtonBounds = { x: 0, y: 0, width: 36, height: 36 };
   private pauseMenuButtons: { id: string; x: number; y: number; width: number; height: number }[] = [];
 
-  // Boost button
-  private boostButtonBounds = { x: 0, y: 0, width: 50, height: 50 };
+  // Boost button (top-left, below score)
+  private boostButtonBounds = { x: 20, y: 70, width: 50, height: 50 };
 
   // Tutorial overlay
   private showTutorial = false;
@@ -349,10 +349,12 @@ export class Game {
   }
 
   private isInBoostButton(x: number, y: number): boolean {
-    return x >= this.boostButtonBounds.x &&
-           x <= this.boostButtonBounds.x + this.boostButtonBounds.width &&
-           y >= this.boostButtonBounds.y &&
-           y <= this.boostButtonBounds.y + this.boostButtonBounds.height;
+    // Add padding for easier touch on mobile
+    const padding = 10;
+    return x >= this.boostButtonBounds.x - padding &&
+           x <= this.boostButtonBounds.x + this.boostButtonBounds.width + padding &&
+           y >= this.boostButtonBounds.y - padding &&
+           y <= this.boostButtonBounds.y + this.boostButtonBounds.height + padding;
   }
 
   private activateBoost(): void {
@@ -546,8 +548,8 @@ export class Game {
 
     // Check if touch is on UI buttons
     if (coords && this.state.gameStatus === 'playing') {
-      // Check boost button first (higher priority)
-      if (this.isInBoostButton(coords.x, coords.y) && this.player.getStoredDoubleJumps() > 0) {
+      // Check boost button first (higher priority) - let activateBoost handle validation
+      if (this.isInBoostButton(coords.x, coords.y)) {
         this.activateBoost();
         return;
       }
@@ -599,8 +601,8 @@ export class Game {
 
     // Check if click is on UI buttons (during gameplay)
     if (this.state.gameStatus === 'playing') {
-      // Check boost button first (higher priority)
-      if (this.isInBoostButton(coords.x, coords.y) && this.player.getStoredDoubleJumps() > 0) {
+      // Check boost button first (higher priority) - let activateBoost handle validation
+      if (this.isInBoostButton(coords.x, coords.y)) {
         this.activateBoost();
         return;
       }
