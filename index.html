@@ -7,6 +7,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#0a0a0f" />
+    <meta name="screen-orientation" content="landscape" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>TempoDash</title>
     <style>
       * {
@@ -25,6 +28,8 @@
         left: 0;
         right: 0;
         bottom: 0;
+        /* Prevent pull-to-refresh */
+        overscroll-behavior: none;
       }
       body {
         background: #0a0a0f;
@@ -32,6 +37,7 @@
         justify-content: center;
         align-items: center;
         min-height: 100vh;
+        min-height: 100dvh;
         min-height: -webkit-fill-available;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       }
@@ -40,6 +46,7 @@
         touch-action: manipulation;
         max-width: 100vw;
         max-height: 100vh;
+        max-height: 100dvh;
         max-height: -webkit-fill-available;
       }
       canvas {
@@ -48,14 +55,33 @@
         box-shadow: 0 0 40px rgba(0, 255, 255, 0.3);
         max-width: 100vw;
         max-height: 100vh;
+        max-height: 100dvh;
         max-height: -webkit-fill-available;
         touch-action: manipulation;
+      }
+      /* iOS standalone mode (Add to Home Screen) */
+      @media all and (display-mode: standalone) {
+        body {
+          padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        #game-container {
+          width: 100vw;
+          height: 100vh;
+          height: 100dvh;
+        }
+        canvas {
+          width: 100% !important;
+          height: 100% !important;
+          border-radius: 0;
+          box-shadow: none;
+        }
       }
       /* Mobile responsive sizing */
       @media (max-width: 850px) {
         #game-container {
           width: 100vw;
           height: 100vh;
+          height: 100dvh;
           height: -webkit-fill-available;
         }
         canvas {
@@ -69,6 +95,7 @@
         #game-container {
           width: 100vw;
           height: 100vh;
+          height: 100dvh;
           height: -webkit-fill-available;
         }
         canvas {
@@ -90,12 +117,39 @@
         border-radius: 0;
         box-shadow: none;
       }
+      /* Add to home screen prompt */
+      #install-prompt {
+        display: none;
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 255, 255, 0.9);
+        color: #000;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: bold;
+        z-index: 1000;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0, 255, 255, 0.5);
+        cursor: pointer;
+      }
+      #install-prompt.show {
+        display: block;
+        animation: slideUp 0.3s ease-out;
+      }
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
     </style>
   </head>
   <body>
     <div id="game-container">
       <canvas id="game-canvas"></canvas>
     </div>
+    <div id="install-prompt">For best experience, add to Home Screen!</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
