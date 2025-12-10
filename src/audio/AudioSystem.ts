@@ -202,6 +202,9 @@ export class AudioSystem {
       this.musicGain.gain.value = 0.35; // Music slightly quieter than SFX
       this.musicGain.connect(this.masterGain);
 
+      // Create reverb system
+      this.createReverbSystem();
+
       this.compressor = this.ctx.createDynamicsCompressor();
       this.compressor.threshold.value = -18;
       this.compressor.knee.value = 12;
@@ -211,6 +214,62 @@ export class AudioSystem {
       this.initialized = true;
     } catch (e) {
       console.error('Audio initialization error:', e);
+    }
+  }
+
+  private reverbGain: GainNode | null = null;
+  private reverbConvolver: ConvolverNode | null = null;
+  private reverbDry: GainNode | null = null;
+  private reverbWet: GainNode | null = null;
+
+  private createReverbSystem(): void {
+    if (!this.ctx || !this.masterGain) return;
+
+    // Create reverb nodes
+    this.reverbDry = this.ctx.createGain();
+    this.reverbWet = this.ctx.createGain();
+    this.reverbGain = this.ctx.createGain();
+
+    // Set initial wet/dry mix (20% wet for subtle reverb)
+    this.reverbDry.gain.value = 0.8;
+    this.reverbWet.gain.value = 0.2;
+    this.reverbGain.gain.value = 0.7;
+
+    // Create impulse response for reverb (algorithmic reverb)
+    const reverbTime = 1.5; // seconds
+    const sampleRate = this.ctx.sampleRate;
+    const length = sampleRate * reverbTime;
+    const impulse = this.ctx.createBuffer(2, length, sampleRate);
+
+    // Generate reverb impulse response
+    for (let channel = 0; channel < 2; channel++) {
+      const channelData = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        // Exponential decay with random noise
+        const decay = Math.pow(1 - i / length, 2);
+        channelData[i] = (Math.random() * 2 - 1) * decay;
+      }
+    }
+
+    this.reverbConvolver = this.ctx.createConvolver();
+    this.reverbConvolver.buffer = impulse;
+
+    // Connect reverb chain: source -> dry -> master
+    //                       source -> convolver -> wet -> master
+    this.reverbDry.connect(this.masterGain);
+    this.reverbConvolver.connect(this.reverbWet);
+    this.reverbWet.connect(this.masterGain);
+  }
+
+  // Route sound through reverb
+  private connectWithReverb(source: AudioNode): void {
+    if (!this.masterGain) return;
+
+    if (this.reverbDry && this.reverbConvolver) {
+      source.connect(this.reverbDry);
+      source.connect(this.reverbConvolver);
+    } else {
+      source.connect(this.masterGain);
     }
   }
 
@@ -694,96 +753,107 @@ export class AudioSystem {
     const isAmbient = style === 'ambient';
     const isSpace = style === 'space';
     const isGlitch = style === 'glitch';
-    const attackTime = (isAmbient || isSpace) ? 0.4 : 0.15;
-    const sustainTime = isAmbient ? 1.8 : 1.0;
-    const releaseTime = isAmbient ? 0.8 : 0.5;
+    const attackTime = (isAmbient || isSpace) ? 0.5 : 0.2;
+    const sustainTime = isAmbient ? 2.2 : 1.3;
+    const releaseTime = isAmbient ? 1.2 : 0.8; // Longer release for natural decay
     const totalTime = sustainTime + releaseTime;
-    const baseVol = 0.05 / chord.length;
+    const baseVol = this.humanize(0.06 / chord.length, 0.15); // Humanized volume
 
     // Play each note in the chord with multiple layers
     chord.forEach((freq, noteIndex) => {
+      // Humanize frequency slightly for organic feel
+      const humanizedFreq = this.humanize(freq, 0.003);
+
       // Layer 1: Main sine wave (warm foundation)
       const mainOsc = this.ctx!.createOscillator();
       const mainGain = this.ctx!.createGain();
       const mainFilter = this.ctx!.createBiquadFilter();
 
       mainOsc.type = 'sine';
-      mainOsc.frequency.value = freq;
+      mainOsc.frequency.value = humanizedFreq;
       mainOsc.detune.value = (noteIndex - 1) * 3;
 
       mainFilter.type = 'lowpass';
-      mainFilter.frequency.value = isAmbient ? 600 : 900;
-      mainFilter.Q.value = 0.5;
+      mainFilter.frequency.value = isAmbient ? 700 : 1000;
+      mainFilter.Q.value = 0.7;
 
+      // Smoother envelope with sustain plateau
       mainGain.gain.setValueAtTime(0, time);
       mainGain.gain.linearRampToValueAtTime(baseVol, time + attackTime);
-      mainGain.gain.setValueAtTime(baseVol * 0.85, time + sustainTime);
+      mainGain.gain.linearRampToValueAtTime(baseVol * 0.8, time + sustainTime);
       mainGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
 
       mainOsc.connect(mainFilter);
       mainFilter.connect(mainGain);
-      mainGain.connect(this.musicGain!);
+      // Route pads through reverb for spatial depth
+      this.connectWithReverb(mainGain);
       mainOsc.start(time);
-      mainOsc.stop(time + totalTime);
+      mainOsc.stop(time + totalTime + 0.1);
 
-      // Layer 2: Detuned saw/triangle for shimmer
-      [-8, 8].forEach(detune => {
+      // Layer 2: Detuned saw/triangle for shimmer (wider detune for richer sound)
+      [-12, 12].forEach(detune => {
         const shimmerOsc = this.ctx!.createOscillator();
         const shimmerGain = this.ctx!.createGain();
         const shimmerFilter = this.ctx!.createBiquadFilter();
 
         shimmerOsc.type = isGlitch ? 'square' : 'triangle';
-        shimmerOsc.frequency.value = freq;
+        shimmerOsc.frequency.value = humanizedFreq;
         shimmerOsc.detune.value = detune + (noteIndex - 1) * 2;
 
         shimmerFilter.type = 'lowpass';
-        shimmerFilter.frequency.value = isAmbient ? 1000 : 1500;
+        shimmerFilter.frequency.value = isAmbient ? 1200 : 1800;
+        shimmerFilter.Q.value = 0.5;
 
         shimmerGain.gain.setValueAtTime(0, time);
-        shimmerGain.gain.linearRampToValueAtTime(baseVol * 0.35, time + attackTime * 1.2);
-        shimmerGain.gain.setValueAtTime(baseVol * 0.3, time + sustainTime);
+        shimmerGain.gain.linearRampToValueAtTime(baseVol * 0.4, time + attackTime * 1.2);
+        shimmerGain.gain.linearRampToValueAtTime(baseVol * 0.3, time + sustainTime);
         shimmerGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
 
         shimmerOsc.connect(shimmerFilter);
         shimmerFilter.connect(shimmerGain);
-        shimmerGain.connect(this.musicGain!);
+        this.connectWithReverb(shimmerGain);
         shimmerOsc.start(time);
-        shimmerOsc.stop(time + totalTime);
+        shimmerOsc.stop(time + totalTime + 0.1);
       });
 
-      // Layer 3: Sub octave for depth (only on root notes)
+      // Layer 3: Sub octave for warmth and depth (only on root notes)
       if (noteIndex === 0) {
         const subOsc = this.ctx!.createOscillator();
         const subGain = this.ctx!.createGain();
+        const subFilter = this.ctx!.createBiquadFilter();
         subOsc.type = 'sine';
-        subOsc.frequency.value = freq / 2;
+        subOsc.frequency.value = humanizedFreq / 2;
+        subFilter.type = 'lowpass';
+        subFilter.frequency.value = 200; // Keep sub bass clean
         subGain.gain.setValueAtTime(0, time);
-        subGain.gain.linearRampToValueAtTime(baseVol * 0.4, time + attackTime * 1.5);
-        subGain.gain.setValueAtTime(baseVol * 0.35, time + sustainTime);
+        subGain.gain.linearRampToValueAtTime(baseVol * 0.5, time + attackTime * 1.5);
+        subGain.gain.linearRampToValueAtTime(baseVol * 0.4, time + sustainTime);
         subGain.gain.exponentialRampToValueAtTime(0.001, time + totalTime);
-        subOsc.connect(subGain);
-        subGain.connect(this.musicGain!);
+        subOsc.connect(subFilter);
+        subFilter.connect(subGain);
+        subGain.connect(this.musicGain!); // Sub goes direct, no reverb
         subOsc.start(time);
-        subOsc.stop(time + totalTime);
+        subOsc.stop(time + totalTime + 0.1);
       }
 
-      // Layer 4: High harmonic for air (subtle)
+      // Layer 4: High harmonic for air and sparkle (subtle)
       if (!isAmbient) {
         const airOsc = this.ctx!.createOscillator();
         const airGain = this.ctx!.createGain();
         const airFilter = this.ctx!.createBiquadFilter();
         airOsc.type = 'sine';
-        airOsc.frequency.value = freq * 2;
+        airOsc.frequency.value = humanizedFreq * 2;
         airFilter.type = 'lowpass';
-        airFilter.frequency.value = 3000;
+        airFilter.frequency.value = 4000;
         airGain.gain.setValueAtTime(0, time);
-        airGain.gain.linearRampToValueAtTime(baseVol * 0.1, time + attackTime);
-        airGain.gain.exponentialRampToValueAtTime(0.001, time + sustainTime * 0.7);
+        airGain.gain.linearRampToValueAtTime(baseVol * 0.12, time + attackTime);
+        airGain.gain.linearRampToValueAtTime(baseVol * 0.08, time + sustainTime * 0.6);
+        airGain.gain.exponentialRampToValueAtTime(0.001, time + sustainTime);
         airOsc.connect(airFilter);
         airFilter.connect(airGain);
-        airGain.connect(this.musicGain!);
+        this.connectWithReverb(airGain);
         airOsc.start(time);
-        airOsc.stop(time + sustainTime);
+        airOsc.stop(time + sustainTime + 0.1);
       }
     });
   }
@@ -1730,22 +1800,46 @@ export class AudioSystem {
     this.sfxVolume = sfxVol;
   }
 
-  // Set music intensity (0-1) - affects volume and layering
+  // Set music intensity (0-1) - affects volume, reverb, and dynamics
   setIntensity(intensity: number): void {
     this.intensity = Math.max(0, Math.min(1, intensity));
 
-    // Adjust music volume based on intensity (more intense = slightly louder)
-    if (this.musicGain && this.ctx) {
-      const baseVolume = this.musicVolume;
-      const intensityBoost = this.intensity * 0.15; // Up to 15% volume boost
-      const targetVolume = Math.min(1, baseVolume + intensityBoost);
+    if (!this.ctx) return;
 
-      // Smooth transition
+    // Adjust music volume based on intensity (more intense = louder)
+    if (this.musicGain) {
+      const baseVolume = this.musicVolume;
+      const intensityBoost = this.intensity * 0.2; // Up to 20% volume boost
+      const targetVolume = Math.min(1, baseVolume + intensityBoost);
       this.musicGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.1);
+    }
+
+    // Adjust reverb wet/dry mix (more intense = less reverb for clarity)
+    if (this.reverbWet && this.reverbDry) {
+      const wetAmount = 0.25 - (this.intensity * 0.15); // 25% -> 10% as intensity increases
+      const dryAmount = 0.75 + (this.intensity * 0.15); // 75% -> 90%
+      this.reverbWet.gain.setTargetAtTime(wetAmount, this.ctx.currentTime, 0.2);
+      this.reverbDry.gain.setTargetAtTime(dryAmount, this.ctx.currentTime, 0.2);
+    }
+
+    // Adjust compressor for more punch at high intensity
+    if (this.compressor) {
+      const threshold = -18 + (this.intensity * 6); // -18dB -> -12dB
+      this.compressor.threshold.setTargetAtTime(threshold, this.ctx.currentTime, 0.2);
     }
   }
 
   getIntensity(): number {
     return this.intensity;
+  }
+
+  // Humanization: slight random variation for more organic feel
+  private humanize(value: number, amount: number = 0.1): number {
+    return value * (1 + (Math.random() - 0.5) * amount);
+  }
+
+  // @ts-ignore - reserved for future timing humanization
+  private _humanizeTime(time: number, maxMs: number = 10): number {
+    return time + (Math.random() - 0.5) * (maxMs / 1000);
   }
 }
