@@ -24,6 +24,14 @@ export class Portal {
     return colors[Math.floor(Math.random() * colors.length)];
   }
 
+  // Convert hex color to rgba with specified alpha
+  private hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
   link(other: Portal): void {
     this.linkedPortal = other;
     other.linkedPortal = this;
@@ -83,10 +91,7 @@ export class Portal {
 
     // Portal ring effect
     const alpha = this.cooldown > 0 ? 0.3 : 0.8;
-    ctx.strokeStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
-    if (!ctx.strokeStyle.includes('rgba')) {
-      ctx.strokeStyle = this.color + (this.cooldown > 0 ? '4d' : 'cc');
-    }
+    ctx.strokeStyle = this.hexToRgba(this.color, alpha);
     ctx.lineWidth = 4;
 
     // Outer ellipse
@@ -97,7 +102,7 @@ export class Portal {
     // Inner spinning rings
     for (let i = 0; i < 3; i++) {
       const ringAlpha = (0.6 - i * 0.15) * (this.cooldown > 0 ? 0.3 : 1);
-      ctx.strokeStyle = `${this.color}${Math.floor(ringAlpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.strokeStyle = this.hexToRgba(this.color, ringAlpha);
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.ellipse(
@@ -118,8 +123,8 @@ export class Portal {
       centerX, centerY, this.width / 2
     );
     gradient.addColorStop(0, this.color);
-    gradient.addColorStop(0.3, `${this.color}88`);
-    gradient.addColorStop(0.7, `${this.color}22`);
+    gradient.addColorStop(0.3, this.hexToRgba(this.color, 0.53)); // ~0x88/255
+    gradient.addColorStop(0.7, this.hexToRgba(this.color, 0.13)); // ~0x22/255
     gradient.addColorStop(1, 'transparent');
 
     ctx.fillStyle = gradient;
