@@ -161,6 +161,9 @@ export class Game {
   private musicIntensity = 0;
   private targetMusicIntensity = 0;
 
+  // Frame timestamp cache (for performance - avoid multiple Date.now() calls)
+  private frameTime = 0;
+
   // Dev settings panel
   private devPanelOpen = false;
   private devSettings = {
@@ -371,32 +374,36 @@ export class Game {
   }
 
   private isInExitButton(x: number, y: number): boolean {
-    return x >= this.exitButtonBounds.x &&
-           x <= this.exitButtonBounds.x + this.exitButtonBounds.width &&
-           y >= this.exitButtonBounds.y &&
-           y <= this.exitButtonBounds.y + this.exitButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.exitButtonBounds.x - padding &&
+           x <= this.exitButtonBounds.x + this.exitButtonBounds.width + padding &&
+           y >= this.exitButtonBounds.y - padding &&
+           y <= this.exitButtonBounds.y + this.exitButtonBounds.height + padding;
   }
 
   private isInFullscreenButton(x: number, y: number): boolean {
-    return x >= this.fullscreenButtonBounds.x &&
-           x <= this.fullscreenButtonBounds.x + this.fullscreenButtonBounds.width &&
-           y >= this.fullscreenButtonBounds.y &&
-           y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.fullscreenButtonBounds.x - padding &&
+           x <= this.fullscreenButtonBounds.x + this.fullscreenButtonBounds.width + padding &&
+           y >= this.fullscreenButtonBounds.y - padding &&
+           y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height + padding;
   }
 
   private isInPauseButton(x: number, y: number): boolean {
-    return x >= this.pauseButtonBounds.x &&
-           x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width &&
-           y >= this.pauseButtonBounds.y &&
-           y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.pauseButtonBounds.x - padding &&
+           x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width + padding &&
+           y >= this.pauseButtonBounds.y - padding &&
+           y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height + padding;
   }
 
   private isInNextLevelButton(x: number, y: number): boolean {
+    const padding = 8; // Extra touch padding for mobile
     return this.nextLevelButtonBounds.width > 0 &&
-           x >= this.nextLevelButtonBounds.x &&
-           x <= this.nextLevelButtonBounds.x + this.nextLevelButtonBounds.width &&
-           y >= this.nextLevelButtonBounds.y &&
-           y <= this.nextLevelButtonBounds.y + this.nextLevelButtonBounds.height;
+           x >= this.nextLevelButtonBounds.x - padding &&
+           x <= this.nextLevelButtonBounds.x + this.nextLevelButtonBounds.width + padding &&
+           y >= this.nextLevelButtonBounds.y - padding &&
+           y <= this.nextLevelButtonBounds.y + this.nextLevelButtonBounds.height + padding;
   }
 
   private handlePauseMenuClick(x: number, y: number): void {
@@ -1235,6 +1242,7 @@ export class Game {
   }
 
   private gameLoop = (): void => {
+    this.frameTime = Date.now(); // Cache timestamp for this frame
     this.update();
     this.render();
     requestAnimationFrame(this.gameLoop);
@@ -1947,7 +1955,7 @@ export class Game {
 
     // Render holes (behind everything)
     for (const hole of this.holes) {
-      hole.render(this.ctx, this.levelConfig.background.groundColor);
+      hole.render(this.ctx, this.levelConfig.background.groundColor, this.frameTime);
     }
 
     // Render gravity zones
@@ -2050,7 +2058,7 @@ export class Game {
     );
 
     const alpha = this.edgeWarningIntensity * 0.4;
-    const pulseAlpha = alpha * (0.8 + Math.sin(Date.now() * 0.01) * 0.2);
+    const pulseAlpha = alpha * (0.8 + Math.sin(this.frameTime * 0.01) * 0.2);
 
     gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
     gradient.addColorStop(0.5, `rgba(255, 50, 0, ${pulseAlpha * 0.5})`);
@@ -2063,7 +2071,7 @@ export class Game {
     if (this.edgeWarningIntensity > 0.3) {
       const indicatorY = CONFIG.HEIGHT / 2;
       const indicatorX = CONFIG.WIDTH - 30;
-      const pulseSize = 10 + Math.sin(Date.now() * 0.015) * 5;
+      const pulseSize = 10 + Math.sin(this.frameTime * 0.015) * 5;
 
       this.ctx.fillStyle = `rgba(255, 100, 0, ${this.edgeWarningIntensity * 0.8})`;
       this.ctx.shadowColor = '#ff4400';
@@ -2186,7 +2194,7 @@ export class Game {
         this.player.width + auraSize
       );
 
-      const hue = 40 + Math.sin(Date.now() * 0.01) * 20;
+      const hue = 40 + Math.sin(this.frameTime * 0.01) * 20;
       gradient.addColorStop(0, `hsla(${hue}, 100%, 60%, ${auraIntensity * 0.3})`);
       gradient.addColorStop(0.5, `hsla(${hue - 20}, 100%, 50%, ${auraIntensity * 0.15})`);
       gradient.addColorStop(1, `hsla(${hue - 40}, 100%, 40%, 0)`);
@@ -2320,7 +2328,7 @@ export class Game {
     const barCount = 8;
     for (let i = 0; i < barCount; i++) {
       const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
-      const barHeight = 8 + this.beatVisualizerPulse * 12 * Math.sin(Date.now() * 0.01 + i);
+      const barHeight = 8 + this.beatVisualizerPulse * 12 * Math.sin(this.frameTime * 0.01 + i);
       const innerRadius = baseRadius * pulseScale + 4;
 
       const x1 = centerX + Math.cos(angle) * innerRadius;
@@ -2440,7 +2448,7 @@ export class Game {
     this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
 
     // Fullscreen toggle button (top-right corner)
-    const fsBtnSize = 36;
+    const fsBtnSize = 48; // Larger for better mobile touch targets
     const fsBtnX = CONFIG.WIDTH - fsBtnSize - 10;
     const fsBtnY = 10;
     this.fullscreenButtonBounds = { x: fsBtnX, y: fsBtnY, width: fsBtnSize, height: fsBtnSize };
@@ -2521,7 +2529,7 @@ export class Game {
     this.ctx.lineCap = 'butt';
 
     // Pause button - next to fullscreen button
-    const pauseBtnSize = 36;
+    const pauseBtnSize = 48; // Larger for better mobile touch targets
     const pauseBtnX = fsBtnX - pauseBtnSize - 8;
     const pauseBtnY = fsBtnY;
     this.pauseButtonBounds = { x: pauseBtnX, y: pauseBtnY, width: pauseBtnSize, height: pauseBtnSize };
@@ -3299,7 +3307,7 @@ export class Game {
     // Tap to continue
     this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#888888';
-    const pulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    const pulse = Math.sin(this.frameTime * 0.005) * 0.3 + 0.7;
     this.ctx.globalAlpha = pulse;
     this.ctx.fillText(this.isMobile ? 'TAP TO START' : 'PRESS ANY KEY TO START', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 40);
     this.ctx.globalAlpha = 1;

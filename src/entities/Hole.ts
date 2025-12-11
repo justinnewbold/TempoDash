@@ -25,6 +25,9 @@ export class Hole {
   private warningIntensity = 0;
   private readonly warningDistance = 150; // How far ahead to start warning
 
+  // Frame time cache for render (passed from game loop)
+  private _frameTime = 0;
+
   constructor(x: number, width?: number, type?: HoleType) {
     this.x = x;
     this.type = type ?? (Math.random() > 0.7 ? 'crystal' : 'normal');
@@ -155,7 +158,8 @@ export class Hole {
     return this.warningIntensity;
   }
 
-  render(ctx: CanvasRenderingContext2D, _groundColor: string): void {
+  render(ctx: CanvasRenderingContext2D, _groundColor: string, frameTime?: number): void {
+    this._frameTime = frameTime ?? Date.now();
     const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
     const glowIntensity = Math.sin(this.glowPhase) * 0.3 + 0.7;
 
@@ -305,7 +309,7 @@ export class Hole {
     const dangerColor = this.type === 'crystal' ? [68, 170, 255] : [255, 80, 80];
 
     // Pulsing warning glow ahead of the hole
-    const pulseRate = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+    const pulseRate = Math.sin(this._frameTime * 0.01) * 0.3 + 0.7;
     const glowAlpha = intensity * pulseRate * 0.4;
 
     // Warning beam from above
@@ -322,7 +326,7 @@ export class Hole {
 
     // Danger indicator arrows
     if (intensity > 0.3) {
-      const arrowY = groundY - 40 - Math.sin(Date.now() * 0.008) * 10;
+      const arrowY = groundY - 40 - Math.sin(this._frameTime * 0.008) * 10;
       const arrowAlpha = (intensity - 0.3) * 1.4;
 
       ctx.save();
@@ -351,7 +355,7 @@ export class Hole {
     }
 
     // Edge warning pulses
-    const edgePulse = Math.sin(Date.now() * 0.015) * 0.5 + 0.5;
+    const edgePulse = Math.sin(this._frameTime * 0.015) * 0.5 + 0.5;
     ctx.strokeStyle = `rgba(${dangerColor.join(',')}, ${intensity * edgePulse * 0.6})`;
     ctx.lineWidth = 3;
     ctx.setLineDash([5, 5]);
