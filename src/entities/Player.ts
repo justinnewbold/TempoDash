@@ -27,8 +27,7 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
-  // Double jump power-up (stored boosts with timed activation)
-  private storedDoubleJumps = 0;
+  // Double jump power-up (auto-activates on collection for 8 seconds)
   hasDoubleJump = false; // Currently active (timed)
   private doubleJumpUsed = false;
   private doubleJumpEndTime = 0; // When the current boost expires
@@ -66,7 +65,6 @@ export class Player {
     this.targetSquashY = 1;
     this.wasGrounded = true;
     // Reset double jump
-    this.storedDoubleJumps = 0;
     this.hasDoubleJump = false;
     this.doubleJumpUsed = false;
     this.doubleJumpEndTime = 0;
@@ -207,26 +205,11 @@ export class Player {
     this.gravityMultiplier = multiplier;
   }
 
-  // Add a double jump boost to storage
+  // Auto-activate double jump on collection (8 second duration)
   addDoubleJumpBoost(): void {
-    this.storedDoubleJumps++;
-  }
-
-  // Get number of stored double jump boosts
-  getStoredDoubleJumps(): number {
-    return this.storedDoubleJumps;
-  }
-
-  // Activate a stored double jump boost (manual activation - 8 second duration)
-  activateDoubleJumpBoost(): boolean {
-    if (this.storedDoubleJumps > 0 && !this.hasDoubleJump) {
-      this.storedDoubleJumps--;
-      this.hasDoubleJump = true;
-      this.doubleJumpUsed = false;
-      this.doubleJumpEndTime = Date.now() + 8000; // 8 seconds
-      return true;
-    }
-    return false;
+    this.hasDoubleJump = true;
+    this.doubleJumpUsed = false;
+    this.doubleJumpEndTime = Date.now() + 8000; // 8 seconds
   }
 
   // Get remaining time on current boost (for UI display)

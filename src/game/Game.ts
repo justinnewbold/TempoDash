@@ -132,8 +132,6 @@ export class Game {
   private pauseButtonBounds = { x: 0, y: 0, width: 36, height: 36 };
   private pauseMenuButtons: { id: string; x: number; y: number; width: number; height: number }[] = [];
 
-  // Boost button (top-left, below score)
-  private boostButtonBounds = { x: 20, y: 70, width: 50, height: 50 };
 
   // Tutorial overlay
   private showTutorial = false;
@@ -371,23 +369,6 @@ export class Game {
            y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height;
   }
 
-  private isInBoostButton(x: number, y: number): boolean {
-    // Add padding for easier touch on mobile
-    const padding = 10;
-    return x >= this.boostButtonBounds.x - padding &&
-           x <= this.boostButtonBounds.x + this.boostButtonBounds.width + padding &&
-           y >= this.boostButtonBounds.y - padding &&
-           y <= this.boostButtonBounds.y + this.boostButtonBounds.height + padding;
-  }
-
-  private activateBoost(): void {
-    if (this.player.activateDoubleJumpBoost()) {
-      this.audio.playPowerUp();
-      // Visual feedback
-      this.particles.push(...this.player.createDoubleJumpParticles());
-    }
-  }
-
   private handlePauseMenuClick(x: number, y: number): void {
     // Check if clicking on a pause menu button
     for (const btn of this.pauseMenuButtons) {
@@ -475,9 +456,6 @@ export class Game {
         e.preventDefault();
         this.holdingJump = true;
         this.tryJump();
-      } else if (e.code === 'KeyB') {
-        // Activate boost with B key
-        this.activateBoost();
       } else if (e.code === 'Escape' || e.code === 'KeyP') {
         this.pauseGame();
       }
@@ -616,12 +594,6 @@ export class Game {
 
     // Check if touch is on UI buttons
     if (coords && this.state.gameStatus === 'playing') {
-      // Check boost button first (higher priority) - let activateBoost handle validation
-      if (this.isInBoostButton(coords.x, coords.y)) {
-        this.activateBoost();
-        return;
-      }
-
       // Check pause button
       if (this.isInPauseButton(coords.x, coords.y)) {
         this.pauseGame();
@@ -674,12 +646,6 @@ export class Game {
 
     // Check if click is on UI buttons (during gameplay)
     if (this.state.gameStatus === 'playing') {
-      // Check boost button first (higher priority) - let activateBoost handle validation
-      if (this.isInBoostButton(coords.x, coords.y)) {
-        this.activateBoost();
-        return;
-      }
-
       // Check pause button
       if (this.isInPauseButton(coords.x, coords.y)) {
         this.pauseGame();
@@ -1281,12 +1247,14 @@ export class Game {
 
       if (powerUp.checkCollection(this.player.x, this.player.y, this.player.width, this.player.height)) {
         if (powerUp.type === 'doubleJump') {
-          // Add to stored boosts instead of auto-activating
+          // Auto-activate double jump for 8 seconds
           this.player.addDoubleJumpBoost();
-          this.addScorePopup(powerUp.x, powerUp.y, 0, '+1 BOOST!');
+          this.addScorePopup(powerUp.x, powerUp.y, 0, '2X JUMP!');
           this.audio.playPowerUp();
           // Create collection particles
           this.particles.push(...this.createPowerUpParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2));
+          // Visual feedback particles
+          this.particles.push(...this.player.createDoubleJumpParticles());
         }
       }
     }
@@ -2255,73 +2223,26 @@ export class Game {
       this.ctx.shadowBlur = 0;
     }
 
-    // Boost button (top-left corner, below score/jumps)
-    const storedBoosts = this.player.getStoredDoubleJumps();
-    const boostActive = this.player.hasDoubleJump;
+    // Double jump indicator (shows when active)
+    if (this.player.hasDoubleJump) {
+      const timeRemaining = Math.ceil(this.player.getDoubleJumpTimeRemaining() / 1000);
+      const indicatorX = 20;
+      const indicatorY = 70;
 
-    // Always show button position for consistency
-    const boostBtnSize = 50;
-    const boostBtnX = 20;
-    const boostBtnY = 70;
-    this.boostButtonBounds = { x: boostBtnX, y: boostBtnY, width: boostBtnSize, height: boostBtnSize };
-
-    if (storedBoosts > 0 || boostActive) {
-      // Button background
-      const bgAlpha = storedBoosts > 0 ? 0.8 : 0.4;
-      this.ctx.fillStyle = boostActive ? 'rgba(255, 136, 0, 0.9)' : `rgba(255, 136, 0, ${bgAlpha})`;
+      // Glowing background pill
+      this.ctx.fillStyle = 'rgba(255, 136, 0, 0.9)';
       this.ctx.shadowColor = '#ff8800';
-      this.ctx.shadowBlur = boostActive ? 15 : (storedBoosts > 0 ? 10 : 0);
+      this.ctx.shadowBlur = 15;
       this.ctx.beginPath();
-      this.ctx.roundRect(boostBtnX, boostBtnY, boostBtnSize, boostBtnSize, 10);
+      this.ctx.roundRect(indicatorX, indicatorY, 100, 30, 15);
       this.ctx.fill();
-
-      // Button border
-      this.ctx.strokeStyle = boostActive ? '#ffcc00' : 'rgba(255, 200, 100, 0.6)';
-      this.ctx.lineWidth = boostActive ? 3 : 2;
-      this.ctx.stroke();
       this.ctx.shadowBlur = 0;
 
-      // Rocket/boost icon
+      // Text
       this.ctx.fillStyle = '#ffffff';
-      this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText('🚀', boostBtnX + boostBtnSize / 2, boostBtnY + boostBtnSize / 2 + 7);
-
-      // Count badge (when more than 1)
-      if (storedBoosts > 1) {
-        const badgeX = boostBtnX + boostBtnSize - 8;
-        const badgeY = boostBtnY + 8;
-        const badgeRadius = 10;
-
-        // Badge background
-        this.ctx.fillStyle = '#ff4444';
-        this.ctx.beginPath();
-        this.ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        // Badge border
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
-
-        // Badge number
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
-        this.ctx.fillText(storedBoosts.toString(), badgeX, badgeY + 4);
-      } else if (storedBoosts === 1) {
-        // Show "1" indicator subtly
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
-        this.ctx.fillText('x1', boostBtnX + boostBtnSize / 2, boostBtnY + boostBtnSize - 5);
-      }
-
-      // Timer display when boost is active
-      if (boostActive) {
-        const timeRemaining = Math.ceil(this.player.getDoubleJumpTimeRemaining() / 1000);
-        this.ctx.fillStyle = '#ffff00';
-        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
-        this.ctx.fillText(`${timeRemaining}s`, boostBtnX + boostBtnSize / 2, boostBtnY - 5);
-      }
+      this.ctx.fillText(`🚀 2X JUMP ${timeRemaining}s`, indicatorX + 50, indicatorY + 20);
     }
 
     // Attempt number
@@ -2541,13 +2462,8 @@ export class Game {
     if (this.powerUps.length > 0) {
       const nearestPowerUp = this.powerUps.find(p => p.x > this.player.x && p.x < this.player.x + 250);
       if (nearestPowerUp) {
-        this.showTipIfNeeded('first_powerup', 'Collect power-ups, press B to activate!', nearestPowerUp.x, 100);
+        this.showTipIfNeeded('first_powerup', 'Collect power-ups for 8s of double jumps!', nearestPowerUp.x, 100);
       }
-    }
-
-    // Tip: Double jump available
-    if (this.player.getStoredDoubleJumps() > 0 && !this.player.hasDoubleJump) {
-      this.showTipIfNeeded('double_jump_available', 'Press B for 8s of double jumps!', this.player.x + 50, this.player.y - 30);
     }
 
     // Tip: Gravity zone
