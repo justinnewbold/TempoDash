@@ -161,6 +161,27 @@ export class Game {
   private musicIntensity = 0;
   private targetMusicIntensity = 0;
 
+  // Frame timestamp cache (for performance - avoid multiple Date.now() calls)
+  private frameTime = 0;
+
+  // Dev settings panel
+  private devPanelOpen = false;
+  private devSettings = {
+    bpmOverride: 0,        // 0 means use normal BPM, otherwise override
+    speedMultiplier: 1.0,  // Multiplier for game speed
+    jumpForce: CONFIG.JUMP_FORCE,
+    gravity: CONFIG.GRAVITY,
+    obstacleSpeed: CONFIG.BASE_OBSTACLE_SPEED,
+    invincible: false
+  };
+  private devSliders: { key: keyof typeof Game.prototype.devSettings; min: number; max: number; step: number; label: string }[] = [
+    { key: 'bpmOverride', min: 0, max: 200, step: 5, label: 'BPM Override (0=auto)' },
+    { key: 'speedMultiplier', min: 0.1, max: 3, step: 0.1, label: 'Speed Multiplier' },
+    { key: 'jumpForce', min: -25, max: -5, step: 1, label: 'Jump Force' },
+    { key: 'gravity', min: 0.2, max: 2, step: 0.1, label: 'Gravity' },
+    { key: 'obstacleSpeed', min: 2, max: 20, step: 1, label: 'Obstacle Speed' }
+  ];
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = CONFIG.WIDTH;
@@ -353,32 +374,36 @@ export class Game {
   }
 
   private isInExitButton(x: number, y: number): boolean {
-    return x >= this.exitButtonBounds.x &&
-           x <= this.exitButtonBounds.x + this.exitButtonBounds.width &&
-           y >= this.exitButtonBounds.y &&
-           y <= this.exitButtonBounds.y + this.exitButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.exitButtonBounds.x - padding &&
+           x <= this.exitButtonBounds.x + this.exitButtonBounds.width + padding &&
+           y >= this.exitButtonBounds.y - padding &&
+           y <= this.exitButtonBounds.y + this.exitButtonBounds.height + padding;
   }
 
   private isInFullscreenButton(x: number, y: number): boolean {
-    return x >= this.fullscreenButtonBounds.x &&
-           x <= this.fullscreenButtonBounds.x + this.fullscreenButtonBounds.width &&
-           y >= this.fullscreenButtonBounds.y &&
-           y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.fullscreenButtonBounds.x - padding &&
+           x <= this.fullscreenButtonBounds.x + this.fullscreenButtonBounds.width + padding &&
+           y >= this.fullscreenButtonBounds.y - padding &&
+           y <= this.fullscreenButtonBounds.y + this.fullscreenButtonBounds.height + padding;
   }
 
   private isInPauseButton(x: number, y: number): boolean {
-    return x >= this.pauseButtonBounds.x &&
-           x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width &&
-           y >= this.pauseButtonBounds.y &&
-           y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height;
+    const padding = 8; // Extra touch padding for mobile
+    return x >= this.pauseButtonBounds.x - padding &&
+           x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width + padding &&
+           y >= this.pauseButtonBounds.y - padding &&
+           y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height + padding;
   }
 
   private isInNextLevelButton(x: number, y: number): boolean {
+    const padding = 8; // Extra touch padding for mobile
     return this.nextLevelButtonBounds.width > 0 &&
-           x >= this.nextLevelButtonBounds.x &&
-           x <= this.nextLevelButtonBounds.x + this.nextLevelButtonBounds.width &&
-           y >= this.nextLevelButtonBounds.y &&
-           y <= this.nextLevelButtonBounds.y + this.nextLevelButtonBounds.height;
+           x >= this.nextLevelButtonBounds.x - padding &&
+           x <= this.nextLevelButtonBounds.x + this.nextLevelButtonBounds.width + padding &&
+           y >= this.nextLevelButtonBounds.y - padding &&
+           y <= this.nextLevelButtonBounds.y + this.nextLevelButtonBounds.height + padding;
   }
 
   private handlePauseMenuClick(x: number, y: number): void {
@@ -454,6 +479,18 @@ export class Game {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    // Toggle dev panel with backtick
+    if (e.code === 'Backquote') {
+      this.devPanelOpen = !this.devPanelOpen;
+      return;
+    }
+
+    // Handle dev panel controls when open
+    if (this.devPanelOpen) {
+      this.handleDevPanelKey(e);
+      return;
+    }
+
     // Handle tutorial dismissal
     if (this.showTutorial) {
       this.showTutorial = false;
@@ -585,6 +622,119 @@ export class Game {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       this.holdingJump = false;
     }
+  }
+
+  // Dev panel selected slider index
+  private devSelectedSlider = 0;
+
+  private handleDevPanelKey(e: KeyboardEvent): void {
+    e.preventDefault();
+
+    if (e.code === 'ArrowUp') {
+      this.devSelectedSlider = Math.max(0, this.devSelectedSlider - 1);
+    } else if (e.code === 'ArrowDown') {
+      this.devSelectedSlider = Math.min(this.devSliders.length, this.devSelectedSlider + 1);
+    } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+      const direction = e.code === 'ArrowLeft' ? -1 : 1;
+
+      if (this.devSelectedSlider < this.devSliders.length) {
+        const slider = this.devSliders[this.devSelectedSlider];
+        const currentValue = this.devSettings[slider.key] as number;
+        const newValue = Math.max(slider.min, Math.min(slider.max, currentValue + slider.step * direction));
+        (this.devSettings[slider.key] as number) = Math.round(newValue * 100) / 100;
+      } else {
+        // Toggle invincible
+        this.devSettings.invincible = !this.devSettings.invincible;
+      }
+    } else if (e.code === 'KeyR') {
+      // Reset to defaults
+      this.devSettings.bpmOverride = 0;
+      this.devSettings.speedMultiplier = 1.0;
+      this.devSettings.jumpForce = CONFIG.JUMP_FORCE;
+      this.devSettings.gravity = CONFIG.GRAVITY;
+      this.devSettings.obstacleSpeed = CONFIG.BASE_OBSTACLE_SPEED;
+      this.devSettings.invincible = false;
+    }
+  }
+
+  private renderDevPanel(): void {
+    const panelX = 10;
+    const panelY = 60;
+    const panelWidth = 280;
+    const panelHeight = 220;
+
+    // Background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    this.ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+    this.ctx.strokeStyle = '#00ff00';
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+    // Title
+    this.ctx.fillStyle = '#00ff00';
+    this.ctx.font = 'bold 14px monospace';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('DEV SETTINGS (` to close)', panelX + 10, panelY + 20);
+    this.ctx.font = '10px monospace';
+    this.ctx.fillStyle = '#888';
+    this.ctx.fillText('↑↓ select, ←→ adjust, R reset', panelX + 10, panelY + 35);
+
+    // Sliders
+    let y = panelY + 55;
+    const sliderWidth = 100;
+
+    for (let i = 0; i < this.devSliders.length; i++) {
+      const slider = this.devSliders[i];
+      const value = this.devSettings[slider.key] as number;
+      const isSelected = i === this.devSelectedSlider;
+
+      // Label
+      this.ctx.fillStyle = isSelected ? '#00ff00' : '#aaa';
+      this.ctx.font = isSelected ? 'bold 11px monospace' : '11px monospace';
+      this.ctx.fillText(slider.label, panelX + 10, y);
+
+      // Slider track
+      const trackX = panelX + 170;
+      this.ctx.fillStyle = '#333';
+      this.ctx.fillRect(trackX, y - 8, sliderWidth, 10);
+
+      // Slider fill
+      const percent = (value - slider.min) / (slider.max - slider.min);
+      this.ctx.fillStyle = isSelected ? '#00ff00' : '#00aa00';
+      this.ctx.fillRect(trackX, y - 8, sliderWidth * percent, 10);
+
+      // Value
+      this.ctx.fillStyle = isSelected ? '#fff' : '#aaa';
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText(value.toFixed(1), panelX + panelWidth - 10, y);
+      this.ctx.textAlign = 'left';
+
+      y += 25;
+    }
+
+    // Invincible toggle
+    const isSelected = this.devSelectedSlider === this.devSliders.length;
+    this.ctx.fillStyle = isSelected ? '#00ff00' : '#aaa';
+    this.ctx.font = isSelected ? 'bold 11px monospace' : '11px monospace';
+    this.ctx.fillText('Invincible', panelX + 10, y);
+    this.ctx.fillStyle = this.devSettings.invincible ? '#00ff00' : '#ff0000';
+    this.ctx.fillText(this.devSettings.invincible ? '[ON]' : '[OFF]', panelX + 170, y);
+
+    // Current game state
+    y += 25;
+    this.ctx.fillStyle = '#888';
+    this.ctx.font = '10px monospace';
+    this.ctx.fillText(`Current BPM: ${this.state.bpm} | Speed: ${(this.getDevGameSpeed()).toFixed(2)}`, panelX + 10, y);
+  }
+
+  private getDevGameSpeed(): number {
+    let baseSpeed = this.audio.getGameSpeed();
+
+    if (this.devSettings.bpmOverride > 0) {
+      baseSpeed = this.devSettings.bpmOverride / 60;
+    }
+
+    return baseSpeed * this.devSettings.speedMultiplier;
   }
 
   private handleTouchStart(e?: TouchEvent): void {
@@ -1092,13 +1242,14 @@ export class Game {
   }
 
   private gameLoop = (): void => {
+    this.frameTime = Date.now(); // Cache timestamp for this frame
     this.update();
     this.render();
     requestAnimationFrame(this.gameLoop);
   };
 
   private update(): void {
-    const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
+    const gameSpeed = this.state.gameStatus === 'playing' ? this.getDevGameSpeed() : 0.3;
 
     // Update background
     this.background.update(gameSpeed);
@@ -1108,6 +1259,10 @@ export class Game {
       this.updateParticles(gameSpeed);
       return;
     }
+
+    // Apply dev settings to player physics
+    this.player.customGravity = this.devSettings.gravity !== CONFIG.GRAVITY ? this.devSettings.gravity : null;
+    this.player.customJumpForce = this.devSettings.jumpForce !== CONFIG.JUMP_FORCE ? this.devSettings.jumpForce : null;
 
     // Update player
     this.player.update(gameSpeed);
@@ -1204,10 +1359,11 @@ export class Game {
     }
 
     // Update and check obstacles
+    const customObstacleSpeed = this.devSettings.obstacleSpeed !== CONFIG.BASE_OBSTACLE_SPEED ? this.devSettings.obstacleSpeed : undefined;
     for (const obstacle of this.obstacles) {
-      obstacle.update(gameSpeed);
+      obstacle.update(gameSpeed, customObstacleSpeed);
 
-      if (obstacle.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      if (this.gameMode !== 'zen' && !this.devSettings.invincible && obstacle.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.gameOver();
         return;
@@ -1245,8 +1401,8 @@ export class Game {
         hole.markWarningPlayed();
       }
 
-      // Check for death
-      if (hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      // Check for death (skip in zen mode or invincible)
+      if (this.gameMode !== 'zen' && !this.devSettings.invincible && hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.audio.playFallIntoHole();
         this.gameOver();
@@ -1316,7 +1472,7 @@ export class Game {
     // Update and check moving obstacles (Level 5+)
     for (const moving of this.movingObstacles) {
       moving.update(gameSpeed);
-      if (moving.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      if (this.gameMode !== 'zen' && !this.devSettings.invincible && moving.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.gameOver();
         return;
@@ -1780,7 +1936,7 @@ export class Game {
   }
 
   private render(): void {
-    const gameSpeed = this.state.gameStatus === 'playing' ? this.audio.getGameSpeed() : 0.3;
+    const gameSpeed = this.state.gameStatus === 'playing' ? this.getDevGameSpeed() : 0.3;
 
     // Apply screen shake
     this.ctx.save();
@@ -1799,7 +1955,7 @@ export class Game {
 
     // Render holes (behind everything)
     for (const hole of this.holes) {
-      hole.render(this.ctx, this.levelConfig.background.groundColor);
+      hole.render(this.ctx, this.levelConfig.background.groundColor, this.frameTime);
     }
 
     // Render gravity zones
@@ -1883,6 +2039,11 @@ export class Game {
     if (this.showTutorial) {
       this.renderTutorial();
     }
+
+    // Render dev panel on top of everything
+    if (this.devPanelOpen) {
+      this.renderDevPanel();
+    }
   }
 
   private renderEdgeWarning(): void {
@@ -1897,7 +2058,7 @@ export class Game {
     );
 
     const alpha = this.edgeWarningIntensity * 0.4;
-    const pulseAlpha = alpha * (0.8 + Math.sin(Date.now() * 0.01) * 0.2);
+    const pulseAlpha = alpha * (0.8 + Math.sin(this.frameTime * 0.01) * 0.2);
 
     gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
     gradient.addColorStop(0.5, `rgba(255, 50, 0, ${pulseAlpha * 0.5})`);
@@ -1910,7 +2071,7 @@ export class Game {
     if (this.edgeWarningIntensity > 0.3) {
       const indicatorY = CONFIG.HEIGHT / 2;
       const indicatorX = CONFIG.WIDTH - 30;
-      const pulseSize = 10 + Math.sin(Date.now() * 0.015) * 5;
+      const pulseSize = 10 + Math.sin(this.frameTime * 0.015) * 5;
 
       this.ctx.fillStyle = `rgba(255, 100, 0, ${this.edgeWarningIntensity * 0.8})`;
       this.ctx.shadowColor = '#ff4400';
@@ -2033,7 +2194,7 @@ export class Game {
         this.player.width + auraSize
       );
 
-      const hue = 40 + Math.sin(Date.now() * 0.01) * 20;
+      const hue = 40 + Math.sin(this.frameTime * 0.01) * 20;
       gradient.addColorStop(0, `hsla(${hue}, 100%, 60%, ${auraIntensity * 0.3})`);
       gradient.addColorStop(0.5, `hsla(${hue - 20}, 100%, 50%, ${auraIntensity * 0.15})`);
       gradient.addColorStop(1, `hsla(${hue - 40}, 100%, 40%, 0)`);
@@ -2167,7 +2328,7 @@ export class Game {
     const barCount = 8;
     for (let i = 0; i < barCount; i++) {
       const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
-      const barHeight = 8 + this.beatVisualizerPulse * 12 * Math.sin(Date.now() * 0.01 + i);
+      const barHeight = 8 + this.beatVisualizerPulse * 12 * Math.sin(this.frameTime * 0.01 + i);
       const innerRadius = baseRadius * pulseScale + 4;
 
       const x1 = centerX + Math.cos(angle) * innerRadius;
@@ -2287,7 +2448,7 @@ export class Game {
     this.ctx.fillText(`Attempt #${this.attemptNumber}`, 20, CONFIG.HEIGHT - 15);
 
     // Fullscreen toggle button (top-right corner)
-    const fsBtnSize = 36;
+    const fsBtnSize = 48; // Larger for better mobile touch targets
     const fsBtnX = CONFIG.WIDTH - fsBtnSize - 10;
     const fsBtnY = 10;
     this.fullscreenButtonBounds = { x: fsBtnX, y: fsBtnY, width: fsBtnSize, height: fsBtnSize };
@@ -2368,7 +2529,7 @@ export class Game {
     this.ctx.lineCap = 'butt';
 
     // Pause button - next to fullscreen button
-    const pauseBtnSize = 36;
+    const pauseBtnSize = 48; // Larger for better mobile touch targets
     const pauseBtnX = fsBtnX - pauseBtnSize - 8;
     const pauseBtnY = fsBtnY;
     this.pauseButtonBounds = { x: pauseBtnX, y: pauseBtnY, width: pauseBtnSize, height: pauseBtnSize };
@@ -3146,7 +3307,7 @@ export class Game {
     // Tap to continue
     this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#888888';
-    const pulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    const pulse = Math.sin(this.frameTime * 0.005) * 0.3 + 0.7;
     this.ctx.globalAlpha = pulse;
     this.ctx.fillText(this.isMobile ? 'TAP TO START' : 'PRESS ANY KEY TO START', CONFIG.WIDTH / 2, CONFIG.HEIGHT - 40);
     this.ctx.globalAlpha = 1;

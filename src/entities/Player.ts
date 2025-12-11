@@ -27,6 +27,10 @@ export class Player {
   isInLowGravity = false;
   gravityMultiplier = 1;
 
+  // Configurable physics (for dev settings)
+  customGravity: number | null = null;
+  customJumpForce: number | null = null;
+
   // Double jump power-up (auto-activates on collection for 8 seconds)
   hasDoubleJump = false; // Currently active (timed)
   private doubleJumpUsed = false;
@@ -73,9 +77,11 @@ export class Player {
   jump(): boolean {
     if (this.isDead) return false;
 
+    const jumpForce = this.customJumpForce ?? CONFIG.JUMP_FORCE;
+
     if (this.isGrounded) {
       // Normal ground jump
-      this.velocityY = CONFIG.JUMP_FORCE;
+      this.velocityY = jumpForce;
       this.isGrounded = false;
       this.doubleJumpUsed = false; // Reset double jump on ground jump
       // Stretch on jump (taller and thinner)
@@ -84,7 +90,7 @@ export class Player {
       return true;
     } else if (this.hasDoubleJump && !this.doubleJumpUsed) {
       // Double jump in air
-      this.velocityY = CONFIG.JUMP_FORCE * 0.85; // Slightly weaker than ground jump
+      this.velocityY = jumpForce * 0.85; // Slightly weaker than ground jump
       this.doubleJumpUsed = true;
       // More extreme stretch for double jump
       this.targetSquashX = 0.6;
@@ -98,7 +104,7 @@ export class Player {
     if (this.isDead) return;
 
     // Apply gravity
-    let gravity = CONFIG.GRAVITY;
+    let gravity = this.customGravity ?? CONFIG.GRAVITY;
     if (this.isInLowGravity) {
       gravity *= this.gravityMultiplier;
     }

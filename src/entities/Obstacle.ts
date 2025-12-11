@@ -70,8 +70,9 @@ export class Obstacle {
     this.height = Math.max(this.height, 25);
   }
 
-  update(speed: number): void {
-    this.x -= CONFIG.BASE_OBSTACLE_SPEED * speed;
+  update(speed: number, customObstacleSpeed?: number): void {
+    const obstacleSpeed = customObstacleSpeed ?? CONFIG.BASE_OBSTACLE_SPEED;
+    this.x -= obstacleSpeed * speed;
   }
 
   checkCollision(playerX: number, playerY: number, playerWidth: number, playerHeight: number): boolean {
