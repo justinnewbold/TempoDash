@@ -2195,16 +2195,16 @@ export class Game {
     this.ctx.fillStyle = this.levelConfig.background.lineColor;
     this.ctx.fillText(`Jumps: ${this.state.jumpCount}`, 20, 55);
 
-    // BPM
+    // BPM - positioned left of pause/fullscreen buttons
     this.ctx.textAlign = 'right';
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = this.getBPMColor();
-    this.ctx.fillText(`♪ ${this.state.bpm} BPM`, CONFIG.WIDTH - 20, 35);
+    this.ctx.fillText(`♪ ${this.state.bpm} BPM`, CONFIG.WIDTH - 100, 35);
 
-    // High score
+    // High score - positioned left of pause/fullscreen buttons
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffd700';
-    this.ctx.fillText(`Best: ${this.saveManager.getLevelHighScore(this.state.currentLevel)}`, CONFIG.WIDTH - 20, 55);
+    this.ctx.fillText(`Best: ${this.saveManager.getLevelHighScore(this.state.currentLevel)}`, CONFIG.WIDTH - 100, 55);
 
     // Level name
     this.ctx.textAlign = 'center';
