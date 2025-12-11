@@ -145,6 +145,10 @@ export class Game {
   private selectedGameMode: GameMode = 'normal';
   private hardcoreJustUnlocked = false;
 
+  // Newly unlocked level (shown on game over screen)
+  private newlyUnlockedLevel: number | null = null;
+  private nextLevelButtonBounds = { x: 0, y: 0, width: 0, height: 0 };
+
   // Daily login streak
   private streakInfo: { streak: number; isNewDay: boolean; bonusPoints: number } = { streak: 0, isNewDay: false, bonusPoints: 0 };
   private showStreakBonus = false;
@@ -367,6 +371,14 @@ export class Game {
            x <= this.pauseButtonBounds.x + this.pauseButtonBounds.width &&
            y >= this.pauseButtonBounds.y &&
            y <= this.pauseButtonBounds.y + this.pauseButtonBounds.height;
+  }
+
+  private isInNextLevelButton(x: number, y: number): boolean {
+    return this.nextLevelButtonBounds.width > 0 &&
+           x >= this.nextLevelButtonBounds.x &&
+           x <= this.nextLevelButtonBounds.x + this.nextLevelButtonBounds.width &&
+           y >= this.nextLevelButtonBounds.y &&
+           y <= this.nextLevelButtonBounds.y + this.nextLevelButtonBounds.height;
   }
 
   private handlePauseMenuClick(x: number, y: number): void {
@@ -630,6 +642,15 @@ export class Game {
       this.holdingJump = true;
       this.tryJump();
     } else if (this.state.gameStatus === 'gameOver') {
+      // Check if tapping on Next Level button
+      if (coords && this.newlyUnlockedLevel !== null && this.isInNextLevelButton(coords.x, coords.y)) {
+        this.audio.playClick();
+        this.state.currentLevel = this.newlyUnlockedLevel;
+        this.selectedMenuLevel = this.newlyUnlockedLevel;
+        this.newlyUnlockedLevel = null;
+        this.startGame();
+        return;
+      }
       this.startGame();
     }
   }
@@ -986,9 +1007,23 @@ export class Game {
     // Trigger screen shake
     this.screenShake = 15;
 
+    // Reset newly unlocked level
+    this.newlyUnlockedLevel = null;
+
     // Only submit score for normal mode (Zen mode doesn't count, Hardcore has separate tracking)
     if (this.gameMode === 'normal') {
+      // Check for newly unlocked levels BEFORE submitting score
+      const unlockedBefore = this.saveManager.getUnlockedLevels();
+
       this.saveManager.submitScore(this.state.currentLevel, this.state.score);
+
+      // Check which levels are now unlocked
+      const unlockedAfter = this.saveManager.getUnlockedLevels();
+      const newLevels = unlockedAfter.filter(lvl => !unlockedBefore.includes(lvl));
+      if (newLevels.length > 0) {
+        // Get the first newly unlocked level (typically just one)
+        this.newlyUnlockedLevel = Math.min(...newLevels);
+      }
 
       // Check for hardcore unlock
       this.saveManager.updateBestScoreForHardcore(this.state.score);
@@ -2195,16 +2230,16 @@ export class Game {
     this.ctx.fillStyle = this.levelConfig.background.lineColor;
     this.ctx.fillText(`Jumps: ${this.state.jumpCount}`, 20, 55);
 
-    // BPM
+    // BPM - positioned left of pause/fullscreen buttons
     this.ctx.textAlign = 'right';
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = this.getBPMColor();
-    this.ctx.fillText(`♪ ${this.state.bpm} BPM`, CONFIG.WIDTH - 20, 35);
+    this.ctx.fillText(`♪ ${this.state.bpm} BPM`, CONFIG.WIDTH - 100, 35);
 
-    // High score
+    // High score - positioned left of pause/fullscreen buttons
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffd700';
-    this.ctx.fillText(`Best: ${this.saveManager.getLevelHighScore(this.state.currentLevel)}`, CONFIG.WIDTH - 20, 55);
+    this.ctx.fillText(`Best: ${this.saveManager.getLevelHighScore(this.state.currentLevel)}`, CONFIG.WIDTH - 100, 55);
 
     // Level name
     this.ctx.textAlign = 'center';
@@ -2849,14 +2884,59 @@ export class Game {
       this.ctx.fillText('🎉 NEW HIGH SCORE!', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 35);
     }
 
-    // Restart instruction - simplified for mobile
-    this.ctx.font = '18px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#888888';
-    this.ctx.shadowBlur = 0;
-    if (this.isMobile) {
-      this.ctx.fillText('TAP to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+    // New level unlocked - show Next Level button
+    if (this.newlyUnlockedLevel !== null) {
+      const unlockedLevel = LEVELS.find(l => l.id === this.newlyUnlockedLevel);
+      if (unlockedLevel) {
+        // Show unlock message
+        this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#00ff88';
+        this.ctx.shadowColor = '#00ff88';
+        this.ctx.shadowBlur = 15;
+        this.ctx.fillText(`🔓 LEVEL ${this.newlyUnlockedLevel} UNLOCKED: ${unlockedLevel.name}!`, CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 70);
+
+        // Draw Next Level button
+        const btnWidth = 160;
+        const btnHeight = 40;
+        const btnX = (CONFIG.WIDTH - btnWidth) / 2;
+        const btnY = CONFIG.HEIGHT / 2 + 90;
+        this.nextLevelButtonBounds = { x: btnX, y: btnY, width: btnWidth, height: btnHeight };
+
+        // Button background
+        this.ctx.fillStyle = 'rgba(0, 255, 136, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX, btnY, btnWidth, btnHeight, 8);
+        this.ctx.fill();
+
+        // Button border
+        this.ctx.strokeStyle = '#00ff88';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        // Button text
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.shadowBlur = 0;
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.fillText('▶ NEXT LEVEL', CONFIG.WIDTH / 2, btnY + btnHeight / 2 + 6);
+
+        // Restart instruction below button
+        this.ctx.font = '14px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#666666';
+        this.ctx.fillText('or tap elsewhere to retry', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 150);
+      }
     } else {
-      this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+      // Reset button bounds when no new level
+      this.nextLevelButtonBounds = { x: 0, y: 0, width: 0, height: 0 };
+
+      // Restart instruction - simplified for mobile
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#888888';
+      this.ctx.shadowBlur = 0;
+      if (this.isMobile) {
+        this.ctx.fillText('TAP to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+      } else {
+        this.ctx.fillText('TAP or press SPACE to try again', CONFIG.WIDTH / 2, CONFIG.HEIGHT / 2 + 80);
+      }
     }
 
     this.ctx.restore();
