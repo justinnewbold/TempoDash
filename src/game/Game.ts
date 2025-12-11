@@ -1207,7 +1207,7 @@ export class Game {
     for (const obstacle of this.obstacles) {
       obstacle.update(gameSpeed);
 
-      if (obstacle.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      if (this.gameMode !== 'zen' && obstacle.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.gameOver();
         return;
@@ -1245,8 +1245,8 @@ export class Game {
         hole.markWarningPlayed();
       }
 
-      // Check for death
-      if (hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      // Check for death (skip in zen mode)
+      if (this.gameMode !== 'zen' && hole.checkDeath(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.audio.playFallIntoHole();
         this.gameOver();
@@ -1316,7 +1316,7 @@ export class Game {
     // Update and check moving obstacles (Level 5+)
     for (const moving of this.movingObstacles) {
       moving.update(gameSpeed);
-      if (moving.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
+      if (this.gameMode !== 'zen' && moving.checkCollision(this.player.x, this.player.y, this.player.width, this.player.height)) {
         this.player.die();
         this.gameOver();
         return;
