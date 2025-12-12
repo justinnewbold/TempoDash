@@ -5,10 +5,11 @@ export class AudioManager {
   private audioContext: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private isPlaying = false;
-  private bpm = 130;
+  private bpm = 100; // Synced with jump timing (jump duration = 0.6s = 1 beat at 100 BPM)
   private beatInterval: number | null = null;
   private currentBeat = 0;
   private isMuted = false;
+  private beatCallback: ((beat: number) => void) | null = null;
 
   // Musical notes (frequencies in Hz)
   private notes = {
@@ -88,6 +89,14 @@ export class AudioManager {
     return this.isMuted;
   }
 
+  setBeatCallback(callback: ((beat: number) => void) | null): void {
+    this.beatCallback = callback;
+  }
+
+  getBPM(): number {
+    return this.bpm;
+  }
+
   private playBeat(): void {
     if (!this.audioContext || !this.masterGain || this.isMuted) return;
 
@@ -97,9 +106,9 @@ export class AudioManager {
     // Bass on every beat
     this.playBass(this.bassPattern[beatIndex], time);
 
-    // Kick drum on beats 0, 2, 4, 6
+    // Kick drum on beats 0, 2, 4, 6 (stronger on downbeat 0)
     if (beatIndex % 2 === 0) {
-      this.playKick(time);
+      this.playKick(time, beatIndex === 0);
     }
 
     // Hi-hat on every beat
@@ -117,6 +126,11 @@ export class AudioManager {
 
     // Arp pattern
     this.playArp(this.arpPattern[beatIndex], time);
+
+    // Fire beat callback for visual sync
+    if (this.beatCallback) {
+      this.beatCallback(this.currentBeat);
+    }
 
     this.currentBeat++;
   }
@@ -178,17 +192,19 @@ export class AudioManager {
     osc.stop(time + 0.1);
   }
 
-  private playKick(time: number): void {
+  private playKick(time: number, isDownbeat: boolean = false): void {
     if (!this.audioContext || !this.masterGain) return;
 
     const osc = this.audioContext.createOscillator();
     const gain = this.audioContext.createGain();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, time);
+    // Stronger kick on downbeat (beat 0) for rhythm emphasis
+    const kickVolume = isDownbeat ? 0.5 : 0.35;
+    osc.frequency.setValueAtTime(isDownbeat ? 160 : 150, time);
     osc.frequency.exponentialRampToValueAtTime(40, time + 0.1);
 
-    gain.gain.setValueAtTime(0.4, time);
+    gain.gain.setValueAtTime(kickVolume, time);
     gain.gain.exponentialDecayTo(0.01, time + 0.15);
 
     osc.connect(gain);
@@ -196,6 +212,30 @@ export class AudioManager {
 
     osc.start(time);
     osc.stop(time + 0.2);
+
+    // Add click layer on downbeat for clearer timing
+    if (isDownbeat) {
+      this.playClick(time);
+    }
+  }
+
+  private playClick(time: number): void {
+    if (!this.audioContext || !this.masterGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'square';
+    osc.frequency.value = 1200;
+
+    gain.gain.setValueAtTime(0.08, time);
+    gain.gain.exponentialDecayTo(0.001, time + 0.03);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(time);
+    osc.stop(time + 0.05);
   }
 
   private playSnare(time: number): void {

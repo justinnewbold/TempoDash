@@ -256,21 +256,24 @@ export class Player {
     ctx.lineWidth = 2;
     ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
-    // Eye/face design (like Geometry Dash icons)
+    // Eye/face design (in top-right corner - front of movement)
+    const eyeX = this.width / 2 - 10;
+    const eyeY = -this.height / 2 + 10;
+
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(0, -2, 8, 0, Math.PI * 2);
+    ctx.arc(eyeX, eyeY, 7, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#000000';
     ctx.beginPath();
-    ctx.arc(2, -2, 4, 0, Math.PI * 2);
+    ctx.arc(eyeX + 2, eyeY, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Small highlight in eye
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(4, -4, 1.5, 0, Math.PI * 2);
+    ctx.arc(eyeX + 3.5, eyeY - 2, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();

@@ -26,6 +26,7 @@ export class Game {
 
   private lastTime = 0;
   private deathTimer = 0;
+  private beatPulse = 0; // Visual beat indicator (0-1, decays over time)
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -48,6 +49,14 @@ export class Game {
 
     // Setup click/touch for menu
     canvas.addEventListener('click', () => this.handleMenuClick());
+
+    // Setup beat callback for visual sync
+    this.audio.setBeatCallback((beat) => {
+      // Pulse on every other beat (quarter notes) for clearer timing
+      if (beat % 2 === 0) {
+        this.beatPulse = 1;
+      }
+    });
   }
 
   private loadLevel(levelId: number): void {
@@ -155,6 +164,11 @@ export class Game {
   };
 
   private update(deltaTime: number): void {
+    // Decay beat pulse
+    if (this.beatPulse > 0) {
+      this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
+    }
+
     if (this.state.gameStatus !== 'playing') {
       // Still update background animations for visual effect
       this.level.update(deltaTime);
@@ -285,6 +299,27 @@ export class Game {
     this.ctx.textAlign = 'right';
     const muteIndicator = this.audio.isMusicMuted() ? ' [M] Muted' : '';
     this.ctx.fillText(`Attempt ${this.attempts}${muteIndicator}`, GAME_WIDTH - 20, 50);
+
+    // Beat indicator (pulsing circle in corner that shows rhythm)
+    if (this.beatPulse > 0) {
+      const size = 15 + this.beatPulse * 10;
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
+      this.ctx.fillStyle = `rgba(0, 255, 255, ${this.beatPulse * 0.8})`;
+      this.ctx.fill();
+
+      // Border ring
+      this.ctx.strokeStyle = `rgba(255, 255, 255, ${this.beatPulse})`;
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+    }
+
+    // Static beat circle outline
+    this.ctx.beginPath();
+    this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, 15, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
 
     this.ctx.restore();
   }
