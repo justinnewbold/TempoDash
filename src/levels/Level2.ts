@@ -40,14 +40,14 @@ const level2Config: LevelConfig = {
     { x: 1050, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
     { x: 1100, y: GROUND_Y, width: 250, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Elevated platforms with spikes below
-    { x: 1400, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    // LEVEL 2 UNIQUE: Moving platforms with spikes below
+    { x: 1400, y: GROUND_Y - 70, width: 120, height: 20, type: 'moving', movePattern: { type: 'vertical', distance: 30, speed: 2 } },
     { x: 1400, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    { x: 1570, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    { x: 1570, y: GROUND_Y - 70, width: 120, height: 20, type: 'moving', movePattern: { type: 'vertical', distance: 40, speed: 2.5 } },
     { x: 1570, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    { x: 1740, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    { x: 1740, y: GROUND_Y - 70, width: 120, height: 20, type: 'moving', movePattern: { type: 'vertical', distance: 30, speed: 3 } },
     { x: 1740, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
     // Land back on ground

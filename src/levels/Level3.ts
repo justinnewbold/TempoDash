@@ -93,12 +93,12 @@ const level3Config: LevelConfig = {
     { x: 4880, y: GROUND_Y - 80, width: 60, height: 20, type: 'bounce' },
     { x: 4990, y: GROUND_Y - 160, width: 100, height: 20, type: 'solid' },
 
-    // High platform section
-    { x: 5140, y: GROUND_Y - 160, width: 100, height: 20, type: 'solid' },
-    { x: 5290, y: GROUND_Y - 120, width: 100, height: 20, type: 'solid' },
+    // LEVEL 3 UNIQUE: Phase platforms that blink in and out
+    { x: 5140, y: GROUND_Y - 160, width: 100, height: 20, type: 'phase' },
+    { x: 5290, y: GROUND_Y - 120, width: 100, height: 20, type: 'phase' },
     { x: 5290, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    { x: 5440, y: GROUND_Y - 80, width: 100, height: 20, type: 'solid' },
+    { x: 5440, y: GROUND_Y - 80, width: 100, height: 20, type: 'phase' },
     { x: 5590, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
     // Final gauntlet - rapid spikes
