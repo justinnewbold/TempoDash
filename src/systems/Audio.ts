@@ -1,5 +1,14 @@
 // Procedural music system using Web Audio API
-// Generates a Geometry Dash-style electronic beat
+// Generates a Geometry Dash-style electronic beat with per-level styles
+
+export type MusicStyle = 'energetic' | 'dark' | 'epic';
+
+interface MusicPatterns {
+  bass: string[];
+  melody: string[];
+  arp: string[];
+  bpm: number;
+}
 
 export class AudioManager {
   private audioContext: AudioContext | null = null;
@@ -10,22 +19,45 @@ export class AudioManager {
   private currentBeat = 0;
   private isMuted = false;
   private beatCallback: ((beat: number) => void) | null = null;
+  private currentStyle: MusicStyle = 'energetic';
 
   // Musical notes (frequencies in Hz)
   private notes = {
+    C2: 65.41, D2: 73.42, E2: 82.41, F2: 87.31, G2: 98.00, A2: 110.00, B2: 123.47,
     C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
     C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
     C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00, B5: 987.77,
   };
 
-  // Bass pattern (plays on every beat)
-  private bassPattern = ['C3', 'C3', 'G3', 'G3', 'A3', 'A3', 'F3', 'F3'];
+  // Music styles for different levels
+  private musicStyles: Record<MusicStyle, MusicPatterns> = {
+    // Level 1: Upbeat electronic (C major)
+    energetic: {
+      bass: ['C3', 'C3', 'G3', 'G3', 'A3', 'A3', 'F3', 'F3'],
+      melody: ['E4', 'G4', 'C5', 'B4', 'A4', 'G4', 'E4', 'D4'],
+      arp: ['C4', 'E4', 'G4', 'C5', 'G4', 'E4', 'C4', 'G3'],
+      bpm: 100,
+    },
+    // Level 2: Darker, minor key (A minor / D minor feel)
+    dark: {
+      bass: ['A2', 'A2', 'E3', 'E3', 'D3', 'D3', 'E3', 'E3'],
+      melody: ['A4', 'C5', 'E5', 'D5', 'C5', 'B4', 'A4', 'E4'],
+      arp: ['A3', 'C4', 'E4', 'A4', 'E4', 'C4', 'A3', 'E3'],
+      bpm: 110,
+    },
+    // Level 3: Epic, driving beat (E minor, faster)
+    epic: {
+      bass: ['E2', 'E2', 'B2', 'B2', 'C3', 'C3', 'D3', 'D3'],
+      melody: ['E5', 'G5', 'B5', 'A5', 'G5', 'E5', 'D5', 'E5'],
+      arp: ['E4', 'G4', 'B4', 'E5', 'B4', 'G4', 'E4', 'B3'],
+      bpm: 120,
+    },
+  };
 
-  // Melody pattern (plays every other beat)
-  private melodyPattern = ['E4', 'G4', 'C5', 'B4', 'A4', 'G4', 'E4', 'D4'];
-
-  // Arp pattern
-  private arpPattern = ['C4', 'E4', 'G4', 'C5', 'G4', 'E4', 'C4', 'G3'];
+  // Current patterns (set by style)
+  private bassPattern: string[] = this.musicStyles.energetic.bass;
+  private melodyPattern: string[] = this.musicStyles.energetic.melody;
+  private arpPattern: string[] = this.musicStyles.energetic.arp;
 
   constructor() {
     // Audio context will be created on first user interaction
@@ -95,6 +127,28 @@ export class AudioManager {
 
   getBPM(): number {
     return this.bpm;
+  }
+
+  setStyle(style: MusicStyle): void {
+    const wasPlaying = this.isPlaying;
+    if (wasPlaying) {
+      this.stop();
+    }
+
+    this.currentStyle = style;
+    const patterns = this.musicStyles[style];
+    this.bassPattern = patterns.bass;
+    this.melodyPattern = patterns.melody;
+    this.arpPattern = patterns.arp;
+    this.bpm = patterns.bpm;
+
+    if (wasPlaying) {
+      this.start();
+    }
+  }
+
+  getStyle(): MusicStyle {
+    return this.currentStyle;
   }
 
   private playBeat(): void {

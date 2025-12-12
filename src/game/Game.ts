@@ -1,7 +1,7 @@
 import { GameState } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
-import { AudioManager } from '../systems/Audio';
+import { AudioManager, MusicStyle } from '../systems/Audio';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
@@ -64,6 +64,14 @@ export class Game {
     this.player = new Player(this.level.playerStart);
     this.state.currentLevel = levelId;
     this.cameraX = 0;
+
+    // Set music style based on level
+    const musicStyles: Record<number, MusicStyle> = {
+      1: 'energetic',
+      2: 'dark',
+      3: 'epic',
+    };
+    this.audio.setStyle(musicStyles[levelId] || 'energetic');
   }
 
   private handleMenuClick(): void {
