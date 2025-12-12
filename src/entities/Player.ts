@@ -1,398 +1,388 @@
-import { SKINS, Particle, Skin } from '../types';
-import { CONFIG } from '../constants';
+import { Vector2, InputState, Rectangle } from '../types';
+import { PLAYER, COLORS, GAME_HEIGHT } from '../constants';
+import { Platform } from './Platform';
 
 interface TrailPoint {
   x: number;
   y: number;
   alpha: number;
-  size: number;
-  velocityY: number;
 }
 
 export class Player {
   x: number;
   y: number;
-  width = CONFIG.PLAYER_SIZE;
-  height = CONFIG.PLAYER_SIZE;
+  width = PLAYER.WIDTH;
+  height = PLAYER.HEIGHT;
+  velocityX = 0;
   velocityY = 0;
-  rotation = 0;
-  isGrounded = true;
+
+  isGrounded = false;
+  isOnIce = false;
   isDead = false;
-
+  private coyoteTime = 0;
+  private jumpBufferTime = 0;
   private trail: TrailPoint[] = [];
-  private rainbowHue = 0;
-  private currentSkin: Skin;
+  private animationTime = 0;
+  private facingRight = true;
 
-  // Level-specific states
-  isInLowGravity = false;
-  gravityMultiplier = 1;
-
-  // Configurable physics (for dev settings)
-  customGravity: number | null = null;
-  customJumpForce: number | null = null;
-
-  // Double jump power-up (auto-activates on collection for 8 seconds)
-  hasDoubleJump = false; // Currently active (timed)
-  private doubleJumpUsed = false;
-  private doubleJumpEndTime = 0; // When the current boost expires
-
-  // Squash & stretch
-  private squashX = 1;
-  private squashY = 1;
-  private targetSquashX = 1;
-  private targetSquashY = 1;
-  private wasGrounded = true;
-
-  constructor(skinId: string = 'cyan') {
-    this.currentSkin = SKINS[skinId] || SKINS.cyan;
-    this.x = 150;
-    this.y = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - CONFIG.PLAYER_SIZE;
+  constructor(startPosition: Vector2) {
+    this.x = startPosition.x;
+    this.y = startPosition.y;
   }
 
-  setSkin(skinId: string): void {
-    this.currentSkin = SKINS[skinId] || SKINS.cyan;
-  }
-
-  reset(): void {
-    this.x = 150;
-    this.y = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - CONFIG.PLAYER_SIZE;
+  reset(position: Vector2): void {
+    this.x = position.x;
+    this.y = position.y;
+    this.velocityX = 0;
     this.velocityY = 0;
-    this.rotation = 0;
-    this.isGrounded = true;
+    this.isGrounded = false;
     this.isDead = false;
+    this.coyoteTime = 0;
+    this.jumpBufferTime = 0;
     this.trail = [];
-    this.isInLowGravity = false;
-    this.gravityMultiplier = 1;
-    this.squashX = 1;
-    this.squashY = 1;
-    this.targetSquashX = 1;
-    this.targetSquashY = 1;
-    this.wasGrounded = true;
-    // Reset double jump
-    this.hasDoubleJump = false;
-    this.doubleJumpUsed = false;
-    this.doubleJumpEndTime = 0;
   }
 
-  jump(): boolean {
-    if (this.isDead) return false;
-
-    const jumpForce = this.customJumpForce ?? CONFIG.JUMP_FORCE;
-
-    if (this.isGrounded) {
-      // Normal ground jump
-      this.velocityY = jumpForce;
-      this.isGrounded = false;
-      this.doubleJumpUsed = false; // Reset double jump on ground jump
-      // Stretch on jump (taller and thinner)
-      this.targetSquashX = 0.7;
-      this.targetSquashY = 1.3;
-      return true;
-    } else if (this.hasDoubleJump && !this.doubleJumpUsed) {
-      // Double jump in air
-      this.velocityY = jumpForce * 0.85; // Slightly weaker than ground jump
-      this.doubleJumpUsed = true;
-      // More extreme stretch for double jump
-      this.targetSquashX = 0.6;
-      this.targetSquashY = 1.4;
-      return true;
-    }
-    return false;
-  }
-
-  update(gameSpeed: number): void {
+  update(deltaTime: number, input: InputState, platforms: Platform[]): void {
     if (this.isDead) return;
 
+    this.animationTime += deltaTime;
+
+    // Update trail
+    this.updateTrail(deltaTime);
+
+    // Handle horizontal movement
+    this.handleMovement(input, deltaTime);
+
+    // Handle jumping
+    this.handleJumping(input, deltaTime);
+
     // Apply gravity
-    let gravity = this.customGravity ?? CONFIG.GRAVITY;
-    if (this.isInLowGravity) {
-      gravity *= this.gravityMultiplier;
+    this.velocityY += PLAYER.GRAVITY * (deltaTime / 1000);
+    this.velocityY = Math.min(this.velocityY, PLAYER.MAX_FALL_SPEED);
+
+    // Apply velocities
+    this.x += this.velocityX * (deltaTime / 1000);
+    this.y += this.velocityY * (deltaTime / 1000);
+
+    // Handle collisions
+    this.handleCollisions(platforms);
+
+    // Update coyote time
+    if (!this.isGrounded) {
+      this.coyoteTime -= deltaTime;
     }
 
-    this.velocityY += gravity * gameSpeed;
-    this.y += this.velocityY * gameSpeed;
+    // Check if fell off screen
+    if (this.y > GAME_HEIGHT + 100) {
+      this.isDead = true;
+    }
+  }
 
-    // Ground collision
-    const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT - this.height;
-    if (this.y >= groundY) {
-      this.y = groundY;
+  private handleMovement(input: InputState, deltaTime: number): void {
+    const targetVelocity =
+      (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const acceleration = this.isGrounded
+      ? PLAYER.SPEED
+      : PLAYER.SPEED * PLAYER.AIR_CONTROL;
 
-      // Squash on landing (wider and shorter)
-      if (!this.wasGrounded && this.velocityY > 0) {
-        const impactForce = Math.min(Math.abs(this.velocityY) / 15, 1);
-        this.targetSquashX = 1 + impactForce * 0.4; // Wider
-        this.targetSquashY = 1 - impactForce * 0.3; // Shorter
-      }
-
-      this.velocityY = 0;
-      this.isGrounded = true;
-      // Snap rotation to nearest 90 degrees
-      this.rotation = Math.round(this.rotation / (Math.PI / 2)) * (Math.PI / 2);
+    if (targetVelocity !== 0) {
+      this.facingRight = targetVelocity > 0;
+      this.velocityX += targetVelocity * acceleration * (deltaTime / 1000) * 10;
+      this.velocityX = Math.max(
+        -PLAYER.SPEED,
+        Math.min(PLAYER.SPEED, this.velocityX)
+      );
     } else {
-      // Rotate while in air
-      this.rotation += 0.15 * gameSpeed;
-
-      // Stretch while falling fast
-      if (this.velocityY > 5) {
-        this.targetSquashX = 0.85;
-        this.targetSquashY = 1.15;
-      } else if (this.velocityY < -5) {
-        // Stretch while rising fast
-        this.targetSquashX = 0.8;
-        this.targetSquashY = 1.2;
-      } else {
-        // Return to normal in air
-        this.targetSquashX = 1;
-        this.targetSquashY = 1;
+      // Apply friction
+      const friction = this.isOnIce
+        ? PLAYER.ICE_FRICTION
+        : PLAYER.NORMAL_FRICTION;
+      this.velocityX *= Math.pow(friction, deltaTime / 16);
+      if (Math.abs(this.velocityX) < 5) {
+        this.velocityX = 0;
       }
     }
-
-    // Track grounded state
-    this.wasGrounded = this.isGrounded;
-
-    // Smoothly interpolate squash values
-    const squashSpeed = 0.2 * gameSpeed;
-    this.squashX += (this.targetSquashX - this.squashX) * squashSpeed;
-    this.squashY += (this.targetSquashY - this.squashY) * squashSpeed;
-
-    // Return to normal when grounded
-    if (this.isGrounded) {
-      this.targetSquashX = 1;
-      this.targetSquashY = 1;
-    }
-
-    // Update trail - more points when moving fast
-    const speed = Math.abs(this.velocityY);
-    const trailSize = 3 + Math.min(speed * 0.3, 5); // Bigger trail at high speed
-
-    this.trail.unshift({
-      x: this.x,
-      y: this.y + this.height / 2,
-      alpha: 1,
-      size: trailSize,
-      velocityY: this.velocityY
-    });
-
-    // Keep more trail points when moving fast
-    const maxTrail = this.isGrounded ? 10 : 20;
-    while (this.trail.length > maxTrail) this.trail.pop();
-    this.trail.forEach(t => t.alpha -= this.isGrounded ? 0.1 : 0.05);
-
-    // Update rainbow hue
-    this.rainbowHue = (this.rainbowHue + 3) % 360;
   }
 
-  // Land on a platform at a specific Y
-  landOnPlatform(platformY: number): void {
-    if (!this.isGrounded && this.velocityY > 0) {
-      this.y = platformY - this.height;
-      this.velocityY = 0;
-      this.isGrounded = true;
-      this.rotation = Math.round(this.rotation / (Math.PI / 2)) * (Math.PI / 2);
+  private handleJumping(input: InputState, deltaTime: number): void {
+    // Buffer jump input
+    if (input.jumpPressed) {
+      this.jumpBufferTime = PLAYER.JUMP_BUFFER;
+    } else {
+      this.jumpBufferTime -= deltaTime;
+    }
+
+    // Can jump if grounded or in coyote time
+    const canJump = this.isGrounded || this.coyoteTime > 0;
+
+    if (this.jumpBufferTime > 0 && canJump) {
+      this.velocityY = -PLAYER.JUMP_FORCE;
+      this.isGrounded = false;
+      this.coyoteTime = 0;
+      this.jumpBufferTime = 0;
+    }
+
+    // Variable jump height
+    if (!input.jump && this.velocityY < -PLAYER.JUMP_FORCE / 2) {
+      this.velocityY = -PLAYER.JUMP_FORCE / 2;
     }
   }
 
-  // Check if player fell into a hole
-  checkHoleDeath(holeX: number, holeWidth: number): boolean {
-    const groundY = CONFIG.HEIGHT - CONFIG.GROUND_HEIGHT;
-    // If player is at ground level and overlaps with hole, they die
-    if (this.y + this.height >= groundY - 5) {
-      const playerCenterX = this.x + this.width / 2;
-      if (playerCenterX > holeX && playerCenterX < holeX + holeWidth) {
-        return true;
+  private handleCollisions(platforms: Platform[]): void {
+    const wasGrounded = this.isGrounded;
+    this.isGrounded = false;
+    this.isOnIce = false;
+
+    for (const platform of platforms) {
+      if (!platform.isCollidable()) continue;
+
+      const collision = this.checkCollision(platform);
+      if (!collision) continue;
+
+      // Handle platform-specific effects
+      switch (platform.type) {
+        case 'lava':
+          this.isDead = true;
+          return;
+
+        case 'bounce':
+          if (collision === 'top') {
+            this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
+            this.y = platform.y - this.height;
+          }
+          continue;
+
+        case 'crumble':
+          if (collision === 'top') {
+            platform.startCrumble();
+          }
+          break;
+
+        case 'ice':
+          if (collision === 'top') {
+            this.isOnIce = true;
+          }
+          break;
       }
-    }
-    return false;
-  }
 
-  // Set low gravity state
-  setLowGravity(active: boolean, multiplier: number = 0.5): void {
-    this.isInLowGravity = active;
-    this.gravityMultiplier = multiplier;
-  }
-
-  // Auto-activate double jump on collection (8 second duration)
-  addDoubleJumpBoost(): void {
-    this.hasDoubleJump = true;
-    this.doubleJumpUsed = false;
-    this.doubleJumpEndTime = Date.now() + 8000; // 8 seconds
-  }
-
-  // Get remaining time on current boost (for UI display)
-  getDoubleJumpTimeRemaining(): number {
-    if (!this.hasDoubleJump) return 0;
-    return Math.max(0, this.doubleJumpEndTime - Date.now());
-  }
-
-  // Update power-up states
-  updatePowerUps(): void {
-    // Check if double jump boost has expired (10 second timer)
-    if (this.hasDoubleJump && Date.now() > this.doubleJumpEndTime) {
-      this.hasDoubleJump = false;
-      this.doubleJumpUsed = false;
-      this.doubleJumpEndTime = 0;
+      // Resolve collision
+      this.resolveCollision(platform, collision);
     }
 
-    // Reset doubleJumpUsed when landing so player can double jump again
-    // (during the 10 second window they can double jump multiple times)
-    if (this.hasDoubleJump && this.isGrounded) {
-      this.doubleJumpUsed = false;
+    // Set coyote time when leaving ground
+    if (wasGrounded && !this.isGrounded) {
+      this.coyoteTime = PLAYER.COYOTE_TIME;
     }
   }
 
-  // Check if double jump was used (for particle effects)
-  wasDoubleJumpUsed(): boolean {
-    return this.doubleJumpUsed;
-  }
+  private checkCollision(
+    platform: Platform
+  ): 'top' | 'bottom' | 'left' | 'right' | null {
+    const bounds = platform.getBounds();
 
-  die(): void {
-    this.isDead = true;
-  }
-
-  createJumpParticles(): Particle[] {
-    const particles: Particle[] = [];
-    for (let i = 0; i < 8; i++) {
-      particles.push({
-        x: this.x + Math.random() * 20,
-        y: this.y + this.height,
-        velocityX: (Math.random() - 0.5) * 4,
-        velocityY: Math.random() * -3 - 1,
-        life: 1,
-        size: Math.random() * 6 + 2,
-        hue: Math.random() * 60
-      });
+    // Check if overlapping
+    if (
+      this.x + this.width <= bounds.x ||
+      this.x >= bounds.x + bounds.width ||
+      this.y + this.height <= bounds.y ||
+      this.y >= bounds.y + bounds.height
+    ) {
+      return null;
     }
-    return particles;
+
+    // Determine collision side
+    const overlapLeft = this.x + this.width - bounds.x;
+    const overlapRight = bounds.x + bounds.width - this.x;
+    const overlapTop = this.y + this.height - bounds.y;
+    const overlapBottom = bounds.y + bounds.height - this.y;
+
+    const minOverlapX = Math.min(overlapLeft, overlapRight);
+    const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+    if (minOverlapY < minOverlapX) {
+      return overlapTop < overlapBottom ? 'top' : 'bottom';
+    } else {
+      return overlapLeft < overlapRight ? 'left' : 'right';
+    }
   }
 
-  createDoubleJumpParticles(): Particle[] {
-    const particles: Particle[] = [];
-    // More particles, orange/yellow hue, burst in all directions
-    for (let i = 0; i < 16; i++) {
-      const angle = (i / 16) * Math.PI * 2;
-      particles.push({
+  private resolveCollision(
+    platform: Platform,
+    side: 'top' | 'bottom' | 'left' | 'right'
+  ): void {
+    const bounds = platform.getBounds();
+
+    switch (side) {
+      case 'top':
+        this.y = bounds.y - this.height;
+        this.velocityY = 0;
+        this.isGrounded = true;
+        break;
+      case 'bottom':
+        this.y = bounds.y + bounds.height;
+        this.velocityY = 0;
+        break;
+      case 'left':
+        this.x = bounds.x - this.width;
+        this.velocityX = 0;
+        break;
+      case 'right':
+        this.x = bounds.x + bounds.width;
+        this.velocityX = 0;
+        break;
+    }
+  }
+
+  private updateTrail(deltaTime: number): void {
+    // Add new trail point
+    if (Math.abs(this.velocityX) > 50 || Math.abs(this.velocityY) > 50) {
+      this.trail.push({
         x: this.x + this.width / 2,
         y: this.y + this.height / 2,
-        velocityX: Math.cos(angle) * (3 + Math.random() * 3),
-        velocityY: Math.sin(angle) * (3 + Math.random() * 3),
-        life: 1,
-        size: Math.random() * 8 + 4,
-        hue: 30 + Math.random() * 30 // Orange to yellow
+        alpha: 0.5,
       });
     }
-    return particles;
+
+    // Update and remove old trail points
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      this.trail[i].alpha -= deltaTime / 200;
+      if (this.trail[i].alpha <= 0) {
+        this.trail.splice(i, 1);
+      }
+    }
+
+    // Limit trail length
+    while (this.trail.length > 20) {
+      this.trail.shift();
+    }
   }
 
-  createDeathParticles(): Particle[] {
-    const particles: Particle[] = [];
-    for (let i = 0; i < 30; i++) {
-      particles.push({
-        x: this.x + Math.random() * 40,
-        y: this.y + Math.random() * 40,
-        velocityX: (Math.random() - 0.5) * 10,
-        velocityY: (Math.random() - 0.5) * 10,
-        life: 1,
-        size: Math.random() * 8 + 3,
-        hue: Math.random() * 60
-      });
-    }
-    return particles;
+  getBounds(): Rectangle {
+    return {
+      x: this.x,
+      y: this.y,
+      width: this.width,
+      height: this.height,
+    };
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    const skin = this.currentSkin;
-
-    // Draw enhanced trail
-    this.trail.forEach((t, i) => {
-      if (t.alpha > 0) {
-        // Trail stretches based on velocity
-        const stretch = Math.abs(t.velocityY) * 0.15;
-        const offsetX = i * 4;
-
-        ctx.beginPath();
-        if (stretch > 1) {
-          // Elongated trail when moving fast
-          ctx.ellipse(t.x - offsetX, t.y, t.size * 0.8, t.size + stretch, 0, 0, Math.PI * 2);
-        } else {
-          ctx.arc(t.x - offsetX, t.y, t.size, 0, Math.PI * 2);
-        }
-
-        if (skin.trail === 'rainbow') {
-          ctx.fillStyle = `hsla(${(this.rainbowHue + i * 25) % 360}, 100%, 60%, ${t.alpha * 0.6})`;
-        } else {
-          ctx.fillStyle = `${skin.trail}${Math.floor(t.alpha * 150).toString(16).padStart(2, '0')}`;
-        }
-        ctx.fill();
-
-        // Add glow for fast movement
-        if (t.size > 5) {
-          ctx.shadowColor = skin.glow;
-          ctx.shadowBlur = t.size;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-      }
-    });
-
-    ctx.save();
-
-    // Apply squash & stretch - anchor at bottom center when grounded
-    const anchorY = this.isGrounded ? this.y + this.height : this.y + this.height / 2;
-    ctx.translate(this.x + this.width / 2, anchorY);
-    ctx.rotate(this.rotation);
-    ctx.scale(this.squashX, this.squashY);
-
-    // Offset to account for squash anchor point
-    const offsetY = this.isGrounded ? -this.height / 2 : 0;
-
-    // Glow effect
-    ctx.shadowColor = skin.glow;
-    ctx.shadowBlur = 20;
-
-    // Draw block with skin colors
-    let gradient: CanvasGradient;
-    if (skin.colors[0] === 'rainbow') {
-      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2 + offsetY, this.width / 2, this.height / 2 + offsetY);
-      gradient.addColorStop(0, `hsl(${this.rainbowHue}, 100%, 50%)`);
-      gradient.addColorStop(0.5, `hsl(${(this.rainbowHue + 60) % 360}, 100%, 50%)`);
-      gradient.addColorStop(1, `hsl(${(this.rainbowHue + 120) % 360}, 100%, 50%)`);
-    } else {
-      gradient = ctx.createLinearGradient(-this.width / 2, -this.height / 2 + offsetY, this.width / 2, this.height / 2 + offsetY);
-      gradient.addColorStop(0, skin.colors[0]);
-      gradient.addColorStop(1, skin.colors[1]);
+    // Draw trail
+    for (const point of this.trail) {
+      ctx.fillStyle = `rgba(0, 255, 170, ${point.alpha})`;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 8 * point.alpha, 0, Math.PI * 2);
+      ctx.fill();
     }
 
+    // Draw player
+    ctx.save();
+    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+    // Squash and stretch
+    const stretchY = 1 + Math.abs(this.velocityY) / 2000;
+    const squashX = 1 / stretchY;
+    ctx.scale(squashX, stretchY);
+
+    // Flip based on direction
+    if (!this.facingRight) {
+      ctx.scale(-1, 1);
+    }
+
+    // Body glow
+    ctx.shadowColor = COLORS.PLAYER;
+    ctx.shadowBlur = 15;
+
+    // Main body
+    const gradient = ctx.createLinearGradient(
+      -this.width / 2,
+      -this.height / 2,
+      this.width / 2,
+      this.height / 2
+    );
+    gradient.addColorStop(0, '#00ffcc');
+    gradient.addColorStop(0.5, COLORS.PLAYER);
+    gradient.addColorStop(1, '#00cc88');
     ctx.fillStyle = gradient;
-    ctx.fillRect(-this.width / 2, -this.height / 2 + offsetY, this.width, this.height);
 
-    // Highlight
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fillRect(-this.width / 2 + 5, -this.height / 2 + 5 + offsetY, this.width - 10, this.height / 2 - 5);
+    // Draw rounded rectangle body
+    this.drawRoundedRect(
+      ctx,
+      -this.width / 2,
+      -this.height / 2,
+      this.width,
+      this.height,
+      8
+    );
 
-    // Eye - adjust position based on squash
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#fff';
+    // Eye
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(5, -5 + offsetY, 8, 0, Math.PI * 2);
+    ctx.ellipse(5, -10, 6, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#000000';
     ctx.beginPath();
-    ctx.arc(7, -5 + offsetY, 4, 0, Math.PI * 2);
+    ctx.arc(7, -10, 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // Animated pulse effect
+    const pulse = Math.sin(this.animationTime * 0.005) * 0.1 + 0.9;
+    ctx.strokeStyle = `rgba(0, 255, 170, ${0.5 * pulse})`;
+    ctx.lineWidth = 2;
+    this.strokeRoundedRect(
+      ctx,
+      -this.width / 2 - 3,
+      -this.height / 2 - 3,
+      this.width + 6,
+      this.height + 6,
+      10
+    );
 
     ctx.restore();
   }
 
-  getSkinGlow(): string {
-    return this.currentSkin.glow;
+  private drawRoundedRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
   }
 
-  getSkinTrail(): string {
-    return this.currentSkin.trail;
-  }
-
-  getRainbowHue(): number {
-    return this.rainbowHue;
+  private strokeRoundedRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.stroke();
   }
 }
