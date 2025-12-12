@@ -1,4 +1,4 @@
-import { BackgroundConfig, BackgroundEffect } from '../types';
+import { BackgroundConfig } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, ANIMATION, COLORS } from '../constants';
 
 interface Star {
