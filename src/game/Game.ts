@@ -143,6 +143,7 @@ export class Game {
   // Game modes
   private gameMode: GameMode = 'normal';
   private selectedGameMode: GameMode = 'normal';
+  private hoveredGameMode: GameMode | null = null;
   private hardcoreJustUnlocked = false;
 
   // Newly unlocked level (shown on game over screen)
@@ -361,6 +362,8 @@ export class Game {
     // Mouse (also works on desktop)
     this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.canvas.addEventListener('mouseup', () => { this.holdingJump = false; });
+    this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+    this.canvas.addEventListener('mouseleave', () => { this.hoveredGameMode = null; });
   }
 
   private getCanvasCoords(clientX: number, clientY: number): { x: number; y: number } {
@@ -787,6 +790,19 @@ export class Game {
         this.dismissPopups();
         return;
       }
+      // Handle game mode selection on touch
+      if (coords) {
+        const tappedMode = this.getGameModeAtPosition(coords.x, coords.y);
+        if (tappedMode) {
+          // Check if it's the locked hardcore mode
+          if (tappedMode === 'hardcore' && !this.saveManager.isHardcoreUnlocked()) {
+            return;
+          }
+          this.selectedGameMode = tappedMode;
+          this.audio.playClick();
+          return;
+        }
+      }
       this.startGame();
     } else if (this.state.gameStatus === 'playing') {
       this.holdingJump = true;
@@ -842,7 +858,58 @@ export class Game {
       return;
     }
 
+    // Handle game mode selection on menu
+    if (this.state.gameStatus === 'menu') {
+      const clickedMode = this.getGameModeAtPosition(coords.x, coords.y);
+      if (clickedMode) {
+        // Check if it's the locked hardcore mode
+        if (clickedMode === 'hardcore' && !this.saveManager.isHardcoreUnlocked()) {
+          // Don't select locked mode, just play a feedback sound (optional)
+          return;
+        }
+        this.selectedGameMode = clickedMode;
+        this.audio.playClick();
+        return;
+      }
+    }
+
     this.handleTouchStart();
+  }
+
+  private handleMouseMove(e: MouseEvent): void {
+    const coords = this.getCanvasCoords(e.clientX, e.clientY);
+
+    // Only track hover on menu screen
+    if (this.state.gameStatus === 'menu') {
+      this.hoveredGameMode = this.getGameModeAtPosition(coords.x, coords.y);
+      // Update cursor style based on hover
+      if (this.hoveredGameMode && !(this.hoveredGameMode === 'hardcore' && !this.saveManager.isHardcoreUnlocked())) {
+        this.canvas.style.cursor = 'pointer';
+      } else {
+        this.canvas.style.cursor = 'default';
+      }
+    } else {
+      this.hoveredGameMode = null;
+      this.canvas.style.cursor = 'default';
+    }
+  }
+
+  private getGameModeAtPosition(x: number, y: number): GameMode | null {
+    const modes: GameMode[] = ['normal', 'zen', 'hardcore'];
+    const startX = 30;
+    const startY = 250;
+    const buttonWidth = 100;
+    const buttonHeight = 28;
+    const buttonSpacing = 35;
+
+    for (let i = 0; i < modes.length; i++) {
+      const buttonY = startY + i * buttonSpacing;
+      if (x >= startX && x <= startX + buttonWidth &&
+          y >= buttonY && y <= buttonY + buttonHeight) {
+        return modes[i];
+      }
+    }
+    return null;
   }
 
   private tryJump(): void {
@@ -2770,23 +2837,49 @@ export class Game {
       const mode = modes[i];
       const y = startY + i * 35;
       const isSelected = this.selectedGameMode === mode.id;
+      const isHovered = this.hoveredGameMode === mode.id && !this.isMobile;
       const isLocked = mode.locked;
 
-      // Background
-      this.ctx.fillStyle = isSelected ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)';
-      if (isLocked) this.ctx.fillStyle = 'rgba(100, 100, 100, 0.1)';
+      // Background with hover effect
+      if (isLocked) {
+        this.ctx.fillStyle = 'rgba(100, 100, 100, 0.1)';
+      } else if (isSelected) {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      } else if (isHovered) {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      } else {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+      }
       this.ctx.fillRect(startX, y, 100, 28);
 
-      // Border
+      // Glow effect on hover (for non-locked modes)
+      if (isHovered && !isLocked) {
+        this.ctx.shadowColor = mode.color;
+        this.ctx.shadowBlur = 10;
+        this.ctx.strokeStyle = mode.color + '80'; // 50% opacity
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(startX, y, 100, 28);
+        this.ctx.shadowBlur = 0;
+      }
+
+      // Border (selected state gets solid border)
       if (isSelected && !isLocked) {
         this.ctx.strokeStyle = mode.color;
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(startX, y, 100, 28);
       }
 
-      // Mode name
+      // Mode name with hover color
       this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-      this.ctx.fillStyle = isLocked ? '#666666' : (isSelected ? mode.color : '#ffffff');
+      if (isLocked) {
+        this.ctx.fillStyle = '#666666';
+      } else if (isSelected) {
+        this.ctx.fillStyle = mode.color;
+      } else if (isHovered) {
+        this.ctx.fillStyle = mode.color + 'cc'; // 80% opacity for hover
+      } else {
+        this.ctx.fillStyle = '#ffffff';
+      }
       this.ctx.fillText(isLocked ? '🔒 ' + mode.name : mode.name, startX + 8, y + 18);
     }
 
