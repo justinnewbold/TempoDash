@@ -1,12 +1,21 @@
 import { LevelConfig } from '../types';
 import { Level } from './Level';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { GAME_HEIGHT } from '../constants';
+
+// Level 2: "Neon Dreams" - 140 BPM
+// Beat interval: 150px (350 px/s ÷ 140 BPM × 60)
+// Jump distance: 210px, Jump height: 90px
+// Design: Introduces moving platforms, tighter timing
+
+const GROUND_Y = GAME_HEIGHT - 40;
+const GROUND_HEIGHT = 40;
+const BEAT = 150; // pixels per beat at 140 BPM
 
 const level2Config: LevelConfig = {
   id: 2,
   name: 'Neon Dreams',
-  playerStart: { x: 50, y: GAME_HEIGHT - 150 },
-  goal: { x: GAME_WIDTH - 80, y: 80, width: 50, height: 60 },
+  playerStart: { x: 100, y: GROUND_Y - 50 },
+  goal: { x: BEAT * 40, y: GROUND_Y - 80, width: 60, height: 80 }, // 40 beats = 6000px
   background: {
     type: 'neon',
     primaryColor: '#0d0221',
@@ -23,109 +32,88 @@ const level2Config: LevelConfig = {
     effects: ['grid', 'scanlines', 'pulse'],
   },
   platforms: [
-    // Starting area - safe zone
-    { x: 0, y: GAME_HEIGHT - 40, width: 180, height: 40, type: 'solid' },
+    // ===== INTRO (Beats 0-4): Safe zone =====
+    { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
 
-    // First section - introduce ice
-    { x: 200, y: GAME_HEIGHT - 60, width: 100, height: 20, type: 'ice' },
-    { x: 340, y: GAME_HEIGHT - 80, width: 80, height: 20, type: 'solid' },
-    { x: 460, y: GAME_HEIGHT - 60, width: 120, height: 20, type: 'solid' },
+    // ===== PHRASE 1 (Beats 4-8): Single spike pattern =====
+    { x: BEAT * 4.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 5, y: GROUND_Y, width: BEAT * 1.5, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 7, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 7.5, y: GROUND_Y, width: BEAT * 0.5, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Lava pit with platforms above
-    { x: 200, y: GAME_HEIGHT - 20, width: 400, height: 20, type: 'lava' },
+    // ===== PHRASE 2 (Beats 8-12): Double jump section =====
+    // Gap requires well-timed jump
+    { x: BEAT * 8.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 9, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+    // Longer gap - may need double jump
+    { x: BEAT * 10.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 11, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Second section - crumbling platforms
-    { x: 100, y: GAME_HEIGHT - 160, width: 80, height: 20, type: 'solid' },
-    { x: 220, y: GAME_HEIGHT - 180, width: 70, height: 20, type: 'crumble' },
-    { x: 330, y: GAME_HEIGHT - 200, width: 70, height: 20, type: 'crumble' },
-    { x: 440, y: GAME_HEIGHT - 180, width: 80, height: 20, type: 'solid' },
-
-    // Third section - phase platforms
-    { x: 50, y: GAME_HEIGHT - 280, width: 100, height: 20, type: 'phase' },
-    { x: 200, y: GAME_HEIGHT - 300, width: 80, height: 20, type: 'solid' },
-    { x: 320, y: GAME_HEIGHT - 320, width: 100, height: 20, type: 'phase' },
-    { x: 470, y: GAME_HEIGHT - 280, width: 80, height: 20, type: 'solid' },
-
-    // Moving platform gauntlet
+    // ===== PHRASE 3 (Beats 12-16): MOVING PLATFORMS - Level 2 unique! =====
+    // Moving platform 1 - player arrives at beat 12
     {
-      x: 80,
-      y: GAME_HEIGHT - 380,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 100, speed: 2 },
+      x: BEAT * 12, y: GROUND_Y - 60, width: 120, height: 20, type: 'moving',
+      movePattern: { type: 'vertical', distance: 25, speed: 2, startOffset: 0 }
     },
+    { x: BEAT * 12, y: GROUND_Y, width: 50, height: 30, type: 'spike' },
+
+    // Moving platform 2
     {
-      x: 280,
-      y: GAME_HEIGHT - 400,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'vertical', distance: 50, speed: 1.5 },
+      x: BEAT * 13.5, y: GROUND_Y - 60, width: 120, height: 20, type: 'moving',
+      movePattern: { type: 'vertical', distance: 25, speed: 2, startOffset: 1.5 }
     },
+    { x: BEAT * 13.5, y: GROUND_Y, width: 50, height: 30, type: 'spike' },
+
+    // Moving platform 3
     {
-      x: 450,
-      y: GAME_HEIGHT - 380,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 80, speed: 2.5, startOffset: 1.5 },
+      x: BEAT * 15, y: GROUND_Y - 60, width: 120, height: 20, type: 'moving',
+      movePattern: { type: 'vertical', distance: 25, speed: 2, startOffset: 3 }
     },
+    { x: BEAT * 15, y: GROUND_Y, width: 50, height: 30, type: 'spike' },
 
-    // Right side vertical climb
-    { x: 580, y: GAME_HEIGHT - 100, width: 100, height: 20, type: 'solid' },
-    { x: 700, y: GAME_HEIGHT - 160, width: 80, height: 20, type: 'bounce' },
-    { x: 600, y: GAME_HEIGHT - 250, width: 90, height: 20, type: 'solid' },
-    { x: 720, y: GAME_HEIGHT - 320, width: 80, height: 20, type: 'ice' },
-    { x: 620, y: GAME_HEIGHT - 400, width: 100, height: 20, type: 'solid' },
+    // ===== PHRASE 4 (Beats 16-20): Recovery and bounce =====
+    { x: BEAT * 16.5, y: GROUND_Y, width: BEAT * 1.5, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Circular moving platform
+    // Bounce pad launches player
+    { x: BEAT * 18.5, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    { x: BEAT * 20, y: GROUND_Y - 100, width: BEAT * 1, height: 20, type: 'solid' },
+
+    // ===== PHRASE 5 (Beats 20-24): Descent with spikes =====
+    { x: BEAT * 21.5, y: GROUND_Y - 60, width: BEAT * 1, height: 20, type: 'solid' },
+    { x: BEAT * 23, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+
+    // ===== PHRASE 6 (Beats 24-28): Triple spike gauntlet =====
+    { x: BEAT * 24.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 25, y: GROUND_Y, width: BEAT * 0.8, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 26, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 26.5, y: GROUND_Y, width: BEAT * 0.8, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 27.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 28, y: GROUND_Y, width: BEAT * 0.5, height: GROUND_HEIGHT, type: 'solid' },
+
+    // ===== PHRASE 7 (Beats 28-32): More moving platforms =====
     {
-      x: 750,
-      y: GAME_HEIGHT - 450,
-      width: 70,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'circular', distance: 40, speed: 1.8 },
+      x: BEAT * 29, y: GROUND_Y - 50, width: 100, height: 20, type: 'moving',
+      movePattern: { type: 'vertical', distance: 20, speed: 2.5, startOffset: 0 }
     },
+    { x: BEAT * 29, y: GROUND_Y, width: 40, height: 30, type: 'spike' },
 
-    // Upper challenge section
-    { x: 500, y: GAME_HEIGHT - 460, width: 80, height: 20, type: 'solid' },
-    { x: 350, y: GAME_HEIGHT - 440, width: 70, height: 20, type: 'crumble' },
-    { x: 200, y: GAME_HEIGHT - 460, width: 100, height: 20, type: 'phase' },
-    { x: 50, y: GAME_HEIGHT - 440, width: 80, height: 20, type: 'solid' },
-
-    // Ice slide section
-    { x: 100, y: GAME_HEIGHT - 500, width: 150, height: 15, type: 'ice' },
-    { x: 300, y: GAME_HEIGHT - 480, width: 100, height: 15, type: 'ice' },
-
-    // Bounce chain to reach goal
-    { x: 450, y: GAME_HEIGHT - 500, width: 60, height: 20, type: 'bounce' },
-    { x: 560, y: GAME_HEIGHT - 480, width: 60, height: 20, type: 'solid' },
-    { x: 680, y: GAME_HEIGHT - 500, width: 60, height: 20, type: 'bounce' },
-
-    // Final approach with danger
-    { x: 780, y: GAME_HEIGHT - 420, width: 80, height: 20, type: 'solid' },
-    { x: 800, y: GAME_HEIGHT - 340, width: 100, height: 15, type: 'lava' },
-
-    // Platform above lava
     {
-      x: 820,
-      y: GAME_HEIGHT - 380,
-      width: 70,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 30, speed: 3 },
+      x: BEAT * 30.5, y: GROUND_Y - 50, width: 100, height: 20, type: 'moving',
+      movePattern: { type: 'vertical', distance: 20, speed: 2.5, startOffset: 1.5 }
     },
+    { x: BEAT * 30.5, y: GROUND_Y, width: 40, height: 30, type: 'spike' },
 
-    // Goal platform
-    { x: GAME_WIDTH - 120, y: 160, width: 100, height: 20, type: 'solid' },
+    // ===== PHRASE 8 (Beats 32-36): Bounce chain =====
+    { x: BEAT * 32, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 33.5, y: GROUND_Y, width: 70, height: 20, type: 'bounce' },
+    { x: BEAT * 35, y: GROUND_Y - 80, width: 70, height: 20, type: 'bounce' },
 
-    // Alternative path with phase platforms
-    { x: 850, y: GAME_HEIGHT - 460, width: 80, height: 20, type: 'phase' },
-    { x: GAME_WIDTH - 100, y: GAME_HEIGHT - 380, width: 70, height: 20, type: 'solid' },
-    { x: GAME_WIDTH - 80, y: GAME_HEIGHT - 280, width: 60, height: 20, type: 'solid' },
-    { x: GAME_WIDTH - 100, y: GAME_HEIGHT - 180, width: 80, height: 20, type: 'bounce' },
+    // ===== PHRASE 9 (Beats 36-40): Final approach =====
+    { x: BEAT * 36.5, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 38, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 38.5, y: GROUND_Y, width: BEAT * 0.8, height: GROUND_HEIGHT, type: 'solid' },
+    // Final platform to goal
+    { x: BEAT * 39.5, y: GROUND_Y, width: BEAT * 1.5, height: GROUND_HEIGHT, type: 'solid' },
   ],
 };
 

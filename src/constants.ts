@@ -2,18 +2,14 @@ export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 540;
 
 export const PLAYER = {
-  WIDTH: 32,
-  HEIGHT: 48,
-  SPEED: 300,
-  JUMP_FORCE: 520,
-  GRAVITY: 1200,
-  MAX_FALL_SPEED: 800,
-  BOUNCE_MULTIPLIER: 1.5,
-  ICE_FRICTION: 0.98,
-  NORMAL_FRICTION: 0.85,
-  AIR_CONTROL: 0.6,
-  COYOTE_TIME: 100,
-  JUMP_BUFFER: 150,
+  WIDTH: 40,
+  HEIGHT: 40,
+  SPEED: 350, // Auto-scroll speed (pixels per second)
+  JUMP_FORCE: 600,
+  GRAVITY: 2000,
+  MAX_FALL_SPEED: 1000,
+  BOUNCE_MULTIPLIER: 1.3,
+  ROTATION_SPEED: 360, // Degrees per second when in air
 };
 
 export const PLATFORM = {
@@ -36,6 +32,7 @@ export const COLORS = {
     ice: '#90cdf4',
     lava: '#f56565',
     phase: '#b794f4',
+    spike: '#ffffff',
   },
 
   // Level 1 - City Night

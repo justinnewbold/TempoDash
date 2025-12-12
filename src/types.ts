@@ -27,7 +27,8 @@ export type PlatformType =
   | 'moving'     // Moving platform
   | 'ice'        // Slippery platform
   | 'lava'       // Deadly platform
-  | 'phase';     // Phases in and out
+  | 'phase'      // Phases in and out
+  | 'spike';     // Deadly spike obstacle
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -84,7 +85,29 @@ export interface GameState {
   currentLevel: number;
   lives: number;
   score: number;
-  gameStatus: 'menu' | 'playing' | 'paused' | 'levelComplete' | 'gameOver';
+  gameStatus: MenuState;
+}
+
+export type MenuState =
+  | 'mainMenu'
+  | 'levelSelect'
+  | 'settings'
+  | 'playing'
+  | 'paused'
+  | 'levelComplete'
+  | 'gameOver';
+
+export interface SaveData {
+  totalPoints: number;
+  unlockedLevels: number[];
+  highScores: Record<number, number>;
+  settings: GameSettings;
+}
+
+export interface GameSettings {
+  musicVolume: number;
+  sfxVolume: number;
+  screenShake: boolean;
 }
 
 export interface InputState {

@@ -11,6 +11,7 @@ export class Level {
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
+  levelLength: number;
 
   constructor(config: LevelConfig) {
     this.id = config.id;
@@ -22,6 +23,15 @@ export class Level {
     // Create platforms
     for (const platformConfig of config.platforms) {
       this.platforms.push(new Platform(platformConfig));
+    }
+
+    // Calculate level length (furthest platform or goal)
+    this.levelLength = this.goal.x + this.goal.width;
+    for (const platform of this.platforms) {
+      const platformEnd = platform.x + platform.width;
+      if (platformEnd > this.levelLength) {
+        this.levelLength = platformEnd;
+      }
     }
   }
 
@@ -38,6 +48,13 @@ export class Level {
     }
   }
 
+  getProgress(playerX: number): number {
+    const startX = this.playerStart.x;
+    const endX = this.goal.x;
+    const progress = (playerX - startX) / (endX - startX);
+    return Math.max(0, Math.min(1, progress));
+  }
+
   checkGoal(player: Player): boolean {
     const playerBounds = player.getBounds();
 
@@ -49,20 +66,27 @@ export class Level {
     );
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
-    // Draw background
-    this.background.render(ctx);
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
+    // Draw background (with parallax effect)
+    this.background.render(ctx, cameraX);
 
     // Draw platforms
     for (const platform of this.platforms) {
-      platform.render(ctx);
+      platform.render(ctx, cameraX);
     }
 
     // Draw goal
-    this.renderGoal(ctx);
+    this.renderGoal(ctx, cameraX);
   }
 
-  private renderGoal(ctx: CanvasRenderingContext2D): void {
+  private renderGoal(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const screenX = this.goal.x - cameraX;
+
+    // Skip if off screen
+    if (screenX + this.goal.width < -50 || screenX > ctx.canvas.width + 50) {
+      return;
+    }
+
     const time = Date.now() * 0.003;
     const pulse = Math.sin(time) * 0.3 + 0.7;
 
@@ -72,9 +96,9 @@ export class Level {
 
     // Goal gradient
     const gradient = ctx.createLinearGradient(
-      this.goal.x,
+      screenX,
       this.goal.y,
-      this.goal.x,
+      screenX,
       this.goal.y + this.goal.height
     );
     gradient.addColorStop(0, '#ffd700');
@@ -82,11 +106,11 @@ export class Level {
     gradient.addColorStop(1, '#ffd700');
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(this.goal.x, this.goal.y, this.goal.width, this.goal.height);
+    ctx.fillRect(screenX, this.goal.y, this.goal.width, this.goal.height);
 
     // Star icon in center
     ctx.fillStyle = '#fff';
-    const centerX = this.goal.x + this.goal.width / 2;
+    const centerX = screenX + this.goal.width / 2;
     const centerY = this.goal.y + this.goal.height / 2;
     this.drawStar(ctx, centerX, centerY, 12 * pulse, 5);
 

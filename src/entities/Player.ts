@@ -6,6 +6,7 @@ interface TrailPoint {
   x: number;
   y: number;
   alpha: number;
+  rotation: number;
 }
 
 export class Player {
@@ -13,17 +14,15 @@ export class Player {
   y: number;
   width = PLAYER.WIDTH;
   height = PLAYER.HEIGHT;
-  velocityX = 0;
   velocityY = 0;
 
   isGrounded = false;
-  isOnIce = false;
   isDead = false;
-  private coyoteTime = 0;
-  private jumpBufferTime = 0;
+  private rotation = 0; // Current rotation in degrees
+  private targetRotation = 0; // Target rotation (snaps to 90 degree increments)
   private trail: TrailPoint[] = [];
   private animationTime = 0;
-  private facingRight = true;
+  private hasDoubleJump = true; // Can perform one air jump
 
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
@@ -33,13 +32,13 @@ export class Player {
   reset(position: Vector2): void {
     this.x = position.x;
     this.y = position.y;
-    this.velocityX = 0;
     this.velocityY = 0;
     this.isGrounded = false;
     this.isDead = false;
-    this.coyoteTime = 0;
-    this.jumpBufferTime = 0;
+    this.rotation = 0;
+    this.targetRotation = 0;
     this.trail = [];
+    this.hasDoubleJump = true;
   }
 
   update(deltaTime: number, input: InputState, platforms: Platform[]): void {
@@ -50,88 +49,48 @@ export class Player {
     // Update trail
     this.updateTrail(deltaTime);
 
-    // Handle horizontal movement
-    this.handleMovement(input, deltaTime);
+    // Auto-move forward at constant speed
+    this.x += PLAYER.SPEED * (deltaTime / 1000);
 
-    // Handle jumping
-    this.handleJumping(input, deltaTime);
+    // Handle jumping (auto-jump when holding - jump as soon as grounded)
+    if (input.jump && this.isGrounded) {
+      this.velocityY = -PLAYER.JUMP_FORCE;
+      this.isGrounded = false;
+      this.hasDoubleJump = true; // Reset double jump on ground jump
+    } else if (input.jumpPressed && !this.isGrounded && this.hasDoubleJump) {
+      // Double jump in air (requires new press, not hold)
+      this.velocityY = -PLAYER.JUMP_FORCE * 0.85; // Slightly weaker double jump
+      this.hasDoubleJump = false;
+    }
 
     // Apply gravity
     this.velocityY += PLAYER.GRAVITY * (deltaTime / 1000);
     this.velocityY = Math.min(this.velocityY, PLAYER.MAX_FALL_SPEED);
 
-    // Apply velocities
-    this.x += this.velocityX * (deltaTime / 1000);
+    // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
+
+    // Handle rotation (spin in air like Geometry Dash)
+    if (!this.isGrounded) {
+      this.rotation += PLAYER.ROTATION_SPEED * (deltaTime / 1000);
+    } else {
+      // Snap to nearest 90 degrees when landing
+      this.targetRotation = Math.round(this.rotation / 90) * 90;
+      this.rotation = this.targetRotation;
+    }
 
     // Handle collisions
     this.handleCollisions(platforms);
 
-    // Update coyote time
-    if (!this.isGrounded) {
-      this.coyoteTime -= deltaTime;
-    }
-
-    // Check if fell off screen
+    // Check if fell off screen (death)
     if (this.y > GAME_HEIGHT + 100) {
       this.isDead = true;
-    }
-  }
-
-  private handleMovement(input: InputState, deltaTime: number): void {
-    const targetVelocity =
-      (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const acceleration = this.isGrounded
-      ? PLAYER.SPEED
-      : PLAYER.SPEED * PLAYER.AIR_CONTROL;
-
-    if (targetVelocity !== 0) {
-      this.facingRight = targetVelocity > 0;
-      this.velocityX += targetVelocity * acceleration * (deltaTime / 1000) * 10;
-      this.velocityX = Math.max(
-        -PLAYER.SPEED,
-        Math.min(PLAYER.SPEED, this.velocityX)
-      );
-    } else {
-      // Apply friction
-      const friction = this.isOnIce
-        ? PLAYER.ICE_FRICTION
-        : PLAYER.NORMAL_FRICTION;
-      this.velocityX *= Math.pow(friction, deltaTime / 16);
-      if (Math.abs(this.velocityX) < 5) {
-        this.velocityX = 0;
-      }
-    }
-  }
-
-  private handleJumping(input: InputState, deltaTime: number): void {
-    // Buffer jump input
-    if (input.jumpPressed) {
-      this.jumpBufferTime = PLAYER.JUMP_BUFFER;
-    } else {
-      this.jumpBufferTime -= deltaTime;
-    }
-
-    // Can jump if grounded or in coyote time
-    const canJump = this.isGrounded || this.coyoteTime > 0;
-
-    if (this.jumpBufferTime > 0 && canJump) {
-      this.velocityY = -PLAYER.JUMP_FORCE;
-      this.isGrounded = false;
-      this.coyoteTime = 0;
-      this.jumpBufferTime = 0;
-    }
-
-    // Variable jump height
-    if (!input.jump && this.velocityY < -PLAYER.JUMP_FORCE / 2) {
-      this.velocityY = -PLAYER.JUMP_FORCE / 2;
     }
   }
 
   private handleCollisions(platforms: Platform[]): void {
     const wasGrounded = this.isGrounded;
     this.isGrounded = false;
-    this.isOnIce = false;
 
     for (const platform of platforms) {
       if (!platform.isCollidable()) continue;
@@ -142,6 +101,7 @@ export class Player {
       // Handle platform-specific effects
       switch (platform.type) {
         case 'lava':
+        case 'spike':
           this.isDead = true;
           return;
 
@@ -151,27 +111,21 @@ export class Player {
             this.y = platform.y - this.height;
           }
           continue;
+      }
 
-        case 'crumble':
-          if (collision === 'top') {
-            platform.startCrumble();
-          }
-          break;
-
-        case 'ice':
-          if (collision === 'top') {
-            this.isOnIce = true;
-          }
-          break;
+      // In Geometry Dash style, hitting the side of a platform = death
+      if (collision === 'left' || collision === 'right') {
+        this.isDead = true;
+        return;
       }
 
       // Resolve collision
       this.resolveCollision(platform, collision);
     }
 
-    // Set coyote time when leaving ground
-    if (wasGrounded && !this.isGrounded) {
-      this.coyoteTime = PLAYER.COYOTE_TIME;
+    // Reset rotation target when first landing
+    if (!wasGrounded && this.isGrounded) {
+      this.targetRotation = Math.round(this.rotation / 90) * 90;
     }
   }
 
@@ -217,42 +171,39 @@ export class Player {
         this.y = bounds.y - this.height;
         this.velocityY = 0;
         this.isGrounded = true;
+        this.hasDoubleJump = true; // Reset double jump on landing
         break;
       case 'bottom':
         this.y = bounds.y + bounds.height;
         this.velocityY = 0;
         break;
       case 'left':
-        this.x = bounds.x - this.width;
-        this.velocityX = 0;
-        break;
       case 'right':
-        this.x = bounds.x + bounds.width;
-        this.velocityX = 0;
+        // Side collisions are death in auto-runner
+        this.isDead = true;
         break;
     }
   }
 
   private updateTrail(deltaTime: number): void {
     // Add new trail point
-    if (Math.abs(this.velocityX) > 50 || Math.abs(this.velocityY) > 50) {
-      this.trail.push({
-        x: this.x + this.width / 2,
-        y: this.y + this.height / 2,
-        alpha: 0.5,
-      });
-    }
+    this.trail.push({
+      x: this.x + this.width / 2,
+      y: this.y + this.height / 2,
+      alpha: 0.6,
+      rotation: this.rotation,
+    });
 
     // Update and remove old trail points
     for (let i = this.trail.length - 1; i >= 0; i--) {
-      this.trail[i].alpha -= deltaTime / 200;
+      this.trail[i].alpha -= deltaTime / 100;
       if (this.trail[i].alpha <= 0) {
         this.trail.splice(i, 1);
       }
     }
 
     // Limit trail length
-    while (this.trail.length > 20) {
+    while (this.trail.length > 15) {
       this.trail.shift();
     }
   }
@@ -266,34 +217,32 @@ export class Player {
     };
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
+    const screenX = this.x - cameraX;
+    const screenY = this.y;
+
     // Draw trail
     for (const point of this.trail) {
-      ctx.fillStyle = `rgba(0, 255, 170, ${point.alpha})`;
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 8 * point.alpha, 0, Math.PI * 2);
-      ctx.fill();
+      const trailScreenX = point.x - cameraX;
+      ctx.save();
+      ctx.translate(trailScreenX, point.y);
+      ctx.rotate((point.rotation * Math.PI) / 180);
+      ctx.fillStyle = `rgba(0, 255, 170, ${point.alpha * 0.3})`;
+      ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
+                   this.width * point.alpha, this.height * point.alpha);
+      ctx.restore();
     }
 
-    // Draw player
+    // Draw player cube
     ctx.save();
-    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-
-    // Squash and stretch
-    const stretchY = 1 + Math.abs(this.velocityY) / 2000;
-    const squashX = 1 / stretchY;
-    ctx.scale(squashX, stretchY);
-
-    // Flip based on direction
-    if (!this.facingRight) {
-      ctx.scale(-1, 1);
-    }
+    ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
+    ctx.rotate((this.rotation * Math.PI) / 180);
 
     // Body glow
     ctx.shadowColor = COLORS.PLAYER;
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 20;
 
-    // Main body
+    // Main cube body with gradient
     const gradient = ctx.createLinearGradient(
       -this.width / 2,
       -this.height / 2,
@@ -304,85 +253,53 @@ export class Player {
     gradient.addColorStop(0.5, COLORS.PLAYER);
     gradient.addColorStop(1, '#00cc88');
     ctx.fillStyle = gradient;
+    ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
-    // Draw rounded rectangle body
-    this.drawRoundedRect(
-      ctx,
-      -this.width / 2,
-      -this.height / 2,
-      this.width,
-      this.height,
-      8
-    );
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(-this.width / 2 + 4, -this.height / 2 + 4, this.width - 8, 8);
 
-    // Eye
+    // Border
+    ctx.strokeStyle = '#00ffee';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+
+    // Eye/face design (in top-right corner - front of movement)
+    const eyeX = this.width / 2 - 10;
+    const eyeY = -this.height / 2 + 10;
+
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.ellipse(5, -10, 6, 8, 0, 0, Math.PI * 2);
+    ctx.arc(eyeX, eyeY, 7, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#000000';
     ctx.beginPath();
-    ctx.arc(7, -10, 3, 0, Math.PI * 2);
+    ctx.arc(eyeX + 2, eyeY, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Animated pulse effect
-    const pulse = Math.sin(this.animationTime * 0.005) * 0.1 + 0.9;
-    ctx.strokeStyle = `rgba(0, 255, 170, ${0.5 * pulse})`;
-    ctx.lineWidth = 2;
-    this.strokeRoundedRect(
-      ctx,
-      -this.width / 2 - 3,
-      -this.height / 2 - 3,
-      this.width + 6,
-      this.height + 6,
-      10
-    );
+    // Small highlight in eye
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(eyeX + 3.5, eyeY - 2, 1.5, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
-  }
 
-  private drawRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    radius: number
-  ): void {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  private strokeRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    radius: number
-  ): void {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    ctx.stroke();
+    // Animated pulse effect around player (when grounded)
+    if (this.isGrounded) {
+      const pulse = Math.sin(this.animationTime * 0.01) * 0.2 + 0.8;
+      ctx.save();
+      ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
+      ctx.strokeStyle = `rgba(0, 255, 170, ${0.3 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        -this.width / 2 - 5 * pulse,
+        -this.height / 2 - 5 * pulse,
+        this.width + 10 * pulse,
+        this.height + 10 * pulse
+      );
+      ctx.restore();
+    }
   }
 }

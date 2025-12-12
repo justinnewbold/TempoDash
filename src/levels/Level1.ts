@@ -1,12 +1,21 @@
 import { LevelConfig } from '../types';
 import { Level } from './Level';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { GAME_HEIGHT } from '../constants';
+
+// Level 1: "First Flight" - 128 BPM
+// Beat interval: 164px (350 px/s ÷ 128 BPM × 60)
+// Jump distance: 210px, Jump height: 90px
+// Design: Introduce basic mechanics with forgiving timing
+
+const GROUND_Y = GAME_HEIGHT - 40;
+const GROUND_HEIGHT = 40;
+const BEAT = 164; // pixels per beat at 128 BPM
 
 const level1Config: LevelConfig = {
   id: 1,
-  name: 'City Nights',
-  playerStart: { x: 50, y: GAME_HEIGHT - 150 },
-  goal: { x: GAME_WIDTH - 80, y: 100, width: 50, height: 60 },
+  name: 'First Flight',
+  playerStart: { x: 100, y: GROUND_Y - 50 },
+  goal: { x: BEAT * 32, y: GROUND_Y - 80, width: 60, height: 80 }, // 32 beats = ~5248px
   background: {
     type: 'city',
     primaryColor: '#0a0a1a',
@@ -23,47 +32,54 @@ const level1Config: LevelConfig = {
     effects: ['stars'],
   },
   platforms: [
-    // Ground level platforms
-    { x: 0, y: GAME_HEIGHT - 40, width: 200, height: 40, type: 'solid' },
-    { x: 250, y: GAME_HEIGHT - 40, width: 150, height: 40, type: 'solid' },
-    { x: 450, y: GAME_HEIGHT - 40, width: 200, height: 40, type: 'solid' },
+    // ===== INTRO (Beats 0-4): Safe starting zone =====
+    { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
 
-    // First tier - learning basic jumps
-    { x: 100, y: GAME_HEIGHT - 120, width: 120, height: 20, type: 'solid' },
-    { x: 280, y: GAME_HEIGHT - 140, width: 100, height: 20, type: 'solid' },
-    { x: 440, y: GAME_HEIGHT - 160, width: 100, height: 20, type: 'solid' },
+    // ===== PHRASE 1 (Beats 4-8): First spike - single jump =====
+    // Spike at beat 4.5 - player jumps on beat 4
+    { x: BEAT * 4.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 5, y: GROUND_Y, width: BEAT * 3, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Second tier - introduce bounce platform
-    { x: 50, y: GAME_HEIGHT - 240, width: 80, height: 20, type: 'solid' },
-    { x: 180, y: GAME_HEIGHT - 260, width: 80, height: 20, type: 'bounce' },
-    { x: 320, y: GAME_HEIGHT - 280, width: 100, height: 20, type: 'solid' },
-    { x: 480, y: GAME_HEIGHT - 240, width: 120, height: 20, type: 'solid' },
+    // ===== PHRASE 2 (Beats 8-12): Two spikes with rhythm =====
+    // Spike on beat 8.5, land, spike on beat 10.5
+    { x: BEAT * 8.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 9, y: GROUND_Y, width: BEAT * 1.5, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 10.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 11, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Third tier - moving platform introduction
-    {
-      x: 100,
-      y: GAME_HEIGHT - 360,
-      width: 100,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 80, speed: 1.5 },
-    },
-    { x: 280, y: GAME_HEIGHT - 380, width: 80, height: 20, type: 'solid' },
-    { x: 420, y: GAME_HEIGHT - 360, width: 100, height: 20, type: 'solid' },
+    // ===== PHRASE 3 (Beats 12-16): Gap jump + spike =====
+    // Gap from beat 12-13 (164px gap - easy jump)
+    { x: BEAT * 13, y: GROUND_Y, width: BEAT * 1.5, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 14.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 15, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Upper section
-    { x: 550, y: GAME_HEIGHT - 300, width: 80, height: 20, type: 'solid' },
-    { x: 680, y: GAME_HEIGHT - 250, width: 100, height: 20, type: 'solid' },
-    { x: 820, y: GAME_HEIGHT - 200, width: 80, height: 20, type: 'solid' },
+    // ===== PHRASE 4 (Beats 16-20): Bounce pad introduction =====
+    { x: BEAT * 16, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    // Bounce sends player higher - land on elevated platform
+    { x: BEAT * 17.5, y: GROUND_Y - 80, width: BEAT * 1.5, height: 20, type: 'solid' },
+    // Drop back down
+    { x: BEAT * 19, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Path to goal
-    { x: 700, y: GAME_HEIGHT - 350, width: 80, height: 20, type: 'solid' },
-    { x: 580, y: GAME_HEIGHT - 420, width: 100, height: 20, type: 'solid' },
-    { x: 720, y: GAME_HEIGHT - 440, width: 100, height: 20, type: 'solid' },
-    { x: 860, y: GAME_HEIGHT - 380, width: 100, height: 20, type: 'solid' },
+    // ===== PHRASE 5 (Beats 20-24): Double spike pattern =====
+    { x: BEAT * 20.5, y: GROUND_Y, width: 50, height: 30, type: 'spike' },
+    { x: BEAT * 21.5, y: GROUND_Y, width: BEAT * 2.5, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Final approach
-    { x: GAME_WIDTH - 150, y: 180, width: 120, height: 20, type: 'solid' },
+    // ===== PHRASE 6 (Beats 24-28): Platform hopping =====
+    // Elevated platform at beat 24
+    { x: BEAT * 24, y: GROUND_Y - 60, width: BEAT * 1, height: 20, type: 'solid' },
+    { x: BEAT * 24, y: GROUND_Y, width: 40, height: 30, type: 'spike' },
+    // Second platform
+    { x: BEAT * 25.5, y: GROUND_Y - 60, width: BEAT * 1, height: 20, type: 'solid' },
+    { x: BEAT * 25.5, y: GROUND_Y, width: 40, height: 30, type: 'spike' },
+    // Return to ground
+    { x: BEAT * 27, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+
+    // ===== PHRASE 7 (Beats 28-32): Final run to goal =====
+    { x: BEAT * 28.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: BEAT * 29, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
+    { x: BEAT * 30.5, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    // Final platform to goal
+    { x: BEAT * 31, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },
   ],
 };
 
