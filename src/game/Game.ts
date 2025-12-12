@@ -19,6 +19,8 @@ export class Game {
 
   private player!: Player;
   private level!: Level;
+  private cameraX = 0;
+  private attempts = 0;
 
   private lastTime = 0;
   private deathTimer = 0;
@@ -35,16 +37,31 @@ export class Game {
     this.ctx = ctx;
 
     this.input = new InputManager();
+    this.input.setCanvas(canvas);
     this.loadLevel(1);
 
     // Setup keyboard for menu
     window.addEventListener('keydown', (e) => this.handleMenuInput(e));
+
+    // Setup click/touch for menu
+    canvas.addEventListener('click', () => this.handleMenuClick());
   }
 
   private loadLevel(levelId: number): void {
     this.level = createLevel(levelId);
     this.player = new Player(this.level.playerStart);
     this.state.currentLevel = levelId;
+    this.cameraX = 0;
+  }
+
+  private handleMenuClick(): void {
+    if (this.state.gameStatus === 'menu') {
+      this.startGame();
+    } else if (this.state.gameStatus === 'gameOver') {
+      this.resetGame();
+    } else if (this.state.gameStatus === 'levelComplete') {
+      this.nextLevel();
+    }
   }
 
   private handleMenuInput(e: KeyboardEvent): void {
@@ -79,7 +96,7 @@ export class Game {
 
   private startGame(): void {
     this.loadLevel(this.state.currentLevel);
-    this.state.lives = 3;
+    this.attempts = 1;
     this.state.score = 0;
     this.state.gameStatus = 'playing';
   }
@@ -93,6 +110,7 @@ export class Game {
     if (this.state.currentLevel < TOTAL_LEVELS) {
       this.state.currentLevel++;
       this.loadLevel(this.state.currentLevel);
+      this.attempts = 1;
       this.state.gameStatus = 'playing';
     } else {
       // Game complete - show victory or return to menu
@@ -101,12 +119,9 @@ export class Game {
   }
 
   private respawnPlayer(): void {
-    this.state.lives--;
-    if (this.state.lives <= 0) {
-      this.state.gameStatus = 'gameOver';
-    } else {
-      this.loadLevel(this.state.currentLevel);
-    }
+    this.attempts++;
+    this.loadLevel(this.state.currentLevel);
+    this.state.gameStatus = 'playing';
   }
 
   start(): void {
@@ -140,10 +155,14 @@ export class Game {
     // Update player
     this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
 
+    // Update camera to follow player (keep player on left side of screen)
+    const targetCameraX = this.player.x - 150;
+    this.cameraX = Math.max(0, targetCameraX);
+
     // Check for death
     if (this.player.isDead) {
       this.deathTimer += deltaTime;
-      if (this.deathTimer > 1000) {
+      if (this.deathTimer > 500) {
         this.deathTimer = 0;
         this.respawnPlayer();
       }
@@ -152,14 +171,8 @@ export class Game {
 
     // Check for goal
     if (this.level.checkGoal(this.player)) {
-      this.state.score += 1000;
+      this.state.score += Math.max(1000 - (this.attempts - 1) * 50, 100);
       this.state.gameStatus = 'levelComplete';
-    }
-
-    // Screen boundaries
-    if (this.player.x < 0) this.player.x = 0;
-    if (this.player.x > GAME_WIDTH - this.player.width) {
-      this.player.x = GAME_WIDTH - this.player.width;
     }
   }
 
@@ -168,12 +181,12 @@ export class Game {
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    // Render level
-    this.level.render(this.ctx);
+    // Render level with camera offset
+    this.level.render(this.ctx, this.cameraX);
 
     // Render player
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'paused') {
-      this.player.render(this.ctx);
+      this.player.render(this.ctx, this.cameraX);
     }
 
     // Render UI
@@ -202,26 +215,45 @@ export class Game {
     }
 
     this.ctx.save();
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
-    this.ctx.textAlign = 'left';
+
+    // Progress bar at top
+    const progress = this.level.getProgress(this.player.x);
+    const barWidth = GAME_WIDTH - 40;
+    const barHeight = 8;
+    const barX = 20;
+    const barY = 20;
+
+    // Bar background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    // Progress fill
+    const gradient = this.ctx.createLinearGradient(barX, barY, barX + barWidth * progress, barY);
+    gradient.addColorStop(0, '#00ffaa');
+    gradient.addColorStop(1, '#00ffff');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+
+    // Bar border
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+    // Percentage text
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
     this.ctx.fillStyle = COLORS.UI_TEXT;
     this.ctx.shadowColor = COLORS.UI_SHADOW;
     this.ctx.shadowBlur = 4;
+    this.ctx.fillText(`${Math.floor(progress * 100)}%`, GAME_WIDTH / 2, 50);
 
-    // Level name
-    this.ctx.fillText(`Level ${this.state.currentLevel}: ${this.level.name}`, 20, 35);
+    // Level name (left)
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`${this.level.name}`, 20, 50);
 
-    // Lives
-    this.ctx.fillText(`Lives: ${'♥'.repeat(this.state.lives)}`, 20, 65);
-
-    // Score
+    // Attempt counter (right)
     this.ctx.textAlign = 'right';
-    this.ctx.fillText(`Score: ${this.state.score}`, GAME_WIDTH - 20, 35);
-
-    // Controls hint
-    this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Arrow keys / WASD to move, Space to jump', GAME_WIDTH - 20, 65);
+    this.ctx.fillText(`Attempt ${this.attempts}`, GAME_WIDTH - 20, 50);
 
     this.ctx.restore();
   }
@@ -242,19 +274,19 @@ export class Game {
     // Subtitle
     this.ctx.font = '24px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 10;
-    this.ctx.fillText('A Rhythm Platformer', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
+    this.ctx.fillText('Auto-Runner Platformer', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
 
     // Instructions
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 5;
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Press ENTER or SPACE to start', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
-    this.ctx.fillText('Press 1 for Level 1, 2 for Level 2', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
+    this.ctx.fillText('Click, Tap, or Press SPACE to jump', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+    this.ctx.fillText('Press ENTER or Click to start', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
 
-    // Controls
+    // Level select
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Controls: Arrow keys or WASD to move, Space to jump', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130);
+    this.ctx.fillText('Press 1 for Level 1, 2 for Level 2', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120);
 
     this.ctx.restore();
   }
@@ -297,7 +329,7 @@ export class Game {
 
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Press ENTER or SPACE to restart', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
+    this.ctx.fillText('Click or Press ENTER to restart', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
 
     this.ctx.restore();
   }
@@ -312,21 +344,22 @@ export class Game {
     this.ctx.shadowBlur = 25;
 
     this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40);
+    this.ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50);
 
     this.ctx.fillStyle = COLORS.UI_TEXT;
     this.ctx.font = '24px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 10;
-    this.ctx.fillText(`Score: ${this.state.score}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
+    this.ctx.fillText(`Attempts: ${this.attempts}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10);
+    this.ctx.fillText(`Score: ${this.state.score}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 45);
 
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
 
     if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.ctx.fillText('Press ENTER or SPACE for next level', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
+      this.ctx.fillText('Click or Press ENTER for next level', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 95);
     } else {
-      this.ctx.fillText('Congratulations! You beat the game!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60);
-      this.ctx.fillText('Press ENTER or SPACE to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 95);
+      this.ctx.fillText('Congratulations! You beat the game!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 85);
+      this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 115);
     }
 
     this.ctx.restore();

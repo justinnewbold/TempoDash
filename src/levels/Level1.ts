@@ -1,12 +1,16 @@
 import { LevelConfig } from '../types';
 import { Level } from './Level';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { GAME_HEIGHT } from '../constants';
+
+// Ground Y position
+const GROUND_Y = GAME_HEIGHT - 40;
+const GROUND_HEIGHT = 40;
 
 const level1Config: LevelConfig = {
   id: 1,
-  name: 'City Nights',
-  playerStart: { x: 50, y: GAME_HEIGHT - 150 },
-  goal: { x: GAME_WIDTH - 80, y: 100, width: 50, height: 60 },
+  name: 'First Flight',
+  playerStart: { x: 100, y: GROUND_Y - 50 },
+  goal: { x: 4200, y: GROUND_Y - 80, width: 60, height: 80 },
   background: {
     type: 'city',
     primaryColor: '#0a0a1a',
@@ -23,47 +27,52 @@ const level1Config: LevelConfig = {
     effects: ['stars'],
   },
   platforms: [
-    // Ground level platforms
-    { x: 0, y: GAME_HEIGHT - 40, width: 200, height: 40, type: 'solid' },
-    { x: 250, y: GAME_HEIGHT - 40, width: 150, height: 40, type: 'solid' },
-    { x: 450, y: GAME_HEIGHT - 40, width: 200, height: 40, type: 'solid' },
+    // Starting ground section
+    { x: 0, y: GROUND_Y, width: 400, height: GROUND_HEIGHT, type: 'solid' },
 
-    // First tier - learning basic jumps
-    { x: 100, y: GAME_HEIGHT - 120, width: 120, height: 20, type: 'solid' },
-    { x: 280, y: GAME_HEIGHT - 140, width: 100, height: 20, type: 'solid' },
-    { x: 440, y: GAME_HEIGHT - 160, width: 100, height: 20, type: 'solid' },
+    // First gap with single spike
+    { x: 450, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 500, y: GROUND_Y, width: 300, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Second tier - introduce bounce platform
-    { x: 50, y: GAME_HEIGHT - 240, width: 80, height: 20, type: 'solid' },
-    { x: 180, y: GAME_HEIGHT - 260, width: 80, height: 20, type: 'bounce' },
-    { x: 320, y: GAME_HEIGHT - 280, width: 100, height: 20, type: 'solid' },
-    { x: 480, y: GAME_HEIGHT - 240, width: 120, height: 20, type: 'solid' },
+    // Double spike obstacle
+    { x: 850, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
+    { x: 930, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Third tier - moving platform introduction
-    {
-      x: 100,
-      y: GAME_HEIGHT - 360,
-      width: 100,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 80, speed: 1.5 },
-    },
-    { x: 280, y: GAME_HEIGHT - 380, width: 80, height: 20, type: 'solid' },
-    { x: 420, y: GAME_HEIGHT - 360, width: 100, height: 20, type: 'solid' },
+    // Platform section - jump up
+    { x: 1180, y: GROUND_Y - 60, width: 120, height: 20, type: 'solid' },
+    { x: 1350, y: GROUND_Y - 60, width: 120, height: 20, type: 'solid' },
+    { x: 1350, y: GROUND_Y, width: 30, height: 30, type: 'spike' }, // Spike below platform
 
-    // Upper section
-    { x: 550, y: GAME_HEIGHT - 300, width: 80, height: 20, type: 'solid' },
-    { x: 680, y: GAME_HEIGHT - 250, width: 100, height: 20, type: 'solid' },
-    { x: 820, y: GAME_HEIGHT - 200, width: 80, height: 20, type: 'solid' },
+    // Back to ground with triple spike
+    { x: 1520, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 1770, y: GROUND_Y, width: 90, height: 30, type: 'spike' },
+    { x: 1880, y: GROUND_Y, width: 300, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Path to goal
-    { x: 700, y: GAME_HEIGHT - 350, width: 80, height: 20, type: 'solid' },
-    { x: 580, y: GAME_HEIGHT - 420, width: 100, height: 20, type: 'solid' },
-    { x: 720, y: GAME_HEIGHT - 440, width: 100, height: 20, type: 'solid' },
-    { x: 860, y: GAME_HEIGHT - 380, width: 100, height: 20, type: 'solid' },
+    // Bounce pad section
+    { x: 2230, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    { x: 2380, y: GROUND_Y - 100, width: 100, height: 20, type: 'solid' },
+    { x: 2380, y: GROUND_Y, width: 30, height: 30, type: 'spike' }, // Spike if you don't bounce high enough
 
-    // Final approach
-    { x: GAME_WIDTH - 150, y: 180, width: 120, height: 20, type: 'solid' },
+    // Long ground with spikes pattern
+    { x: 2530, y: GROUND_Y, width: 150, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 2700, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 2750, y: GROUND_Y, width: 100, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 2870, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 2920, y: GROUND_Y, width: 100, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 3040, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 3090, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
+
+    // Elevated platform section
+    { x: 3340, y: GROUND_Y - 80, width: 150, height: 20, type: 'solid' },
+    { x: 3340, y: GROUND_Y, width: 60, height: 30, type: 'spike' }, // Ground spikes
+
+    { x: 3540, y: GROUND_Y - 80, width: 150, height: 20, type: 'solid' },
+    { x: 3540, y: GROUND_Y, width: 60, height: 30, type: 'spike' }, // Ground spikes
+
+    // Final stretch
+    { x: 3740, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 3990, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
+    { x: 4070, y: GROUND_Y, width: 250, height: GROUND_HEIGHT, type: 'solid' },
   ],
 };
 

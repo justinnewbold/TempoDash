@@ -27,7 +27,8 @@ export type PlatformType =
   | 'moving'     // Moving platform
   | 'ice'        // Slippery platform
   | 'lava'       // Deadly platform
-  | 'phase';     // Phases in and out
+  | 'phase'      // Phases in and out
+  | 'spike';     // Deadly spike obstacle
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';

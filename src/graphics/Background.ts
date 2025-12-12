@@ -213,28 +213,28 @@ export class Background {
     }
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     // Draw base gradient
     this.drawBaseGradient(ctx);
 
-    // Draw type-specific background
+    // Draw type-specific background with parallax
     switch (this.config.type) {
       case 'city':
-        this.drawCityBackground(ctx);
+        this.drawCityBackground(ctx, cameraX);
         break;
       case 'neon':
-        this.drawNeonBackground(ctx);
+        this.drawNeonBackground(ctx, cameraX);
         break;
       case 'space':
         this.drawSpaceBackground(ctx);
         break;
       case 'forest':
-        this.drawForestBackground(ctx);
+        this.drawForestBackground(ctx, cameraX);
         break;
     }
 
     // Draw effects
-    this.renderEffects(ctx);
+    this.renderEffects(ctx, cameraX);
   }
 
   private drawBaseGradient(ctx: CanvasRenderingContext2D): void {
@@ -246,31 +246,41 @@ export class Background {
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 
-  private drawCityBackground(ctx: CanvasRenderingContext2D): void {
-    // Draw distant city silhouette
+  private drawCityBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Parallax factor for buildings (slower than camera)
+    const parallax = cameraX * 0.1;
+
+    // Draw distant city silhouette with parallax
     ctx.fillStyle = 'rgba(20, 30, 50, 0.8)';
 
-    // Back buildings
-    for (let i = 0; i < 15; i++) {
-      const x = i * 70 - 20;
-      const width = 50 + Math.random() * 30;
+    // Back buildings - repeating pattern
+    const buildingWidth = 70;
+    const startBuilding = Math.floor(parallax / buildingWidth) - 1;
+    const endBuilding = startBuilding + Math.ceil(GAME_WIDTH / buildingWidth) + 2;
+
+    for (let i = startBuilding; i < endBuilding; i++) {
+      const x = i * buildingWidth - parallax % buildingWidth;
+      const width = 50 + (Math.sin(i * 2.3) * 0.5 + 0.5) * 30;
       const height = 100 + Math.sin(i * 0.7) * 80;
+
+      ctx.fillStyle = 'rgba(20, 30, 50, 0.8)';
       ctx.fillRect(x, GAME_HEIGHT - height, width, height);
 
-      // Windows
+      // Windows (deterministic based on building index)
       ctx.fillStyle = 'rgba(255, 220, 100, 0.3)';
       for (let wy = GAME_HEIGHT - height + 15; wy < GAME_HEIGHT - 20; wy += 20) {
         for (let wx = x + 8; wx < x + width - 8; wx += 15) {
-          if (Math.random() > 0.3) {
+          // Use deterministic "random" based on position
+          const seed = (Math.sin(i * 12.9898 + wy * 78.233) * 43758.5453) % 1;
+          if (seed > 0.3) {
             ctx.fillRect(wx, wy, 6, 10);
           }
         }
       }
-      ctx.fillStyle = 'rgba(20, 30, 50, 0.8)';
     }
 
-    // Moon
-    const moonX = GAME_WIDTH * 0.8;
+    // Moon (fixed position, very slow parallax)
+    const moonX = GAME_WIDTH * 0.8 - cameraX * 0.02;
     const moonY = GAME_HEIGHT * 0.15;
     const moonGlow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 80);
     moonGlow.addColorStop(0, 'rgba(255, 255, 240, 0.3)');
@@ -286,9 +296,9 @@ export class Background {
     ctx.fill();
   }
 
-  private drawNeonBackground(ctx: CanvasRenderingContext2D): void {
-    // Draw synthwave sun
-    const sunX = GAME_WIDTH / 2;
+  private drawNeonBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Draw synthwave sun (slow parallax)
+    const sunX = GAME_WIDTH / 2 - cameraX * 0.02;
     const sunRadius = 120;
 
     // Sun glow
@@ -341,23 +351,28 @@ export class Background {
     ctx.restore();
 
     // Draw mountains
-    this.drawNeonMountains(ctx);
+    this.drawNeonMountains(ctx, cameraX);
 
     // Draw perspective grid
-    this.drawPerspectiveGrid(ctx);
+    this.drawPerspectiveGrid(ctx, cameraX);
   }
 
-  private drawNeonMountains(ctx: CanvasRenderingContext2D): void {
+  private drawNeonMountains(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const colors = ['#1a0533', '#2d0a4e', '#400f6b'];
 
+    // Apply parallax to mountains (different speed per layer)
     for (let layer = 0; layer < this.mountainPoints.length; layer++) {
       const points = this.mountainPoints[layer];
+      const parallaxFactor = 0.05 + layer * 0.03;
+      const offsetX = cameraX * parallaxFactor;
 
       ctx.beginPath();
       ctx.moveTo(0, GAME_HEIGHT);
 
       for (let i = 0; i < points.length; i += 2) {
-        ctx.lineTo(points[i], points[i + 1]);
+        // Apply parallax offset to x coordinates, wrap around screen
+        const x = ((points[i] - offsetX) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+        ctx.lineTo(x, points[i + 1]);
       }
 
       ctx.lineTo(GAME_WIDTH, GAME_HEIGHT);
@@ -371,19 +386,20 @@ export class Background {
       ctx.lineWidth = 2;
       ctx.beginPath();
       for (let i = 0; i < points.length; i += 2) {
+        const x = ((points[i] - offsetX) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
         if (i === 0) {
-          ctx.moveTo(points[i], points[i + 1]);
+          ctx.moveTo(x, points[i + 1]);
         } else {
-          ctx.lineTo(points[i], points[i + 1]);
+          ctx.lineTo(x, points[i + 1]);
         }
       }
       ctx.stroke();
     }
   }
 
-  private drawPerspectiveGrid(ctx: CanvasRenderingContext2D): void {
+  private drawPerspectiveGrid(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const horizonY = GAME_HEIGHT * 0.55;
-    const vanishX = GAME_WIDTH / 2;
+    const vanishX = GAME_WIDTH / 2 - cameraX * 0.02;
 
     ctx.strokeStyle = COLORS.LEVEL2.grid;
     ctx.lineWidth = 1;
@@ -435,7 +451,10 @@ export class Background {
     }
   }
 
-  private drawForestBackground(ctx: CanvasRenderingContext2D): void {
+  private drawForestBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Parallax factor for trees
+    const parallax = cameraX * 0.15;
+
     // Mystical fog layers
     for (let i = 0; i < 3; i++) {
       const fogY = GAME_HEIGHT * (0.4 + i * 0.15);
@@ -447,10 +466,14 @@ export class Background {
       ctx.fillRect(0, fogY - 50, GAME_WIDTH, 100);
     }
 
-    // Tree silhouettes
+    // Tree silhouettes with parallax
     ctx.fillStyle = 'rgba(10, 30, 20, 0.6)';
-    for (let i = 0; i < 8; i++) {
-      const treeX = i * 130 + 50;
+    const treeSpacing = 130;
+    const startTree = Math.floor(parallax / treeSpacing) - 1;
+    const endTree = startTree + Math.ceil(GAME_WIDTH / treeSpacing) + 2;
+
+    for (let i = startTree; i < endTree; i++) {
+      const treeX = i * treeSpacing + 50 - parallax % treeSpacing;
       const treeHeight = 200 + Math.sin(i * 1.5) * 80;
       this.drawTree(ctx, treeX, GAME_HEIGHT, treeHeight);
     }
@@ -477,11 +500,11 @@ export class Background {
     ctx.fill();
   }
 
-  private renderEffects(ctx: CanvasRenderingContext2D): void {
+  private renderEffects(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const effects = this.config.effects || [];
 
     if (effects.includes('stars')) {
-      this.renderStars(ctx);
+      this.renderStars(ctx, cameraX);
     }
 
     if (this.config.particles) {
@@ -501,21 +524,27 @@ export class Background {
     }
   }
 
-  private renderStars(ctx: CanvasRenderingContext2D): void {
+  private renderStars(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Stars have very slow parallax
+    const parallax = cameraX * 0.03;
+
     for (const star of this.stars) {
       const twinkle = Math.sin(this.time * star.twinkleSpeed) * 0.5 + 0.5;
       const brightness = star.brightness * twinkle;
 
+      // Wrap star position with parallax
+      let starX = ((star.x - parallax) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+
       ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
       ctx.beginPath();
-      ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+      ctx.arc(starX, star.y, star.size, 0, Math.PI * 2);
       ctx.fill();
 
       // Star glow
       if (star.size > 1.5) {
         ctx.fillStyle = `rgba(255, 255, 255, ${brightness * 0.3})`;
         ctx.beginPath();
-        ctx.arc(star.x, star.y, star.size * 2, 0, Math.PI * 2);
+        ctx.arc(starX, star.y, star.size * 2, 0, Math.PI * 2);
         ctx.fill();
       }
     }

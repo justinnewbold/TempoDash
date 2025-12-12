@@ -106,8 +106,14 @@ export class Platform {
     return !this.isDestroyed && !this.isPhased;
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     if (this.isDestroyed) return;
+
+    // Skip rendering if off-screen
+    const screenX = this.x - cameraX;
+    if (screenX + this.width < -100 || screenX > ctx.canvas.width + 100) {
+      return;
+    }
 
     ctx.save();
 
@@ -127,31 +133,50 @@ export class Platform {
       ctx.globalAlpha = 1 - this.crumbleProgress;
     }
 
-    // Draw platform base
-    this.drawPlatform(ctx);
+    // Draw platform base with camera offset
+    this.drawPlatform(ctx, cameraX);
 
     ctx.restore();
   }
 
-  private drawPlatform(ctx: CanvasRenderingContext2D): void {
+  private drawPlatform(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const screenX = this.x - cameraX;
     const gradient = ctx.createLinearGradient(
-      this.x,
+      screenX,
       this.y,
-      this.x,
+      screenX,
       this.y + this.height
     );
 
     switch (this.type) {
+      case 'spike':
+        // Draw triangular spikes (Geometry Dash style)
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 10;
+        const spikeCount = Math.floor(this.width / this.height);
+        const spikeWidth = this.width / spikeCount;
+        for (let i = 0; i < spikeCount; i++) {
+          ctx.beginPath();
+          ctx.moveTo(screenX + i * spikeWidth, this.y + this.height);
+          ctx.lineTo(screenX + i * spikeWidth + spikeWidth / 2, this.y);
+          ctx.lineTo(screenX + (i + 1) * spikeWidth, this.y + this.height);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        break;
+
       case 'bounce':
         gradient.addColorStop(0, '#ffc107');
         gradient.addColorStop(1, '#ff9800');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Bounce indicator lines
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         for (let i = 0; i < 3; i++) {
-          const lineX = this.x + (this.width / 4) * (i + 1);
+          const lineX = screenX + (this.width / 4) * (i + 1);
           ctx.beginPath();
           ctx.moveTo(lineX - 5, this.y + this.height / 2);
           ctx.lineTo(lineX, this.y + 5);
@@ -164,10 +189,10 @@ export class Platform {
         gradient.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
         gradient.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Ice shine effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillRect(this.x + 5, this.y + 3, this.width * 0.3, 4);
+        ctx.fillRect(screenX + 5, this.y + 3, this.width * 0.3, 4);
         break;
 
       case 'lava':
@@ -175,12 +200,12 @@ export class Platform {
         gradient.addColorStop(0.5, '#ff6600');
         gradient.addColorStop(1, '#ff2200');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Lava bubbles
         ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
         const time = Date.now() * 0.003;
         for (let i = 0; i < 3; i++) {
-          const bubbleX = this.x + (this.width / 4) * (i + 1);
+          const bubbleX = screenX + (this.width / 4) * (i + 1);
           const bubbleY = this.y + 5 + Math.sin(time + i) * 3;
           ctx.beginPath();
           ctx.arc(bubbleX, bubbleY, 4, 0, Math.PI * 2);
@@ -192,15 +217,15 @@ export class Platform {
         gradient.addColorStop(0, '#a0522d');
         gradient.addColorStop(1, '#8b4513');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Crack lines
         ctx.strokeStyle = '#654321';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(this.x + this.width * 0.3, this.y);
-        ctx.lineTo(this.x + this.width * 0.4, this.y + this.height);
-        ctx.moveTo(this.x + this.width * 0.7, this.y);
-        ctx.lineTo(this.x + this.width * 0.6, this.y + this.height);
+        ctx.moveTo(screenX + this.width * 0.3, this.y);
+        ctx.lineTo(screenX + this.width * 0.4, this.y + this.height);
+        ctx.moveTo(screenX + this.width * 0.7, this.y);
+        ctx.lineTo(screenX + this.width * 0.6, this.y + this.height);
         ctx.stroke();
         break;
 
@@ -208,38 +233,38 @@ export class Platform {
         gradient.addColorStop(0, '#4fc3f7');
         gradient.addColorStop(1, '#0288d1');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Movement arrows
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.beginPath();
-        ctx.moveTo(this.x + 10, this.y + this.height / 2);
-        ctx.lineTo(this.x + 20, this.y + this.height / 2 - 5);
-        ctx.lineTo(this.x + 20, this.y + this.height / 2 + 5);
+        ctx.moveTo(screenX + 10, this.y + this.height / 2);
+        ctx.lineTo(screenX + 20, this.y + this.height / 2 - 5);
+        ctx.lineTo(screenX + 20, this.y + this.height / 2 + 5);
         ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(this.x + this.width - 10, this.y + this.height / 2);
-        ctx.lineTo(this.x + this.width - 20, this.y + this.height / 2 - 5);
-        ctx.lineTo(this.x + this.width - 20, this.y + this.height / 2 + 5);
+        ctx.moveTo(screenX + this.width - 10, this.y + this.height / 2);
+        ctx.lineTo(screenX + this.width - 20, this.y + this.height / 2 - 5);
+        ctx.lineTo(screenX + this.width - 20, this.y + this.height / 2 + 5);
         ctx.fill();
         break;
 
       case 'phase':
         const phaseGradient = ctx.createLinearGradient(
-          this.x,
+          screenX,
           this.y,
-          this.x + this.width,
+          screenX + this.width,
           this.y
         );
         phaseGradient.addColorStop(0, '#9c27b0');
         phaseGradient.addColorStop(0.5, '#e040fb');
         phaseGradient.addColorStop(1, '#9c27b0');
         ctx.fillStyle = phaseGradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Phase particles
         ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
         const phaseTime = Date.now() * 0.005;
         for (let i = 0; i < 5; i++) {
-          const px = this.x + (this.width / 6) * (i + 1);
+          const px = screenX + (this.width / 6) * (i + 1);
           const py = this.y + this.height / 2 + Math.sin(phaseTime + i) * 5;
           ctx.beginPath();
           ctx.arc(px, py, 2, 0, Math.PI * 2);
@@ -251,16 +276,18 @@ export class Platform {
         gradient.addColorStop(0, '#5a6a7a');
         gradient.addColorStop(1, '#3a4a5a');
         ctx.fillStyle = gradient;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.fillRect(screenX, this.y, this.width, this.height);
         // Top highlight
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fillRect(this.x, this.y, this.width, 3);
+        ctx.fillRect(screenX, this.y, this.width, 3);
         break;
     }
 
-    // Border
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(this.x, this.y, this.width, this.height);
+    // Border (except for spikes)
+    if (this.type !== 'spike') {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(screenX, this.y, this.width, this.height);
+    }
   }
 }

@@ -1,12 +1,16 @@
 import { LevelConfig } from '../types';
 import { Level } from './Level';
-import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { GAME_HEIGHT } from '../constants';
+
+// Ground Y position
+const GROUND_Y = GAME_HEIGHT - 40;
+const GROUND_HEIGHT = 40;
 
 const level2Config: LevelConfig = {
   id: 2,
   name: 'Neon Dreams',
-  playerStart: { x: 50, y: GAME_HEIGHT - 150 },
-  goal: { x: GAME_WIDTH - 80, y: 80, width: 50, height: 60 },
+  playerStart: { x: 100, y: GROUND_Y - 50 },
+  goal: { x: 5500, y: GROUND_Y - 80, width: 60, height: 80 },
   background: {
     type: 'neon',
     primaryColor: '#0d0221',
@@ -23,109 +27,70 @@ const level2Config: LevelConfig = {
     effects: ['grid', 'scanlines', 'pulse'],
   },
   platforms: [
-    // Starting area - safe zone
-    { x: 0, y: GAME_HEIGHT - 40, width: 180, height: 40, type: 'solid' },
+    // Starting safe zone
+    { x: 0, y: GROUND_Y, width: 500, height: GROUND_HEIGHT, type: 'solid' },
 
-    // First section - introduce ice
-    { x: 200, y: GAME_HEIGHT - 60, width: 100, height: 20, type: 'ice' },
-    { x: 340, y: GAME_HEIGHT - 80, width: 80, height: 20, type: 'solid' },
-    { x: 460, y: GAME_HEIGHT - 60, width: 120, height: 20, type: 'solid' },
+    // First spike
+    { x: 550, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 600, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Lava pit with platforms above
-    { x: 200, y: GAME_HEIGHT - 20, width: 400, height: 20, type: 'lava' },
+    // Double jump section
+    { x: 850, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 900, y: GROUND_Y, width: 100, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 1050, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 1100, y: GROUND_Y, width: 250, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Second section - crumbling platforms
-    { x: 100, y: GAME_HEIGHT - 160, width: 80, height: 20, type: 'solid' },
-    { x: 220, y: GAME_HEIGHT - 180, width: 70, height: 20, type: 'crumble' },
-    { x: 330, y: GAME_HEIGHT - 200, width: 70, height: 20, type: 'crumble' },
-    { x: 440, y: GAME_HEIGHT - 180, width: 80, height: 20, type: 'solid' },
+    // Elevated platforms with spikes below
+    { x: 1400, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    { x: 1400, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    // Third section - phase platforms
-    { x: 50, y: GAME_HEIGHT - 280, width: 100, height: 20, type: 'phase' },
-    { x: 200, y: GAME_HEIGHT - 300, width: 80, height: 20, type: 'solid' },
-    { x: 320, y: GAME_HEIGHT - 320, width: 100, height: 20, type: 'phase' },
-    { x: 470, y: GAME_HEIGHT - 280, width: 80, height: 20, type: 'solid' },
+    { x: 1570, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    { x: 1570, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    // Moving platform gauntlet
-    {
-      x: 80,
-      y: GAME_HEIGHT - 380,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 100, speed: 2 },
-    },
-    {
-      x: 280,
-      y: GAME_HEIGHT - 400,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'vertical', distance: 50, speed: 1.5 },
-    },
-    {
-      x: 450,
-      y: GAME_HEIGHT - 380,
-      width: 80,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 80, speed: 2.5, startOffset: 1.5 },
-    },
+    { x: 1740, y: GROUND_Y - 70, width: 120, height: 20, type: 'solid' },
+    { x: 1740, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    // Right side vertical climb
-    { x: 580, y: GAME_HEIGHT - 100, width: 100, height: 20, type: 'solid' },
-    { x: 700, y: GAME_HEIGHT - 160, width: 80, height: 20, type: 'bounce' },
-    { x: 600, y: GAME_HEIGHT - 250, width: 90, height: 20, type: 'solid' },
-    { x: 720, y: GAME_HEIGHT - 320, width: 80, height: 20, type: 'ice' },
-    { x: 620, y: GAME_HEIGHT - 400, width: 100, height: 20, type: 'solid' },
+    // Land back on ground
+    { x: 1910, y: GROUND_Y, width: 250, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Circular moving platform
-    {
-      x: 750,
-      y: GAME_HEIGHT - 450,
-      width: 70,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'circular', distance: 40, speed: 1.8 },
-    },
+    // Bounce pad sequence
+    { x: 2210, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    { x: 2360, y: GROUND_Y - 120, width: 100, height: 20, type: 'solid' },
+    { x: 2510, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    { x: 2660, y: GROUND_Y - 120, width: 100, height: 20, type: 'solid' },
 
-    // Upper challenge section
-    { x: 500, y: GAME_HEIGHT - 460, width: 80, height: 20, type: 'solid' },
-    { x: 350, y: GAME_HEIGHT - 440, width: 70, height: 20, type: 'crumble' },
-    { x: 200, y: GAME_HEIGHT - 460, width: 100, height: 20, type: 'phase' },
-    { x: 50, y: GAME_HEIGHT - 440, width: 80, height: 20, type: 'solid' },
+    // Spikes after bounce section
+    { x: 2810, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 3060, y: GROUND_Y, width: 90, height: 30, type: 'spike' },
+    { x: 3170, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Ice slide section
-    { x: 100, y: GAME_HEIGHT - 500, width: 150, height: 15, type: 'ice' },
-    { x: 300, y: GAME_HEIGHT - 480, width: 100, height: 15, type: 'ice' },
+    // Triple spike jump
+    { x: 3420, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 3480, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 3540, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 3600, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Bounce chain to reach goal
-    { x: 450, y: GAME_HEIGHT - 500, width: 60, height: 20, type: 'bounce' },
-    { x: 560, y: GAME_HEIGHT - 480, width: 60, height: 20, type: 'solid' },
-    { x: 680, y: GAME_HEIGHT - 500, width: 60, height: 20, type: 'bounce' },
+    // Staircase section
+    { x: 3850, y: GROUND_Y - 50, width: 100, height: 20, type: 'solid' },
+    { x: 4000, y: GROUND_Y - 100, width: 100, height: 20, type: 'solid' },
+    { x: 4150, y: GROUND_Y - 50, width: 100, height: 20, type: 'solid' },
+    { x: 4150, y: GROUND_Y, width: 60, height: 30, type: 'spike' },
 
-    // Final approach with danger
-    { x: 780, y: GAME_HEIGHT - 420, width: 80, height: 20, type: 'solid' },
-    { x: 800, y: GAME_HEIGHT - 340, width: 100, height: 15, type: 'lava' },
+    { x: 4300, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Platform above lava
-    {
-      x: 820,
-      y: GAME_HEIGHT - 380,
-      width: 70,
-      height: 20,
-      type: 'moving',
-      movePattern: { type: 'horizontal', distance: 30, speed: 3 },
-    },
+    // Lava pit jump
+    { x: 4550, y: GROUND_Y, width: 100, height: 30, type: 'lava' },
+    { x: 4700, y: GROUND_Y, width: 200, height: GROUND_HEIGHT, type: 'solid' },
 
-    // Goal platform
-    { x: GAME_WIDTH - 120, y: 160, width: 100, height: 20, type: 'solid' },
+    // Quick spikes pattern
+    { x: 4950, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 5010, y: GROUND_Y, width: 80, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 5120, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
+    { x: 5180, y: GROUND_Y, width: 80, height: GROUND_HEIGHT, type: 'solid' },
+    { x: 5290, y: GROUND_Y, width: 30, height: 30, type: 'spike' },
 
-    // Alternative path with phase platforms
-    { x: 850, y: GAME_HEIGHT - 460, width: 80, height: 20, type: 'phase' },
-    { x: GAME_WIDTH - 100, y: GAME_HEIGHT - 380, width: 70, height: 20, type: 'solid' },
-    { x: GAME_WIDTH - 80, y: GAME_HEIGHT - 280, width: 60, height: 20, type: 'solid' },
-    { x: GAME_WIDTH - 100, y: GAME_HEIGHT - 180, width: 80, height: 20, type: 'bounce' },
+    // Final platform to goal
+    { x: 5350, y: GROUND_Y, width: 300, height: GROUND_HEIGHT, type: 'solid' },
   ],
 };
 

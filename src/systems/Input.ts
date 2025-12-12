@@ -9,15 +9,46 @@ export class InputManager {
   };
 
   private previousJump = false;
+  private canvas: HTMLCanvasElement | null = null;
 
   constructor() {
     this.setupListeners();
+  }
+
+  setCanvas(canvas: HTMLCanvasElement): void {
+    this.canvas = canvas;
+    this.setupCanvasListeners();
   }
 
   private setupListeners(): void {
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
     window.addEventListener('keyup', (e) => this.handleKeyUp(e));
     window.addEventListener('blur', () => this.resetAll());
+  }
+
+  private setupCanvasListeners(): void {
+    if (!this.canvas) return;
+
+    // Mouse click for jump
+    this.canvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      this.state.jump = true;
+    });
+
+    this.canvas.addEventListener('mouseup', () => {
+      this.state.jump = false;
+    });
+
+    // Touch support for mobile
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.state.jump = true;
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.state.jump = false;
+    }, { passive: false });
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
@@ -33,6 +64,7 @@ export class InputManager {
       case 'ArrowUp':
       case 'KeyW':
       case 'Space':
+        e.preventDefault(); // Prevent page scroll
         this.state.jump = true;
         break;
     }
