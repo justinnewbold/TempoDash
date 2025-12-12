@@ -1,6 +1,7 @@
 import { GameState } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
+import { AudioManager } from '../systems/Audio';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
@@ -9,6 +10,7 @@ export class Game {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private input: InputManager;
+  private audio: AudioManager;
 
   private state: GameState = {
     currentLevel: 1,
@@ -38,6 +40,7 @@ export class Game {
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
+    this.audio = new AudioManager();
     this.loadLevel(1);
 
     // Setup keyboard for menu
@@ -65,6 +68,12 @@ export class Game {
   }
 
   private handleMenuInput(e: KeyboardEvent): void {
+    // Mute toggle (works in any state)
+    if (e.code === 'KeyM') {
+      this.audio.toggleMute();
+      return;
+    }
+
     if (this.state.gameStatus === 'menu') {
       if (e.code === 'Enter' || e.code === 'Space') {
         this.startGame();
@@ -86,10 +95,12 @@ export class Game {
     } else if (this.state.gameStatus === 'playing') {
       if (e.code === 'Escape') {
         this.state.gameStatus = 'paused';
+        this.audio.stop();
       }
     } else if (this.state.gameStatus === 'paused') {
       if (e.code === 'Escape' || e.code === 'Enter') {
         this.state.gameStatus = 'playing';
+        this.audio.start();
       }
     }
   }
@@ -99,6 +110,7 @@ export class Game {
     this.attempts = 1;
     this.state.score = 0;
     this.state.gameStatus = 'playing';
+    this.audio.start();
   }
 
   private resetGame(): void {
@@ -112,9 +124,11 @@ export class Game {
       this.loadLevel(this.state.currentLevel);
       this.attempts = 1;
       this.state.gameStatus = 'playing';
+      this.audio.start();
     } else {
       // Game complete - show victory or return to menu
       this.state.gameStatus = 'menu';
+      this.audio.stop();
     }
   }
 
@@ -152,8 +166,22 @@ export class Game {
     // Update level (platforms, background)
     this.level.update(deltaTime);
 
+    // Track player state before update
+    const wasGroundedBefore = this.player.isGrounded;
+    const wasAliveBefore = !this.player.isDead;
+
     // Update player
     this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+
+    // Play jump sound when player leaves ground
+    if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
+      this.audio.playJump();
+    }
+
+    // Play death sound when player dies
+    if (wasAliveBefore && this.player.isDead) {
+      this.audio.playDeath();
+    }
 
     // Update camera to follow player (keep player on left side of screen)
     const targetCameraX = this.player.x - 150;
@@ -173,6 +201,8 @@ export class Game {
     if (this.level.checkGoal(this.player)) {
       this.state.score += Math.max(1000 - (this.attempts - 1) * 50, 100);
       this.state.gameStatus = 'levelComplete';
+      this.audio.stop();
+      this.audio.playLevelComplete();
     }
   }
 
@@ -251,9 +281,10 @@ export class Game {
     this.ctx.textAlign = 'left';
     this.ctx.fillText(`${this.level.name}`, 20, 50);
 
-    // Attempt counter (right)
+    // Attempt counter and mute indicator (right)
     this.ctx.textAlign = 'right';
-    this.ctx.fillText(`Attempt ${this.attempts}`, GAME_WIDTH - 20, 50);
+    const muteIndicator = this.audio.isMusicMuted() ? ' [M] Muted' : '';
+    this.ctx.fillText(`Attempt ${this.attempts}${muteIndicator}`, GAME_WIDTH - 20, 50);
 
     this.ctx.restore();
   }
@@ -280,13 +311,14 @@ export class Game {
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 5;
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Click, Tap, or Press SPACE to jump', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+    this.ctx.fillText('Hold SPACE, Click, or Tap to jump', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
     this.ctx.fillText('Press ENTER or Click to start', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
 
-    // Level select
+    // Level select and mute info
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press 1 for Level 1, 2 for Level 2', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120);
+    this.ctx.fillText('Press 1 for Level 1, 2 for Level 2', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 115);
+    this.ctx.fillText('Press M to toggle music', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140);
 
     this.ctx.restore();
   }
@@ -306,6 +338,7 @@ export class Game {
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 5;
     this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
+    this.ctx.fillText('Press M to toggle music', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60);
 
     this.ctx.restore();
   }

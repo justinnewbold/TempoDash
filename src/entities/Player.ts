@@ -50,8 +50,8 @@ export class Player {
     // Auto-move forward at constant speed
     this.x += PLAYER.SPEED * (deltaTime / 1000);
 
-    // Handle jumping (only when grounded)
-    if (input.jumpPressed && this.isGrounded) {
+    // Handle jumping (auto-jump when holding - jump as soon as grounded)
+    if (input.jump && this.isGrounded) {
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
     }
