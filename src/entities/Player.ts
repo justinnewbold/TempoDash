@@ -22,7 +22,7 @@ export class Player {
   private targetRotation = 0; // Target rotation (snaps to 90 degree increments)
   private trail: TrailPoint[] = [];
   private animationTime = 0;
-  private hasDoubleJump = true; // Can perform one air jump
+  private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
 
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
@@ -38,7 +38,7 @@ export class Player {
     this.rotation = 0;
     this.targetRotation = 0;
     this.trail = [];
-    this.hasDoubleJump = true;
+    this.airJumpsRemaining = 2;
   }
 
   update(deltaTime: number, input: InputState, platforms: Platform[]): void {
@@ -56,11 +56,12 @@ export class Player {
     if (input.jump && this.isGrounded) {
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
-      this.hasDoubleJump = true; // Reset double jump on ground jump
-    } else if (input.jumpPressed && !this.isGrounded && this.hasDoubleJump) {
-      // Double jump in air (requires new press, not hold)
-      this.velocityY = -PLAYER.JUMP_FORCE * 0.85; // Slightly weaker double jump
-      this.hasDoubleJump = false;
+      this.airJumpsRemaining = 2; // Reset air jumps on ground jump
+    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0) {
+      // Air jumps (double/triple) - each successive jump is weaker
+      const jumpMultiplier = this.airJumpsRemaining === 2 ? 0.85 : 0.7;
+      this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
+      this.airJumpsRemaining--;
     }
 
     // Apply gravity
@@ -171,7 +172,7 @@ export class Player {
         this.y = bounds.y - this.height;
         this.velocityY = 0;
         this.isGrounded = true;
-        this.hasDoubleJump = true; // Reset double jump on landing
+        this.airJumpsRemaining = 2; // Reset air jumps on landing
         break;
       case 'bottom':
         this.y = bounds.y + bounds.height;
