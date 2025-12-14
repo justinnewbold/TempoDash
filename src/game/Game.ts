@@ -168,20 +168,19 @@ export class Game {
       return;
     }
 
-    const centerX = GAME_WIDTH / 2;
-    const sliderWidth = 300;
-    const sliderX = centerX - sliderWidth / 2;
+    const sliderWidth = 250;
+    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
 
     // Music volume slider
-    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 200 && y <= 240) {
-      const volume = (x - sliderX) / sliderWidth;
+    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 190 && y <= 230) {
+      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
       this.audio.setMusicVolume(volume);
       this.save.updateSettings({ musicVolume: volume });
     }
 
     // SFX volume slider
     if (x >= sliderX && x <= sliderX + sliderWidth && y >= 280 && y <= 320) {
-      const volume = (x - sliderX) / sliderWidth;
+      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
@@ -416,12 +415,12 @@ export class Game {
   private renderPlayingUI(): void {
     this.ctx.save();
 
-    // Progress bar
+    // Progress bar (centered, shorter width for cleaner look)
     const progress = this.level.getProgress(this.player.x);
-    const barWidth = GAME_WIDTH - 40;
-    const barHeight = 8;
-    const barX = 20;
-    const barY = 20;
+    const barWidth = 300;
+    const barHeight = 6;
+    const barX = (GAME_WIDTH - barWidth) / 2;
+    const barY = 15;
 
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     this.ctx.fillRect(barX, barY, barWidth, barHeight);
@@ -436,22 +435,31 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-    // Percentage
-    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    // Percentage (directly below progress bar)
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.textAlign = 'center';
     this.ctx.fillStyle = COLORS.UI_TEXT;
     this.ctx.shadowColor = COLORS.UI_SHADOW;
     this.ctx.shadowBlur = 4;
-    this.ctx.fillText(`${Math.floor(progress * 100)}%`, GAME_WIDTH / 2, 50);
+    this.ctx.fillText(`${Math.floor(progress * 100)}%`, GAME_WIDTH / 2, 38);
 
-    // Level name
+    // Level name (top-left, larger and more prominent)
     this.ctx.textAlign = 'left';
-    this.ctx.fillText(`${this.level.name}`, 20, 50);
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillText(`${this.level.name}`, 20, 28);
 
-    // Attempt counter
-    this.ctx.textAlign = 'right';
-    const muteIndicator = this.audio.isMusicMuted() ? ' [MUTED]' : '';
-    this.ctx.fillText(`Attempt ${this.attempts}${muteIndicator}`, GAME_WIDTH - 20, 50);
+    // Attempt counter (below level name, smaller)
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText(`Attempt ${this.attempts}`, 20, 48);
+
+    // Mute indicator (top-right, separate from attempt counter)
+    if (this.audio.isMusicMuted()) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 28);
+    }
 
     // Beat indicator
     if (this.beatPulse > 0) {
@@ -591,44 +599,45 @@ export class Game {
       this.ctx.textAlign = 'center';
       const centerX = cardX + cardWidth / 2;
 
-      // Level number
-      this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+      // Level number (moved up slightly)
+      this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
       this.ctx.fillStyle = isUnlocked ? levelColors[i] : 'rgba(100, 100, 100, 0.8)';
       this.ctx.shadowColor = levelColors[i];
       this.ctx.shadowBlur = isUnlocked ? 15 : 0;
-      this.ctx.fillText(`${levelId}`, centerX, cardY + 70);
+      this.ctx.fillText(`${levelId}`, centerX, cardY + 55);
 
-      // Level name
-      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      // Level name (adjusted position)
+      this.ctx.font = 'bold 15px "Segoe UI", sans-serif';
       this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText(levelNames[i], centerX, cardY + 100);
+      this.ctx.fillText(levelNames[i], centerX, cardY + 85);
 
       if (isUnlocked) {
-        // High score
+        // High score (more vertical space from name)
         this.ctx.font = '14px "Segoe UI", sans-serif';
         this.ctx.fillStyle = '#ffd700';
-        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 130);
+        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 120);
 
-        // Click to play
+        // Click to play (moved up from card edge)
         this.ctx.font = '12px "Segoe UI", sans-serif';
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        this.ctx.fillText('Click to play', centerX, cardY + 170);
+        this.ctx.fillText('Click to play', centerX, cardY + 160);
       } else {
-        // Lock icon
-        this.ctx.font = '24px "Segoe UI", sans-serif';
+        // Lock icon (more space from level name, smaller size)
+        this.ctx.font = '20px "Segoe UI", sans-serif';
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText('🔒', centerX, cardY + 130);
+        this.ctx.fillText('🔒', centerX, cardY + 120);
 
-        // Cost
-        this.ctx.font = '14px "Segoe UI", sans-serif';
+        // Cost (adjusted spacing)
+        this.ctx.font = '13px "Segoe UI", sans-serif';
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText(`${cost} pts to unlock`, centerX, cardY + 160);
+        this.ctx.fillText(`${cost} pts to unlock`, centerX, cardY + 150);
 
         if (canUnlock) {
+          // Click to unlock (moved up from card edge)
           this.ctx.font = '12px "Segoe UI", sans-serif';
           this.ctx.fillStyle = '#ffd700';
-          this.ctx.fillText('Click to unlock!', centerX, cardY + 180);
+          this.ctx.fillText('Click to unlock!', centerX, cardY + 172);
         }
       }
     }
@@ -662,24 +671,24 @@ export class Game {
     this.ctx.shadowBlur = 0;
     this.ctx.fillText('< Back (ESC)', 20, 45);
 
-    const sliderWidth = 300;
-    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2;
+    const sliderWidth = 250;
+    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
 
     // Music volume
     this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Music Volume', GAME_WIDTH / 2, 190);
-    this.renderSlider(sliderX, 210, sliderWidth, this.audio.getMusicVolume());
+    this.ctx.fillText('Music Volume', GAME_WIDTH / 2, 180);
+    this.renderSlider(sliderX, 200, sliderWidth, this.audio.getMusicVolume());
 
     // SFX volume
-    this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 280);
-    this.renderSlider(sliderX, 300, sliderWidth, this.audio.getSfxVolume());
+    this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 270);
+    this.renderSlider(sliderX, 290, sliderWidth, this.audio.getSfxVolume());
 
     // Mute indicator
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 380);
+    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 370);
 
     this.ctx.restore();
   }
@@ -706,11 +715,11 @@ export class Game {
     this.ctx.arc(x + width * value, y + 10, 12, 0, Math.PI * 2);
     this.ctx.fill();
 
-    // Value text
-    this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText(`${Math.round(value * 100)}%`, x + width / 2, y + 50);
+    // Value text (positioned to the right of the slider)
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText(`${Math.round(value * 100)}%`, x + width + 20, y + 15);
   }
 
   private renderPaused(): void {
