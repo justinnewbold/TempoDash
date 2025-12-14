@@ -82,6 +82,7 @@ export class Game {
       1: 'energetic',
       2: 'dark',
       3: 'epic',
+      4: 'dark',
     };
     this.audio.setStyle(musicStyles[levelId] || 'energetic');
   }
@@ -576,8 +577,8 @@ export class Game {
     const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + 40 * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600'];
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff'];
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;

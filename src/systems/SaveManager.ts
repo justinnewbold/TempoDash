@@ -8,6 +8,7 @@ export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
   1: 0,      // Level 1 is free
   2: 500,    // Level 2 costs 500 points
   3: 1500,   // Level 3 costs 1500 points
+  4: 3000,   // Level 4 costs 3000 points
 };
 
 const DEFAULT_SETTINGS: GameSettings = {
