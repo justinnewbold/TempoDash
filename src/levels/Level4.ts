@@ -52,8 +52,8 @@ const level4Config: LevelConfig = {
     { x: BEAT * 15, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'ice' },
 
     // ===== PHRASE 4 (Beats 16-20): Bounce into ice platforms =====
-    { x: BEAT * 16.5, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
-    { x: BEAT * 18, y: GROUND_Y - 90, width: BEAT * 1.5, height: 20, type: 'ice' },
+    { x: BEAT * 16, y: GROUND_Y, width: 80, height: 20, type: 'bounce' },
+    { x: BEAT * 17.5, y: GROUND_Y - 70, width: BEAT * 2, height: 20, type: 'ice' },
     // Drop down to ice
     { x: BEAT * 20, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'ice' },
 
