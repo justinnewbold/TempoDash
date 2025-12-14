@@ -516,7 +516,7 @@ export class Game {
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('Hold SPACE or Click to jump | Double-tap for double jump', GAME_WIDTH / 2, 450);
+    this.ctx.fillText('Hold SPACE or Click to jump | Tap again for double & triple jump', GAME_WIDTH / 2, 450);
     this.ctx.fillText('Press M to toggle music', GAME_WIDTH / 2, 475);
 
     this.ctx.restore();
