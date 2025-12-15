@@ -104,6 +104,8 @@ export type MenuState =
   | 'settings'
   | 'skins'
   | 'playing'
+  | 'practice'
+  | 'endless'
   | 'paused'
   | 'levelComplete'
   | 'gameOver';
@@ -113,6 +115,7 @@ export interface SaveData {
   unlockedLevels: number[];
   unlockedSkins: string[];
   highScores: Record<number, number>;
+  endlessHighScore: number;
   settings: GameSettings;
 }
 

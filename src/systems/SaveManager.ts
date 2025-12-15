@@ -89,6 +89,7 @@ const DEFAULT_SAVE: SaveData = {
   unlockedLevels: [1],
   unlockedSkins: ['default'],
   highScores: {},
+  endlessHighScore: 0,
   settings: { ...DEFAULT_SETTINGS },
 };
 
@@ -109,6 +110,7 @@ export class SaveManager {
           unlockedLevels: parsed.unlockedLevels ?? [...DEFAULT_SAVE.unlockedLevels],
           unlockedSkins: parsed.unlockedSkins ?? [...DEFAULT_SAVE.unlockedSkins],
           highScores: parsed.highScores ?? {},
+          endlessHighScore: parsed.endlessHighScore ?? 0,
           settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
         };
       }
@@ -242,5 +244,19 @@ export class SaveManager {
       unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
     };
     this.save();
+  }
+
+  // Endless mode
+  getEndlessHighScore(): number {
+    return this.data.endlessHighScore;
+  }
+
+  setEndlessHighScore(score: number): boolean {
+    if (score > this.data.endlessHighScore) {
+      this.data.endlessHighScore = score;
+      this.save();
+      return true;
+    }
+    return false;
   }
 }
