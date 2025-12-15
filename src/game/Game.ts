@@ -2,10 +2,12 @@ import { GameState } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager, MusicStyle } from '../systems/Audio';
-import { SaveManager, LEVEL_UNLOCK_COSTS } from '../systems/SaveManager';
+import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
+import { Platform } from '../entities/Platform';
+import { PlatformType } from '../types';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -34,6 +36,23 @@ export class Game {
   private selectedLevelIndex = 0;
   private menuAnimation = 0;
   private levelScoreThisRun = 0;
+
+  // Screen shake
+  private shakeIntensity = 0;
+  private shakeDuration = 0;
+  private shakeTimer = 0;
+
+  // Practice mode
+  private isPracticeMode = false;
+  private checkpointX = 0;
+  private checkpointY = 0;
+  private lastCheckpointProgress = 0;
+
+  // Endless mode
+  private isEndlessMode = false;
+  private endlessDistance = 0;
+  private endlessPlatforms: Platform[] = [];
+  private nextPlatformX = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -75,6 +94,7 @@ export class Game {
   private loadLevel(levelId: number): void {
     this.level = createLevel(levelId);
     this.player = new Player(this.level.playerStart);
+    this.player.setSkin(this.save.getSelectedSkin());
     this.state.currentLevel = levelId;
     this.cameraX = 0;
 
@@ -83,6 +103,8 @@ export class Game {
       2: 'dark',
       3: 'epic',
       4: 'dark',
+      5: 'epic',
+      6: 'energetic',
     };
     this.audio.setStyle(musicStyles[levelId] || 'energetic');
   }
@@ -97,15 +119,19 @@ export class Game {
         this.handleMainMenuClick(x, y);
         break;
       case 'levelSelect':
-        this.handleLevelSelectClick(x, y);
+        this.handleLevelSelectClick(x, y, e.shiftKey);
         break;
       case 'settings':
         this.handleSettingsClick(x, y);
+        break;
+      case 'skins':
+        this.handleSkinsClick(x, y);
         break;
       case 'levelComplete':
         this.nextLevel();
         break;
       case 'gameOver':
+        this.endlessDistance = 0; // Reset for next endless run
         this.state.gameStatus = 'mainMenu';
         break;
     }
@@ -114,23 +140,34 @@ export class Game {
   private handleMainMenuClick(x: number, y: number): void {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
-    const buttonHeight = 50;
 
-    // Play button
+    // Play button (y=285, clickable area 260-310)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 280 && y <= 280 + buttonHeight) {
+        y >= 260 && y <= 310) {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Settings button
+    // Endless button (y=345, clickable area 320-370)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 350 && y <= 350 + buttonHeight) {
+        y >= 320 && y <= 370) {
+      this.audio.playSelect();
+      this.startEndlessMode();
+    }
+    // Skins button (y=405, clickable area 380-430)
+    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
+        y >= 380 && y <= 430) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'skins';
+    }
+    // Settings button (y=465, clickable area 440-490)
+    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
+        y >= 440 && y <= 490) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
   }
 
-  private handleLevelSelectClick(x: number, y: number): void {
+  private handleLevelSelectClick(x: number, y: number, shiftKey = false): void {
     // Back button
     if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
       this.audio.playSelect();
@@ -138,19 +175,20 @@ export class Game {
       return;
     }
 
-    // Level cards
-    const cardWidth = 180;
-    const cardHeight = 200;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + 40 * (TOTAL_LEVELS - 1))) / 2;
+    // Level cards (must match renderLevelSelect dimensions)
+    const cardWidth = 130;
+    const cardHeight = 190;
+    const cardGap = 18;
+    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
-      const cardX = startX + i * (cardWidth + 40);
+      const cardX = startX + i * (cardWidth + cardGap);
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
         const levelId = i + 1;
         if (this.save.isLevelUnlocked(levelId)) {
           this.audio.playSelect();
-          this.startLevel(levelId);
+          this.startLevel(levelId, shiftKey); // Practice mode if shift is held
         } else if (this.save.canUnlockLevel(levelId)) {
           if (this.save.unlockLevel(levelId)) {
             this.audio.playUnlock();
@@ -185,6 +223,54 @@ export class Game {
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
+    }
+
+    // Screen shake toggle
+    const toggleWidth = 60;
+    const toggleX = GAME_WIDTH / 2 - toggleWidth / 2;
+    if (x >= toggleX && x <= toggleX + toggleWidth && y >= 385 && y <= 415) {
+      const currentShake = this.save.getSettings().screenShake;
+      this.save.updateSettings({ screenShake: !currentShake });
+      this.audio.playSelect();
+    }
+  }
+
+  private handleSkinsClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Skin cards (3 per row, 2 rows)
+    const cardWidth = 140;
+    const cardHeight = 160;
+    const cols = 3;
+    const gap = 30;
+    const startX = (GAME_WIDTH - (cardWidth * cols + gap * (cols - 1))) / 2;
+    const startY = 140;
+
+    for (let i = 0; i < PLAYER_SKINS.length; i++) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const cardX = startX + col * (cardWidth + gap);
+      const cardY = startY + row * (cardHeight + gap);
+
+      if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
+        const skin = PLAYER_SKINS[i];
+        if (this.save.isSkinUnlocked(skin.id)) {
+          // Select this skin
+          this.save.selectSkin(skin.id);
+          this.audio.playSelect();
+        } else if (this.save.canUnlockSkin(skin.id)) {
+          // Unlock this skin
+          if (this.save.unlockSkin(skin.id)) {
+            this.audio.playUnlock();
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -242,7 +328,15 @@ export class Game {
         }
         break;
 
+      case 'skins':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
       case 'playing':
+      case 'endless':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
@@ -251,9 +345,18 @@ export class Game {
 
       case 'paused':
         if (e.code === 'Escape' || e.code === 'Enter') {
-          this.state.gameStatus = 'playing';
+          // Resume to the correct mode
+          if (this.isEndlessMode) {
+            this.state.gameStatus = 'endless';
+          } else if (this.isPracticeMode) {
+            this.state.gameStatus = 'practice';
+          } else {
+            this.state.gameStatus = 'playing';
+          }
           this.audio.start();
         } else if (e.code === 'KeyQ') {
+          this.isEndlessMode = false;
+          this.isPracticeMode = false;
           this.state.gameStatus = 'mainMenu';
         }
         break;
@@ -266,17 +369,22 @@ export class Game {
 
       case 'gameOver':
         if (e.code === 'Enter' || e.code === 'Space') {
+          this.endlessDistance = 0; // Reset for next endless run
           this.state.gameStatus = 'mainMenu';
         }
         break;
     }
   }
 
-  private startLevel(levelId: number): void {
+  private startLevel(levelId: number, practiceMode = false): void {
     this.loadLevel(levelId);
     this.attempts = 1;
     this.levelScoreThisRun = 0;
-    this.state.gameStatus = 'playing';
+    this.isPracticeMode = practiceMode;
+    this.checkpointX = this.level.playerStart.x;
+    this.checkpointY = this.level.playerStart.y;
+    this.lastCheckpointProgress = 0;
+    this.state.gameStatus = practiceMode ? 'practice' : 'playing';
     this.audio.start();
   }
 
@@ -290,6 +398,10 @@ export class Game {
       this.loadLevel(this.state.currentLevel);
       this.attempts = 1;
       this.levelScoreThisRun = 0;
+      this.isPracticeMode = false;
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
       this.state.gameStatus = 'playing';
       this.audio.start();
     } else {
@@ -298,10 +410,115 @@ export class Game {
     }
   }
 
+  private startEndlessMode(): void {
+    // Initialize endless mode
+    this.isEndlessMode = true;
+    this.endlessDistance = 0;
+    this.endlessPlatforms = [];
+    this.nextPlatformX = 0;
+    this.cameraX = 0;
+    this.attempts = 1;
+
+    // Load level 1 as base but we'll use procedural platforms
+    this.loadLevel(1);
+    this.player.setSkin(this.save.getSelectedSkin());
+
+    // Generate initial platforms
+    this.generateEndlessPlatforms(1500);
+
+    this.state.gameStatus = 'endless';
+    this.audio.start();
+  }
+
+  private generateEndlessPlatforms(untilX: number): void {
+    const GROUND_Y = GAME_HEIGHT - 40;
+    const GROUND_HEIGHT = 40;
+
+    while (this.nextPlatformX < untilX) {
+      // Start with ground at the beginning
+      if (this.nextPlatformX === 0) {
+        this.endlessPlatforms.push(new Platform({
+          x: 0,
+          y: GROUND_Y,
+          width: 400,
+          height: GROUND_HEIGHT,
+          type: 'solid',
+        }));
+        this.nextPlatformX = 400;
+        continue;
+      }
+
+      // Difficulty increases with distance
+      const difficulty = Math.min(this.endlessDistance / 3000, 1);
+
+      // Gap size (increases with difficulty)
+      const minGap = 80 + difficulty * 40;
+      const maxGap = 150 + difficulty * 80;
+      const gap = minGap + Math.random() * (maxGap - minGap);
+
+      // Platform width (decreases with difficulty)
+      const minWidth = Math.max(80, 150 - difficulty * 50);
+      const maxWidth = Math.max(120, 250 - difficulty * 80);
+      const width = minWidth + Math.random() * (maxWidth - minWidth);
+
+      // Platform position
+      const x = this.nextPlatformX + gap;
+
+      // Height variation (more varied with difficulty)
+      const heightVariation = difficulty * 80;
+      const baseY = GROUND_Y;
+      let y = baseY;
+
+      // Sometimes create elevated platforms
+      if (Math.random() < 0.3 + difficulty * 0.2) {
+        y = baseY - 40 - Math.random() * heightVariation;
+      }
+
+      // Platform type selection
+      let type: PlatformType = 'solid';
+      const typeRoll = Math.random();
+
+      if (difficulty > 0.2 && typeRoll < 0.1) {
+        type = 'bounce';
+      } else if (difficulty > 0.4 && typeRoll < 0.15) {
+        type = 'ice';
+      }
+
+      this.endlessPlatforms.push(new Platform({
+        x,
+        y,
+        width,
+        height: GROUND_HEIGHT,
+        type,
+      }));
+
+      // Sometimes add spikes (more frequent at higher difficulty)
+      if (difficulty > 0.3 && Math.random() < 0.2 + difficulty * 0.2) {
+        this.endlessPlatforms.push(new Platform({
+          x: x + width + 20,
+          y: baseY,
+          width: 30,
+          height: 30,
+          type: 'spike',
+        }));
+      }
+
+      this.nextPlatformX = x + width;
+    }
+  }
+
   private respawnPlayer(): void {
     this.attempts++;
-    this.loadLevel(this.state.currentLevel);
-    this.state.gameStatus = 'playing';
+
+    if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
+      // Respawn at checkpoint
+      this.player.reset({ x: this.checkpointX, y: this.checkpointY });
+      this.cameraX = Math.max(0, this.checkpointX - 150);
+    } else {
+      // Normal respawn at level start
+      this.loadLevel(this.state.currentLevel);
+    }
+    this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
   }
 
   start(): void {
@@ -329,7 +546,12 @@ export class Game {
       this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
     }
 
-    if (this.state.gameStatus !== 'playing') {
+    // Decay screen shake
+    if (this.shakeTimer > 0) {
+      this.shakeTimer -= deltaTime;
+    }
+
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless') {
       this.level.update(deltaTime);
       return;
     }
@@ -339,40 +561,102 @@ export class Game {
 
     const wasGroundedBefore = this.player.isGrounded;
     const wasAliveBefore = !this.player.isDead;
+    const prevVelocityY = this.player.velocityY;
+    const wasDashing = this.player.isDashing;
 
-    this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+    // In endless mode, use procedural platforms
+    if (this.isEndlessMode) {
+      this.player.update(deltaTime, inputState, this.endlessPlatforms);
+
+      // Update distance
+      this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
+
+      // Generate more platforms ahead
+      this.generateEndlessPlatforms(this.cameraX + 1500);
+
+      // Clean up platforms behind camera
+      this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
+    } else {
+      this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+    }
+
+    // Trigger dash shake
+    if (!wasDashing && this.player.isDashing) {
+      this.triggerShake(4, 80); // Light shake on dash start
+    }
+
+    // Check coin collection
+    const coinsCollected = this.level.checkCoinCollection(this.player);
+    if (coinsCollected > 0) {
+      this.audio.playSelect(); // Use select sound for coins for now
+    }
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
       this.audio.playJump();
     }
 
+    // Detect bounce (sudden large upward velocity change)
+    const bounceThreshold = -600;
+    if (prevVelocityY >= 0 && this.player.velocityY < bounceThreshold) {
+      this.triggerShake(6, 120); // Medium shake on bounce
+    }
+
     if (wasAliveBefore && this.player.isDead) {
       this.audio.playDeath();
+      this.triggerShake(12, 350); // Strong shake on death
     }
 
     const targetCameraX = this.player.x - 150;
     this.cameraX = Math.max(0, targetCameraX);
 
+    // Update checkpoints in practice mode (every 25% progress)
+    if (this.isPracticeMode) {
+      const progress = this.level.getProgress(this.player.x);
+      const checkpointInterval = 0.25;
+      const currentCheckpoint = Math.floor(progress / checkpointInterval) * checkpointInterval;
+
+      if (currentCheckpoint > this.lastCheckpointProgress && this.player.isGrounded) {
+        this.checkpointX = this.player.x;
+        this.checkpointY = this.player.y;
+        this.lastCheckpointProgress = currentCheckpoint;
+        // Visual/audio feedback for checkpoint could be added here
+      }
+    }
+
     if (this.player.isDead) {
       this.deathTimer += deltaTime;
       if (this.deathTimer > 500) {
         this.deathTimer = 0;
-        this.respawnPlayer();
+
+        if (this.isEndlessMode) {
+          // Game over in endless mode
+          this.save.setEndlessHighScore(this.endlessDistance);
+          this.isEndlessMode = false;
+          this.state.gameStatus = 'gameOver';
+          this.audio.stop();
+        } else {
+          this.respawnPlayer();
+        }
       }
       return;
     }
 
     if (this.level.checkGoal(this.player)) {
-      // Calculate score based on attempts
-      const baseScore = 1000;
-      const attemptPenalty = (this.attempts - 1) * 50;
-      this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100);
+      if (!this.isPracticeMode) {
+        // Calculate score based on attempts and coins (only in normal mode)
+        const baseScore = 1000;
+        const attemptPenalty = (this.attempts - 1) * 50;
+        const coinBonus = this.level.coinsCollected * 100;
+        this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
 
-      // Add to total points
-      this.save.addPoints(this.levelScoreThisRun);
+        // Add to total points
+        this.save.addPoints(this.levelScoreThisRun);
 
-      // Check for high score
-      this.save.setHighScore(this.state.currentLevel, this.levelScoreThisRun);
+        // Check for high score
+        this.save.setHighScore(this.state.currentLevel, this.levelScoreThisRun);
+      } else {
+        this.levelScoreThisRun = 0; // No points in practice mode
+      }
 
       this.state.gameStatus = 'levelComplete';
       this.audio.stop();
@@ -381,15 +665,31 @@ export class Game {
   }
 
   private render(): void {
+    // Get shake offset
+    const shake = this.getShakeOffset();
+
+    this.ctx.save();
+    this.ctx.translate(shake.x, shake.y);
+
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-    this.level.render(this.ctx, this.cameraX);
-
-    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'paused') {
+    if (this.state.gameStatus === 'endless') {
+      // Render endless mode
+      this.renderEndlessBackground();
+      this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
-      this.renderPlayingUI();
+      this.renderEndlessUI();
+    } else {
+      this.level.render(this.ctx, this.cameraX);
+
+      if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
+        this.player.render(this.ctx, this.cameraX);
+        this.renderPlayingUI();
+      }
     }
+
+    this.ctx.restore();
 
     switch (this.state.gameStatus) {
       case 'mainMenu':
@@ -400,6 +700,9 @@ export class Game {
         break;
       case 'settings':
         this.renderSettings();
+        break;
+      case 'skins':
+        this.renderSkins();
         break;
       case 'paused':
         this.renderPaused();
@@ -449,17 +752,38 @@ export class Game {
     this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillText(`${this.level.name}`, 20, 28);
 
-    // Attempt counter (below level name, smaller)
-    this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.fillText(`Attempt ${this.attempts}`, 20, 48);
+    // Practice mode indicator
+    if (this.isPracticeMode) {
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffaa00';
+      const checkpointPercent = Math.floor(this.lastCheckpointProgress * 100);
+      this.ctx.fillText(`PRACTICE (checkpoint: ${checkpointPercent}%)`, 20, 46);
 
-    // Mute indicator (top-right, separate from attempt counter)
+      // Attempt counter (moved down for practice mode)
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(`Attempt ${this.attempts}`, 20, 62);
+    } else {
+      // Attempt counter (below level name, smaller)
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(`Attempt ${this.attempts}`, 20, 48);
+    }
+
+    // Coins collected (top-right)
+    if (this.level.getTotalCoins() > 0) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`★ ${this.level.coinsCollected}/${this.level.getTotalCoins()}`, GAME_WIDTH - 20, 28);
+    }
+
+    // Mute indicator (top-right, below coins)
     if (this.audio.isMusicMuted()) {
       this.ctx.textAlign = 'right';
       this.ctx.font = '12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ff6666';
-      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 28);
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 48);
     }
 
     // Beat indicator
@@ -490,35 +814,44 @@ export class Game {
     this.ctx.textAlign = 'center';
 
     // Animated title
-    const titleY = 150 + Math.sin(this.menuAnimation * 2) * 10;
+    const titleY = 130 + Math.sin(this.menuAnimation * 2) * 10;
     this.ctx.fillStyle = '#00ffff';
     this.ctx.shadowColor = '#00ffff';
     this.ctx.shadowBlur = 30;
-    this.ctx.font = 'bold 72px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 64px "Segoe UI", sans-serif';
     this.ctx.fillText('TEMPO DASH', GAME_WIDTH / 2, titleY);
 
     // Subtitle
-    this.ctx.font = '24px "Segoe UI", sans-serif';
+    this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 10;
     this.ctx.fillStyle = '#ff00ff';
-    this.ctx.fillText('EDM Rhythm Platformer', GAME_WIDTH / 2, titleY + 50);
+    this.ctx.fillText('EDM Rhythm Platformer', GAME_WIDTH / 2, titleY + 40);
 
     // Total points display
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffd700';
     this.ctx.shadowColor = '#ffd700';
-    this.ctx.fillText(`Total Points: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, 250);
+    this.ctx.fillText(`Total Points: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, 220);
 
-    // Buttons
-    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 305, true);
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 375, false);
+    // Endless high score
+    const endlessHigh = this.save.getEndlessHighScore();
+    if (endlessHigh > 0) {
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffaa';
+      this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
+    }
 
-    // Controls hint
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    // Buttons (repositioned to fit 4 buttons)
+    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 285, true);
+    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 345, false);
+    this.renderMenuButton('SKINS', GAME_WIDTH / 2, 405, false);
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 465, false);
+
+    // Controls hint (smaller to fit)
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('Hold SPACE or Click to jump | Tap again for double & triple jump', GAME_WIDTH / 2, 450);
-    this.ctx.fillText('Press M to toggle music', GAME_WIDTH / 2, 475);
+    this.ctx.fillText('SPACE/tap to jump | SHIFT to dash | M to mute', GAME_WIDTH / 2, 520);
 
     this.ctx.restore();
   }
@@ -571,18 +904,19 @@ export class Game {
     this.ctx.shadowBlur = 0;
     this.ctx.fillText('< Back (ESC)', 20, 45);
 
-    // Level cards
-    const cardWidth = 180;
-    const cardHeight = 200;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + 40 * (TOTAL_LEVELS - 1))) / 2;
+    // Level cards (smaller to fit more levels)
+    const cardWidth = 130;
+    const cardHeight = 190;
+    const cardGap = 18;
+    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff'];
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff'];
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
-      const cardX = startX + i * (cardWidth + 40);
+      const cardX = startX + i * (cardWidth + cardGap);
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
       const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
@@ -648,6 +982,8 @@ export class Game {
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.fillText('Each level introduces new challenges and unique music!', GAME_WIDTH / 2, 420);
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 445);
 
     this.ctx.restore();
   }
@@ -686,12 +1022,185 @@ export class Game {
     this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 270);
     this.renderSlider(sliderX, 290, sliderWidth, this.audio.getSfxVolume());
 
+    // Screen shake toggle
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Screen Shake', GAME_WIDTH / 2, 360);
+    this.renderToggle(GAME_WIDTH / 2, 385, this.save.getSettings().screenShake);
+
     // Mute indicator
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 370);
+    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 440);
 
     this.ctx.restore();
+  }
+
+  private renderSkins(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLAYER SKINS', GAME_WIDTH / 2, 80);
+
+    // Points
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.fillText(`Points: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, 115);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Skin cards (3 per row, 2 rows)
+    const cardWidth = 140;
+    const cardHeight = 160;
+    const cols = 3;
+    const gap = 30;
+    const startX = (GAME_WIDTH - (cardWidth * cols + gap * (cols - 1))) / 2;
+    const startY = 140;
+
+    const selectedSkinId = this.save.getSettings().selectedSkin;
+
+    for (let i = 0; i < PLAYER_SKINS.length; i++) {
+      const skin = PLAYER_SKINS[i];
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const cardX = startX + col * (cardWidth + gap);
+      const cardY = startY + row * (cardHeight + gap);
+
+      const isUnlocked = this.save.isSkinUnlocked(skin.id);
+      const isSelected = skin.id === selectedSkinId;
+      const canUnlock = this.save.canUnlockSkin(skin.id);
+
+      // Card background
+      this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
+      this.ctx.strokeStyle = isSelected ? '#ffd700' : (isUnlocked ? skin.primaryColor : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)'));
+      this.ctx.lineWidth = isSelected ? 4 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 12);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.textAlign = 'center';
+      const centerX = cardX + cardWidth / 2;
+
+      // Skin preview (colored square)
+      const previewSize = 50;
+      const previewY = cardY + 25;
+
+      if (isUnlocked) {
+        // Draw animated preview for rainbow
+        if (skin.id === 'rainbow') {
+          const hue = (this.menuAnimation * 50) % 360;
+          const gradient = this.ctx.createLinearGradient(
+            centerX - previewSize / 2, previewY,
+            centerX + previewSize / 2, previewY + previewSize
+          );
+          gradient.addColorStop(0, `hsl(${hue}, 100%, 60%)`);
+          gradient.addColorStop(1, `hsl(${(hue + 60) % 360}, 100%, 50%)`);
+          this.ctx.fillStyle = gradient;
+        } else {
+          const gradient = this.ctx.createLinearGradient(
+            centerX - previewSize / 2, previewY,
+            centerX + previewSize / 2, previewY + previewSize
+          );
+          gradient.addColorStop(0, skin.primaryColor);
+          gradient.addColorStop(1, skin.secondaryColor);
+          this.ctx.fillStyle = gradient;
+        }
+        this.ctx.shadowColor = skin.glowColor;
+        this.ctx.shadowBlur = 15;
+      } else {
+        this.ctx.fillStyle = 'rgba(80, 80, 80, 0.8)';
+        this.ctx.shadowBlur = 0;
+      }
+
+      this.ctx.fillRect(centerX - previewSize / 2, previewY, previewSize, previewSize);
+      this.ctx.shadowBlur = 0;
+
+      // Eye on preview
+      if (isUnlocked) {
+        this.ctx.fillStyle = skin.eyeColor;
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + previewSize / 4, previewY + previewSize / 4, 6, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#000';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + previewSize / 4 + 2, previewY + previewSize / 4, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // Skin name
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
+      this.ctx.fillText(skin.name, centerX, cardY + 95);
+
+      if (isUnlocked) {
+        if (isSelected) {
+          this.ctx.font = '12px "Segoe UI", sans-serif';
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.fillText('EQUIPPED', centerX, cardY + 115);
+        } else {
+          this.ctx.font = '12px "Segoe UI", sans-serif';
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          this.ctx.fillText('Click to equip', centerX, cardY + 115);
+        }
+      } else {
+        // Cost
+        this.ctx.font = '12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
+        this.ctx.fillText(`${skin.cost} pts`, centerX, cardY + 115);
+
+        if (canUnlock) {
+          this.ctx.font = '11px "Segoe UI", sans-serif';
+          this.ctx.fillText('Click to unlock!', centerX, cardY + 135);
+        } else {
+          this.ctx.font = '18px "Segoe UI", sans-serif';
+          this.ctx.fillText('🔒', centerX, cardY + 140);
+        }
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderToggle(x: number, y: number, enabled: boolean): void {
+    const width = 60;
+    const height = 30;
+    const toggleX = x - width / 2;
+
+    // Track background
+    this.ctx.fillStyle = enabled ? 'rgba(0, 255, 170, 0.3)' : 'rgba(100, 100, 100, 0.3)';
+    this.ctx.strokeStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.5)';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(toggleX, y, width, height, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Toggle knob
+    const knobX = enabled ? toggleX + width - 17 : toggleX + 17;
+    this.ctx.fillStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.8)';
+    this.ctx.beginPath();
+    this.ctx.arc(knobX, y + height / 2, 11, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Label
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.8)';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(enabled ? 'ON' : 'OFF', x, y + height + 20);
   }
 
   private renderSlider(x: number, y: number, width: number, value: number): void {
@@ -754,12 +1263,30 @@ export class Game {
     this.ctx.shadowBlur = 20;
 
     this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40);
+    this.ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
+
+    // Show endless mode score
+    if (this.endlessDistance > 0) {
+      this.ctx.fillStyle = '#00ffff';
+      this.ctx.shadowColor = '#00ffff';
+      this.ctx.font = 'bold 32px "Segoe UI", sans-serif';
+      this.ctx.fillText(`Distance: ${this.endlessDistance}m`, GAME_WIDTH / 2, GAME_HEIGHT / 2 - 5);
+
+      const highScore = this.save.getEndlessHighScore();
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.shadowColor = '#ffd700';
+      if (this.endlessDistance >= highScore) {
+        this.ctx.fillText('NEW BEST!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
+      } else {
+        this.ctx.fillText(`Best: ${highScore}m`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
+      }
+    }
 
     this.ctx.fillStyle = COLORS.UI_TEXT;
     this.ctx.font = '20px "Segoe UI", sans-serif';
     this.ctx.shadowBlur = 5;
-    this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+    this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80);
 
     this.ctx.restore();
   }
@@ -769,36 +1296,153 @@ export class Game {
 
     this.ctx.save();
     this.ctx.textAlign = 'center';
+
+    if (this.isPracticeMode) {
+      // Practice mode completion
+      this.ctx.fillStyle = '#ffaa00';
+      this.ctx.shadowColor = '#ffaa00';
+      this.ctx.shadowBlur = 25;
+
+      this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+      this.ctx.fillText('PRACTICE COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50);
+
+      this.ctx.fillStyle = COLORS.UI_TEXT;
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.shadowBlur = 10;
+      this.ctx.fillText(`Attempts: ${this.attempts}`, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+
+      this.ctx.fillStyle = 'rgba(255, 200, 100, 0.8)';
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillText('Practice mode - no points awarded', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 35);
+
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80);
+    } else {
+      // Normal completion
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.shadowColor = '#ffd700';
+      this.ctx.shadowBlur = 25;
+
+      this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
+      this.ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
+
+      this.ctx.fillStyle = COLORS.UI_TEXT;
+      this.ctx.font = '24px "Segoe UI", sans-serif';
+      this.ctx.shadowBlur = 10;
+      this.ctx.fillText(`Attempts: ${this.attempts}`, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+
+      this.ctx.fillStyle = '#00ffaa';
+      this.ctx.fillText(`+${this.levelScoreThisRun} Points!`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillText(`Total: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
+
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+
+      if (this.state.currentLevel < TOTAL_LEVELS) {
+        this.ctx.fillText('Click or Press ENTER for next level', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120);
+      } else {
+        this.ctx.fillStyle = '#00ffff';
+        this.ctx.fillText('Congratulations! You beat the game!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 145);
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderEndlessBackground(): void {
+    // Dynamic background that shifts color based on distance
+    const hue = (this.endlessDistance * 0.1) % 360;
+
+    const gradient = this.ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+    gradient.addColorStop(0, `hsl(${hue}, 60%, 10%)`);
+    gradient.addColorStop(1, `hsl(${(hue + 30) % 360}, 50%, 5%)`);
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Scrolling grid effect
+    this.ctx.strokeStyle = `hsla(${hue}, 80%, 50%, 0.1)`;
+    this.ctx.lineWidth = 1;
+
+    const gridSize = 50;
+    const offsetX = (-this.cameraX * 0.3) % gridSize;
+
+    for (let x = offsetX; x < GAME_WIDTH; x += gridSize) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(x, 0);
+      this.ctx.lineTo(x, GAME_HEIGHT);
+      this.ctx.stroke();
+    }
+
+    for (let y = 0; y < GAME_HEIGHT; y += gridSize) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(0, y);
+      this.ctx.lineTo(GAME_WIDTH, y);
+      this.ctx.stroke();
+    }
+  }
+
+  private renderEndlessPlatforms(): void {
+    // Use the Platform's built-in render method
+    for (const platform of this.endlessPlatforms) {
+      platform.render(this.ctx, this.cameraX);
+    }
+  }
+
+  private renderEndlessUI(): void {
+    this.ctx.save();
+
+    // Distance counter (main score)
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+
+    // High score
+    const highScore = this.save.getEndlessHighScore();
+    this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffd700';
     this.ctx.shadowColor = '#ffd700';
-    this.ctx.shadowBlur = 25;
+    this.ctx.shadowBlur = 5;
+    this.ctx.fillText(`Best: ${highScore}m`, GAME_WIDTH / 2, 75);
 
-    this.ctx.font = 'bold 56px "Segoe UI", sans-serif';
-    this.ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
+    // Mode label
+    this.ctx.textAlign = 'left';
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.fillText('ENDLESS MODE', 20, 30);
 
-    this.ctx.fillStyle = COLORS.UI_TEXT;
-    this.ctx.font = '24px "Segoe UI", sans-serif';
-    this.ctx.shadowBlur = 10;
-    this.ctx.fillText(`Attempts: ${this.attempts}`, GAME_WIDTH / 2, GAME_HEIGHT / 2);
-
-    this.ctx.fillStyle = '#00ffaa';
-    this.ctx.fillText(`+${this.levelScoreThisRun} Points!`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
-
-    this.ctx.fillStyle = '#ffd700';
-    this.ctx.font = '18px "Segoe UI", sans-serif';
-    this.ctx.fillText(`Total: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 75);
-
-    this.ctx.font = '20px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-
-    if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.ctx.fillText('Click or Press ENTER for next level', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120);
-    } else {
-      this.ctx.fillStyle = '#00ffff';
-      this.ctx.fillText('🎉 Congratulations! You beat the game! 🎉', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110);
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      this.ctx.fillText('Click or Press ENTER to return to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 145);
+    // Mute indicator
+    if (this.audio.isMusicMuted()) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.shadowBlur = 0;
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 30);
     }
+
+    // Beat indicator
+    if (this.beatPulse > 0) {
+      const size = 15 + this.beatPulse * 10;
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
+      this.ctx.fillStyle = `rgba(0, 255, 255, ${this.beatPulse * 0.8})`;
+      this.ctx.fill();
+    }
+
+    this.ctx.beginPath();
+    this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, 15, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
 
     this.ctx.restore();
   }
@@ -806,5 +1450,26 @@ export class Game {
   private renderOverlay(): void {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private triggerShake(intensity: number, duration: number): void {
+    // Only shake if screen shake is enabled in settings
+    if (!this.save.getSettings().screenShake) return;
+
+    this.shakeIntensity = intensity;
+    this.shakeDuration = duration;
+    this.shakeTimer = duration;
+  }
+
+  private getShakeOffset(): { x: number; y: number } {
+    if (this.shakeTimer <= 0) return { x: 0, y: 0 };
+
+    const progress = this.shakeTimer / this.shakeDuration;
+    const currentIntensity = this.shakeIntensity * progress;
+
+    return {
+      x: (Math.random() - 0.5) * currentIntensity * 2,
+      y: (Math.random() - 0.5) * currentIntensity * 2,
+    };
   }
 }

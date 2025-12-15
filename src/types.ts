@@ -37,10 +37,16 @@ export interface MovePattern {
   startOffset?: number;
 }
 
+export interface CoinConfig {
+  x: number;
+  y: number;
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
   platforms: PlatformConfig[];
+  coins?: CoinConfig[];
   playerStart: Vector2;
   goal: Rectangle;
   background: BackgroundConfig;
@@ -60,7 +66,9 @@ export type BackgroundType =
   | 'city'       // Level 1 - City night
   | 'neon'       // Level 2 - Neon synthwave
   | 'space'      // Level 3 - Space
-  | 'forest';    // Level 4 - Mystical forest
+  | 'forest'     // Level 4 - Mystical forest
+  | 'volcano'    // Level 5 - Volcanic cavern
+  | 'ocean';     // Level 6 - Underwater
 
 export interface ParticleConfig {
   count: number;
@@ -79,7 +87,9 @@ export type BackgroundEffect =
   | 'grid'
   | 'pulse'
   | 'aurora'
-  | 'scanlines';
+  | 'scanlines'
+  | 'embers'
+  | 'bubbles';
 
 export interface GameState {
   currentLevel: number;
@@ -92,7 +102,10 @@ export type MenuState =
   | 'mainMenu'
   | 'levelSelect'
   | 'settings'
+  | 'skins'
   | 'playing'
+  | 'practice'
+  | 'endless'
   | 'paused'
   | 'levelComplete'
   | 'gameOver';
@@ -100,7 +113,9 @@ export type MenuState =
 export interface SaveData {
   totalPoints: number;
   unlockedLevels: number[];
+  unlockedSkins: string[];
   highScores: Record<number, number>;
+  endlessHighScore: number;
   settings: GameSettings;
 }
 
@@ -108,6 +123,18 @@ export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
   screenShake: boolean;
+  selectedSkin: string;
+}
+
+export interface PlayerSkin {
+  id: string;
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  glowColor: string;
+  eyeColor: string;
+  trailColor: string;
+  cost: number;
 }
 
 export interface InputState {
@@ -115,4 +142,6 @@ export interface InputState {
   right: boolean;
   jump: boolean;
   jumpPressed: boolean;
+  dash: boolean;
+  dashPressed: boolean;
 }

@@ -1,5 +1,5 @@
-import { Vector2, InputState, Rectangle } from '../types';
-import { PLAYER, COLORS, GAME_HEIGHT } from '../constants';
+import { Vector2, InputState, Rectangle, PlayerSkin } from '../types';
+import { PLAYER, GAME_HEIGHT } from '../constants';
 import { Platform } from './Platform';
 
 interface TrailPoint {
@@ -8,6 +8,18 @@ interface TrailPoint {
   alpha: number;
   rotation: number;
 }
+
+// Default skin for fallback
+const DEFAULT_SKIN: PlayerSkin = {
+  id: 'default',
+  name: 'Cyan Cube',
+  primaryColor: '#00ffaa',
+  secondaryColor: '#00cc88',
+  glowColor: '#00ffaa',
+  eyeColor: '#ffffff',
+  trailColor: 'rgba(0, 255, 170, 0.3)',
+  cost: 0,
+};
 
 export class Player {
   x: number;
@@ -24,9 +36,24 @@ export class Player {
   private animationTime = 0;
   private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
 
+  // Dash ability
+  isDashing = false;
+  private dashTimer = 0;
+  private dashCooldown = 0;
+  private static readonly DASH_DURATION = 150; // ms
+  private static readonly DASH_COOLDOWN = 500; // ms
+  private static readonly DASH_SPEED_MULT = 2.5;
+
+  // Current skin
+  private skin: PlayerSkin = DEFAULT_SKIN;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
+  }
+
+  setSkin(skin: PlayerSkin): void {
+    this.skin = skin;
   }
 
   reset(position: Vector2): void {
@@ -39,6 +66,9 @@ export class Player {
     this.targetRotation = 0;
     this.trail = [];
     this.airJumpsRemaining = 2;
+    this.isDashing = false;
+    this.dashTimer = 0;
+    this.dashCooldown = 0;
   }
 
   update(deltaTime: number, input: InputState, platforms: Platform[]): void {
@@ -46,11 +76,32 @@ export class Player {
 
     this.animationTime += deltaTime;
 
+    // Update dash cooldown
+    if (this.dashCooldown > 0) {
+      this.dashCooldown -= deltaTime;
+    }
+
+    // Update dash timer
+    if (this.isDashing) {
+      this.dashTimer -= deltaTime;
+      if (this.dashTimer <= 0) {
+        this.isDashing = false;
+      }
+    }
+
+    // Handle dash input
+    if (input.dashPressed && this.dashCooldown <= 0 && !this.isDashing) {
+      this.isDashing = true;
+      this.dashTimer = Player.DASH_DURATION;
+      this.dashCooldown = Player.DASH_COOLDOWN;
+    }
+
     // Update trail
     this.updateTrail(deltaTime);
 
-    // Auto-move forward at constant speed
-    this.x += PLAYER.SPEED * (deltaTime / 1000);
+    // Auto-move forward at constant speed (faster when dashing)
+    const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
+    this.x += PLAYER.SPEED * speedMult * (deltaTime / 1000);
 
     // Handle jumping (auto-jump when holding - jump as soon as grounded)
     if (input.jump && this.isGrounded) {
@@ -99,6 +150,8 @@ export class Player {
       const collision = this.checkCollision(platform);
       if (!collision) continue;
 
+      const bounds = platform.getBounds();
+
       // Handle platform-specific effects
       switch (platform.type) {
         case 'lava':
@@ -109,13 +162,34 @@ export class Player {
         case 'bounce':
           if (collision === 'top') {
             this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
-            this.y = platform.y - this.height;
+            this.y = bounds.y - this.height;
           }
           continue;
       }
 
-      // In Geometry Dash style, hitting the side of a platform = death
-      if (collision === 'left' || collision === 'right') {
+      // Ledge assist: if hitting side but upper 50% of player is above platform top,
+      // boost them up onto the platform instead of dying
+      if (collision === 'left') {
+        const playerMidpoint = this.y + this.height * 0.5;
+        const platformTop = bounds.y;
+
+        // If player's midpoint (50% of height) is above platform top, assist them up
+        if (playerMidpoint < platformTop) {
+          // Boost player up onto the platform
+          this.y = platformTop - this.height;
+          this.velocityY = 0;
+          this.isGrounded = true;
+          this.airJumpsRemaining = 2;
+          continue;
+        }
+
+        // Otherwise it's a real side collision = death
+        this.isDead = true;
+        return;
+      }
+
+      if (collision === 'right') {
+        // Right side collision (rare, but handle it) = death
         this.isDead = true;
         return;
       }
@@ -187,24 +261,37 @@ export class Player {
   }
 
   private updateTrail(deltaTime: number): void {
-    // Add new trail point
+    // Add new trail point (more frequent and intense when dashing)
+    const trailAlpha = this.isDashing ? 1.0 : 0.6;
     this.trail.push({
       x: this.x + this.width / 2,
       y: this.y + this.height / 2,
-      alpha: 0.6,
+      alpha: trailAlpha,
       rotation: this.rotation,
     });
 
+    // Add extra trail points when dashing for motion blur effect
+    if (this.isDashing) {
+      this.trail.push({
+        x: this.x + this.width / 2 - 10,
+        y: this.y + this.height / 2,
+        alpha: 0.8,
+        rotation: this.rotation,
+      });
+    }
+
     // Update and remove old trail points
+    const fadeSpeed = this.isDashing ? 150 : 100;
     for (let i = this.trail.length - 1; i >= 0; i--) {
-      this.trail[i].alpha -= deltaTime / 100;
+      this.trail[i].alpha -= deltaTime / fadeSpeed;
       if (this.trail[i].alpha <= 0) {
         this.trail.splice(i, 1);
       }
     }
 
-    // Limit trail length
-    while (this.trail.length > 15) {
+    // Limit trail length (longer when dashing)
+    const maxTrail = this.isDashing ? 25 : 15;
+    while (this.trail.length > maxTrail) {
       this.trail.shift();
     }
   }
@@ -222,13 +309,29 @@ export class Player {
     const screenX = this.x - cameraX;
     const screenY = this.y;
 
-    // Draw trail
+    // Get skin colors (handle rainbow skin with cycling colors)
+    let primaryColor = this.skin.primaryColor;
+    let secondaryColor = this.skin.secondaryColor;
+    let glowColor = this.skin.glowColor;
+
+    if (this.skin.id === 'rainbow') {
+      const hue = (this.animationTime * 0.1) % 360;
+      primaryColor = `hsl(${hue}, 100%, 60%)`;
+      secondaryColor = `hsl(${(hue + 30) % 360}, 100%, 50%)`;
+      glowColor = `hsl(${hue}, 100%, 70%)`;
+    }
+
+    // Draw trail (different color when dashing)
     for (const point of this.trail) {
       const trailScreenX = point.x - cameraX;
       ctx.save();
       ctx.translate(trailScreenX, point.y);
       ctx.rotate((point.rotation * Math.PI) / 180);
-      ctx.fillStyle = `rgba(0, 255, 170, ${point.alpha * 0.3})`;
+      // Yellow/orange trail when dashing, skin color when normal
+      const trailColor = this.isDashing
+        ? `rgba(255, 200, 50, ${point.alpha * 0.5})`
+        : this.skin.trailColor.replace('0.3)', `${point.alpha * 0.3})`);
+      ctx.fillStyle = trailColor;
       ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
                    this.width * point.alpha, this.height * point.alpha);
       ctx.restore();
@@ -239,9 +342,9 @@ export class Player {
     ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
     ctx.rotate((this.rotation * Math.PI) / 180);
 
-    // Body glow
-    ctx.shadowColor = COLORS.PLAYER;
-    ctx.shadowBlur = 20;
+    // Body glow (more intense when dashing)
+    ctx.shadowColor = this.isDashing ? '#ffcc00' : glowColor;
+    ctx.shadowBlur = this.isDashing ? 35 : 20;
 
     // Main cube body with gradient
     const gradient = ctx.createLinearGradient(
@@ -250,9 +353,9 @@ export class Player {
       this.width / 2,
       this.height / 2
     );
-    gradient.addColorStop(0, '#00ffcc');
-    gradient.addColorStop(0.5, COLORS.PLAYER);
-    gradient.addColorStop(1, '#00cc88');
+    gradient.addColorStop(0, primaryColor);
+    gradient.addColorStop(0.5, primaryColor);
+    gradient.addColorStop(1, secondaryColor);
     ctx.fillStyle = gradient;
     ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
@@ -260,8 +363,8 @@ export class Player {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fillRect(-this.width / 2 + 4, -this.height / 2 + 4, this.width - 8, 8);
 
-    // Border
-    ctx.strokeStyle = '#00ffee';
+    // Border (slightly lighter version of primary)
+    ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
     ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
@@ -269,7 +372,7 @@ export class Player {
     const eyeX = this.width / 2 - 10;
     const eyeY = -this.height / 2 + 10;
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = this.skin.eyeColor;
     ctx.beginPath();
     ctx.arc(eyeX, eyeY, 7, 0, Math.PI * 2);
     ctx.fill();
@@ -292,7 +395,11 @@ export class Player {
       const pulse = Math.sin(this.animationTime * 0.01) * 0.2 + 0.8;
       ctx.save();
       ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
-      ctx.strokeStyle = `rgba(0, 255, 170, ${0.3 * pulse})`;
+      // Use skin's glow color with alpha for pulse
+      const pulseColor = this.skin.id === 'rainbow'
+        ? `hsla(${(this.animationTime * 0.1) % 360}, 100%, 60%, ${0.3 * pulse})`
+        : glowColor.replace(')', `, ${0.3 * pulse})`).replace('rgb', 'rgba');
+      ctx.strokeStyle = pulseColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(
         -this.width / 2 - 5 * pulse,

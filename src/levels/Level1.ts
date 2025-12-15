@@ -31,6 +31,17 @@ const level1Config: LevelConfig = {
     },
     effects: ['stars'],
   },
+  coins: [
+    // Easy coin in intro section
+    { x: BEAT * 2, y: GROUND_Y - 60 },
+    // Coin above first spike (reward for jumping)
+    { x: BEAT * 4.5, y: GROUND_Y - 80 },
+    // Coin on elevated bounce platform
+    { x: BEAT * 18, y: GROUND_Y - 120 },
+    // Coins on elevated platforms in phrase 6
+    { x: BEAT * 24.5, y: GROUND_Y - 100 },
+    { x: BEAT * 26, y: GROUND_Y - 100 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe starting zone =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
