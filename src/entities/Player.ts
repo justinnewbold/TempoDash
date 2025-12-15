@@ -150,6 +150,8 @@ export class Player {
       const collision = this.checkCollision(platform);
       if (!collision) continue;
 
+      const bounds = platform.getBounds();
+
       // Handle platform-specific effects
       switch (platform.type) {
         case 'lava':
@@ -160,13 +162,34 @@ export class Player {
         case 'bounce':
           if (collision === 'top') {
             this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
-            this.y = platform.y - this.height;
+            this.y = bounds.y - this.height;
           }
           continue;
       }
 
-      // In Geometry Dash style, hitting the side of a platform = death
-      if (collision === 'left' || collision === 'right') {
+      // Ledge assist: if hitting side but upper 50% of player is above platform top,
+      // boost them up onto the platform instead of dying
+      if (collision === 'left') {
+        const playerMidpoint = this.y + this.height * 0.5;
+        const platformTop = bounds.y;
+
+        // If player's midpoint (50% of height) is above platform top, assist them up
+        if (playerMidpoint < platformTop) {
+          // Boost player up onto the platform
+          this.y = platformTop - this.height;
+          this.velocityY = 0;
+          this.isGrounded = true;
+          this.airJumpsRemaining = 2;
+          continue;
+        }
+
+        // Otherwise it's a real side collision = death
+        this.isDead = true;
+        return;
+      }
+
+      if (collision === 'right') {
+        // Right side collision (rare, but handle it) = death
         this.isDead = true;
         return;
       }
