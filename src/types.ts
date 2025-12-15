@@ -37,10 +37,16 @@ export interface MovePattern {
   startOffset?: number;
 }
 
+export interface CoinConfig {
+  x: number;
+  y: number;
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
   platforms: PlatformConfig[];
+  coins?: CoinConfig[];
   playerStart: Vector2;
   goal: Rectangle;
   background: BackgroundConfig;
@@ -115,4 +121,6 @@ export interface InputState {
   right: boolean;
   jump: boolean;
   jumpPressed: boolean;
+  dash: boolean;
+  dashPressed: boolean;
 }

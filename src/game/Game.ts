@@ -342,6 +342,12 @@ export class Game {
 
     this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
 
+    // Check coin collection
+    const coinsCollected = this.level.checkCoinCollection(this.player);
+    if (coinsCollected > 0) {
+      this.audio.playSelect(); // Use select sound for coins for now
+    }
+
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
       this.audio.playJump();
     }
@@ -363,10 +369,11 @@ export class Game {
     }
 
     if (this.level.checkGoal(this.player)) {
-      // Calculate score based on attempts
+      // Calculate score based on attempts and coins
       const baseScore = 1000;
       const attemptPenalty = (this.attempts - 1) * 50;
-      this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100);
+      const coinBonus = this.level.coinsCollected * 100;
+      this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
 
       // Add to total points
       this.save.addPoints(this.levelScoreThisRun);
@@ -454,12 +461,20 @@ export class Game {
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.fillText(`Attempt ${this.attempts}`, 20, 48);
 
-    // Mute indicator (top-right, separate from attempt counter)
+    // Coins collected (top-right)
+    if (this.level.getTotalCoins() > 0) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`★ ${this.level.coinsCollected}/${this.level.getTotalCoins()}`, GAME_WIDTH - 20, 28);
+    }
+
+    // Mute indicator (top-right, below coins)
     if (this.audio.isMusicMuted()) {
       this.ctx.textAlign = 'right';
       this.ctx.font = '12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ff6666';
-      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 28);
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 48);
     }
 
     // Beat indicator
@@ -517,8 +532,8 @@ export class Game {
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('Hold SPACE or Click to jump | Tap again for double & triple jump', GAME_WIDTH / 2, 450);
-    this.ctx.fillText('Press M to toggle music', GAME_WIDTH / 2, 475);
+    this.ctx.fillText('SPACE to jump | Tap again for double & triple jump', GAME_WIDTH / 2, 440);
+    this.ctx.fillText('SHIFT to dash | M to toggle music', GAME_WIDTH / 2, 465);
 
     this.ctx.restore();
   }

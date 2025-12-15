@@ -6,9 +6,12 @@ export class InputManager {
     right: false,
     jump: false,
     jumpPressed: false,
+    dash: false,
+    dashPressed: false,
   };
 
   private previousJump = false;
+  private previousDash = false;
   private canvas: HTMLCanvasElement | null = null;
 
   constructor() {
@@ -67,6 +70,10 @@ export class InputManager {
         e.preventDefault(); // Prevent page scroll
         this.state.jump = true;
         break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.state.dash = true;
+        break;
     }
   }
 
@@ -85,6 +92,10 @@ export class InputManager {
       case 'Space':
         this.state.jump = false;
         break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.state.dash = false;
+        break;
     }
   }
 
@@ -93,11 +104,15 @@ export class InputManager {
     this.state.right = false;
     this.state.jump = false;
     this.state.jumpPressed = false;
+    this.state.dash = false;
+    this.state.dashPressed = false;
   }
 
   update(): InputState {
     this.state.jumpPressed = this.state.jump && !this.previousJump;
+    this.state.dashPressed = this.state.dash && !this.previousDash;
     this.previousJump = this.state.jump;
+    this.previousDash = this.state.dash;
     return { ...this.state };
   }
 

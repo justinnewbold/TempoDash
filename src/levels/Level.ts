@@ -1,5 +1,6 @@
 import { LevelConfig, Rectangle } from '../types';
 import { Platform } from '../entities/Platform';
+import { Coin } from '../entities/Coin';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
 import { COLORS } from '../constants';
@@ -8,12 +9,16 @@ export class Level {
   id: number;
   name: string;
   platforms: Platform[] = [];
+  coins: Coin[] = [];
+  coinsCollected = 0;
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
   levelLength: number;
+  private config: LevelConfig;
 
   constructor(config: LevelConfig) {
+    this.config = config;
     this.id = config.id;
     this.name = config.name;
     this.goal = config.goal;
@@ -23,6 +28,13 @@ export class Level {
     // Create platforms
     for (const platformConfig of config.platforms) {
       this.platforms.push(new Platform(platformConfig));
+    }
+
+    // Create coins
+    if (config.coins) {
+      for (const coinConfig of config.coins) {
+        this.coins.push(new Coin(coinConfig));
+      }
     }
 
     // Calculate level length (furthest platform or goal)
@@ -36,8 +48,14 @@ export class Level {
   }
 
   reset(): void {
-    // Recreate platforms to reset their state
-    this.platforms = [];
+    // Reset coins
+    this.coins = [];
+    this.coinsCollected = 0;
+    if (this.config.coins) {
+      for (const coinConfig of this.config.coins) {
+        this.coins.push(new Coin(coinConfig));
+      }
+    }
   }
 
   update(deltaTime: number): void {
@@ -46,6 +64,29 @@ export class Level {
     for (const platform of this.platforms) {
       platform.update(deltaTime);
     }
+
+    for (const coin of this.coins) {
+      coin.update(deltaTime);
+    }
+  }
+
+  checkCoinCollection(player: Player): number {
+    const playerBounds = player.getBounds();
+    let collected = 0;
+
+    for (const coin of this.coins) {
+      if (coin.checkCollision(playerBounds)) {
+        coin.collect();
+        this.coinsCollected++;
+        collected++;
+      }
+    }
+
+    return collected;
+  }
+
+  getTotalCoins(): number {
+    return this.coins.length;
   }
 
   getProgress(playerX: number): number {
@@ -73,6 +114,11 @@ export class Level {
     // Draw platforms
     for (const platform of this.platforms) {
       platform.render(ctx, cameraX);
+    }
+
+    // Draw coins
+    for (const coin of this.coins) {
+      coin.render(ctx, cameraX);
     }
 
     // Draw goal

@@ -24,6 +24,14 @@ export class Player {
   private animationTime = 0;
   private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
 
+  // Dash ability
+  private isDashing = false;
+  private dashTimer = 0;
+  private dashCooldown = 0;
+  private static readonly DASH_DURATION = 150; // ms
+  private static readonly DASH_COOLDOWN = 500; // ms
+  private static readonly DASH_SPEED_MULT = 2.5;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
@@ -39,6 +47,9 @@ export class Player {
     this.targetRotation = 0;
     this.trail = [];
     this.airJumpsRemaining = 2;
+    this.isDashing = false;
+    this.dashTimer = 0;
+    this.dashCooldown = 0;
   }
 
   update(deltaTime: number, input: InputState, platforms: Platform[]): void {
@@ -46,11 +57,32 @@ export class Player {
 
     this.animationTime += deltaTime;
 
+    // Update dash cooldown
+    if (this.dashCooldown > 0) {
+      this.dashCooldown -= deltaTime;
+    }
+
+    // Update dash timer
+    if (this.isDashing) {
+      this.dashTimer -= deltaTime;
+      if (this.dashTimer <= 0) {
+        this.isDashing = false;
+      }
+    }
+
+    // Handle dash input
+    if (input.dashPressed && this.dashCooldown <= 0 && !this.isDashing) {
+      this.isDashing = true;
+      this.dashTimer = Player.DASH_DURATION;
+      this.dashCooldown = Player.DASH_COOLDOWN;
+    }
+
     // Update trail
     this.updateTrail(deltaTime);
 
-    // Auto-move forward at constant speed
-    this.x += PLAYER.SPEED * (deltaTime / 1000);
+    // Auto-move forward at constant speed (faster when dashing)
+    const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
+    this.x += PLAYER.SPEED * speedMult * (deltaTime / 1000);
 
     // Handle jumping (auto-jump when holding - jump as soon as grounded)
     if (input.jump && this.isGrounded) {
@@ -187,24 +219,37 @@ export class Player {
   }
 
   private updateTrail(deltaTime: number): void {
-    // Add new trail point
+    // Add new trail point (more frequent and intense when dashing)
+    const trailAlpha = this.isDashing ? 1.0 : 0.6;
     this.trail.push({
       x: this.x + this.width / 2,
       y: this.y + this.height / 2,
-      alpha: 0.6,
+      alpha: trailAlpha,
       rotation: this.rotation,
     });
 
+    // Add extra trail points when dashing for motion blur effect
+    if (this.isDashing) {
+      this.trail.push({
+        x: this.x + this.width / 2 - 10,
+        y: this.y + this.height / 2,
+        alpha: 0.8,
+        rotation: this.rotation,
+      });
+    }
+
     // Update and remove old trail points
+    const fadeSpeed = this.isDashing ? 150 : 100;
     for (let i = this.trail.length - 1; i >= 0; i--) {
-      this.trail[i].alpha -= deltaTime / 100;
+      this.trail[i].alpha -= deltaTime / fadeSpeed;
       if (this.trail[i].alpha <= 0) {
         this.trail.splice(i, 1);
       }
     }
 
-    // Limit trail length
-    while (this.trail.length > 15) {
+    // Limit trail length (longer when dashing)
+    const maxTrail = this.isDashing ? 25 : 15;
+    while (this.trail.length > maxTrail) {
       this.trail.shift();
     }
   }
@@ -222,13 +267,17 @@ export class Player {
     const screenX = this.x - cameraX;
     const screenY = this.y;
 
-    // Draw trail
+    // Draw trail (different color when dashing)
     for (const point of this.trail) {
       const trailScreenX = point.x - cameraX;
       ctx.save();
       ctx.translate(trailScreenX, point.y);
       ctx.rotate((point.rotation * Math.PI) / 180);
-      ctx.fillStyle = `rgba(0, 255, 170, ${point.alpha * 0.3})`;
+      // Yellow/orange trail when dashing, cyan when normal
+      const trailColor = this.isDashing
+        ? `rgba(255, 200, 50, ${point.alpha * 0.5})`
+        : `rgba(0, 255, 170, ${point.alpha * 0.3})`;
+      ctx.fillStyle = trailColor;
       ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
                    this.width * point.alpha, this.height * point.alpha);
       ctx.restore();
@@ -239,9 +288,9 @@ export class Player {
     ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
     ctx.rotate((this.rotation * Math.PI) / 180);
 
-    // Body glow
-    ctx.shadowColor = COLORS.PLAYER;
-    ctx.shadowBlur = 20;
+    // Body glow (more intense when dashing)
+    ctx.shadowColor = this.isDashing ? '#ffcc00' : COLORS.PLAYER;
+    ctx.shadowBlur = this.isDashing ? 35 : 20;
 
     // Main cube body with gradient
     const gradient = ctx.createLinearGradient(
