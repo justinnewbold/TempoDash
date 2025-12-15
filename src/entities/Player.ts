@@ -1,5 +1,5 @@
-import { Vector2, InputState, Rectangle } from '../types';
-import { PLAYER, COLORS, GAME_HEIGHT } from '../constants';
+import { Vector2, InputState, Rectangle, PlayerSkin } from '../types';
+import { PLAYER, GAME_HEIGHT } from '../constants';
 import { Platform } from './Platform';
 
 interface TrailPoint {
@@ -8,6 +8,18 @@ interface TrailPoint {
   alpha: number;
   rotation: number;
 }
+
+// Default skin for fallback
+const DEFAULT_SKIN: PlayerSkin = {
+  id: 'default',
+  name: 'Cyan Cube',
+  primaryColor: '#00ffaa',
+  secondaryColor: '#00cc88',
+  glowColor: '#00ffaa',
+  eyeColor: '#ffffff',
+  trailColor: 'rgba(0, 255, 170, 0.3)',
+  cost: 0,
+};
 
 export class Player {
   x: number;
@@ -25,16 +37,23 @@ export class Player {
   private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
 
   // Dash ability
-  private isDashing = false;
+  isDashing = false;
   private dashTimer = 0;
   private dashCooldown = 0;
   private static readonly DASH_DURATION = 150; // ms
   private static readonly DASH_COOLDOWN = 500; // ms
   private static readonly DASH_SPEED_MULT = 2.5;
 
+  // Current skin
+  private skin: PlayerSkin = DEFAULT_SKIN;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
+  }
+
+  setSkin(skin: PlayerSkin): void {
+    this.skin = skin;
   }
 
   reset(position: Vector2): void {
@@ -267,16 +286,28 @@ export class Player {
     const screenX = this.x - cameraX;
     const screenY = this.y;
 
+    // Get skin colors (handle rainbow skin with cycling colors)
+    let primaryColor = this.skin.primaryColor;
+    let secondaryColor = this.skin.secondaryColor;
+    let glowColor = this.skin.glowColor;
+
+    if (this.skin.id === 'rainbow') {
+      const hue = (this.animationTime * 0.1) % 360;
+      primaryColor = `hsl(${hue}, 100%, 60%)`;
+      secondaryColor = `hsl(${(hue + 30) % 360}, 100%, 50%)`;
+      glowColor = `hsl(${hue}, 100%, 70%)`;
+    }
+
     // Draw trail (different color when dashing)
     for (const point of this.trail) {
       const trailScreenX = point.x - cameraX;
       ctx.save();
       ctx.translate(trailScreenX, point.y);
       ctx.rotate((point.rotation * Math.PI) / 180);
-      // Yellow/orange trail when dashing, cyan when normal
+      // Yellow/orange trail when dashing, skin color when normal
       const trailColor = this.isDashing
         ? `rgba(255, 200, 50, ${point.alpha * 0.5})`
-        : `rgba(0, 255, 170, ${point.alpha * 0.3})`;
+        : this.skin.trailColor.replace('0.3)', `${point.alpha * 0.3})`);
       ctx.fillStyle = trailColor;
       ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
                    this.width * point.alpha, this.height * point.alpha);
@@ -289,7 +320,7 @@ export class Player {
     ctx.rotate((this.rotation * Math.PI) / 180);
 
     // Body glow (more intense when dashing)
-    ctx.shadowColor = this.isDashing ? '#ffcc00' : COLORS.PLAYER;
+    ctx.shadowColor = this.isDashing ? '#ffcc00' : glowColor;
     ctx.shadowBlur = this.isDashing ? 35 : 20;
 
     // Main cube body with gradient
@@ -299,9 +330,9 @@ export class Player {
       this.width / 2,
       this.height / 2
     );
-    gradient.addColorStop(0, '#00ffcc');
-    gradient.addColorStop(0.5, COLORS.PLAYER);
-    gradient.addColorStop(1, '#00cc88');
+    gradient.addColorStop(0, primaryColor);
+    gradient.addColorStop(0.5, primaryColor);
+    gradient.addColorStop(1, secondaryColor);
     ctx.fillStyle = gradient;
     ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
@@ -309,8 +340,8 @@ export class Player {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fillRect(-this.width / 2 + 4, -this.height / 2 + 4, this.width - 8, 8);
 
-    // Border
-    ctx.strokeStyle = '#00ffee';
+    // Border (slightly lighter version of primary)
+    ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
     ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
@@ -318,7 +349,7 @@ export class Player {
     const eyeX = this.width / 2 - 10;
     const eyeY = -this.height / 2 + 10;
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = this.skin.eyeColor;
     ctx.beginPath();
     ctx.arc(eyeX, eyeY, 7, 0, Math.PI * 2);
     ctx.fill();
@@ -341,7 +372,11 @@ export class Player {
       const pulse = Math.sin(this.animationTime * 0.01) * 0.2 + 0.8;
       ctx.save();
       ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
-      ctx.strokeStyle = `rgba(0, 255, 170, ${0.3 * pulse})`;
+      // Use skin's glow color with alpha for pulse
+      const pulseColor = this.skin.id === 'rainbow'
+        ? `hsla(${(this.animationTime * 0.1) % 360}, 100%, 60%, ${0.3 * pulse})`
+        : glowColor.replace(')', `, ${0.3 * pulse})`).replace('rgb', 'rgba');
+      ctx.strokeStyle = pulseColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(
         -this.width / 2 - 5 * pulse,

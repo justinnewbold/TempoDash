@@ -1,4 +1,4 @@
-import { SaveData, GameSettings } from '../types';
+import { SaveData, GameSettings, PlayerSkin } from '../types';
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
@@ -9,17 +9,85 @@ export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
   2: 500,    // Level 2 costs 500 points
   3: 1500,   // Level 3 costs 1500 points
   4: 3000,   // Level 4 costs 3000 points
+  5: 5000,   // Level 5 costs 5000 points
+  6: 7500,   // Level 6 costs 7500 points
 };
+
+// Available player skins
+export const PLAYER_SKINS: PlayerSkin[] = [
+  {
+    id: 'default',
+    name: 'Cyan Cube',
+    primaryColor: '#00ffaa',
+    secondaryColor: '#00cc88',
+    glowColor: '#00ffaa',
+    eyeColor: '#ffffff',
+    trailColor: 'rgba(0, 255, 170, 0.3)',
+    cost: 0,
+  },
+  {
+    id: 'fire',
+    name: 'Inferno',
+    primaryColor: '#ff6600',
+    secondaryColor: '#ff3300',
+    glowColor: '#ff4400',
+    eyeColor: '#ffff00',
+    trailColor: 'rgba(255, 100, 0, 0.3)',
+    cost: 500,
+  },
+  {
+    id: 'ice',
+    name: 'Frost',
+    primaryColor: '#88ddff',
+    secondaryColor: '#44aaff',
+    glowColor: '#66ccff',
+    eyeColor: '#ffffff',
+    trailColor: 'rgba(136, 221, 255, 0.3)',
+    cost: 500,
+  },
+  {
+    id: 'purple',
+    name: 'Mystic',
+    primaryColor: '#aa44ff',
+    secondaryColor: '#8822dd',
+    glowColor: '#bb66ff',
+    eyeColor: '#ffccff',
+    trailColor: 'rgba(170, 68, 255, 0.3)',
+    cost: 750,
+  },
+  {
+    id: 'gold',
+    name: 'Golden',
+    primaryColor: '#ffd700',
+    secondaryColor: '#ffaa00',
+    glowColor: '#ffdd44',
+    eyeColor: '#ffffff',
+    trailColor: 'rgba(255, 215, 0, 0.3)',
+    cost: 1000,
+  },
+  {
+    id: 'rainbow',
+    name: 'Prismatic',
+    primaryColor: '#ff0000',  // Will cycle through colors
+    secondaryColor: '#ff00ff',
+    glowColor: '#ffffff',
+    eyeColor: '#ffffff',
+    trailColor: 'rgba(255, 255, 255, 0.4)',
+    cost: 2000,
+  },
+];
 
 const DEFAULT_SETTINGS: GameSettings = {
   musicVolume: 0.3,
   sfxVolume: 0.5,
   screenShake: true,
+  selectedSkin: 'default',
 };
 
 const DEFAULT_SAVE: SaveData = {
   totalPoints: 0,
   unlockedLevels: [1],
+  unlockedSkins: ['default'],
   highScores: {},
   settings: { ...DEFAULT_SETTINGS },
 };
@@ -39,6 +107,7 @@ export class SaveManager {
         return {
           totalPoints: parsed.totalPoints ?? DEFAULT_SAVE.totalPoints,
           unlockedLevels: parsed.unlockedLevels ?? [...DEFAULT_SAVE.unlockedLevels],
+          unlockedSkins: parsed.unlockedSkins ?? [...DEFAULT_SAVE.unlockedSkins],
           highScores: parsed.highScores ?? {},
           settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
         };
@@ -46,7 +115,11 @@ export class SaveManager {
     } catch (e) {
       console.warn('Failed to load save data:', e);
     }
-    return { ...DEFAULT_SAVE, unlockedLevels: [...DEFAULT_SAVE.unlockedLevels] };
+    return {
+      ...DEFAULT_SAVE,
+      unlockedLevels: [...DEFAULT_SAVE.unlockedLevels],
+      unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
+    };
   }
 
   private save(): void {
@@ -122,8 +195,52 @@ export class SaveManager {
     this.save();
   }
 
+  // Skin management
+  isSkinUnlocked(skinId: string): boolean {
+    return this.data.unlockedSkins.includes(skinId);
+  }
+
+  canUnlockSkin(skinId: string): boolean {
+    const skin = PLAYER_SKINS.find(s => s.id === skinId);
+    if (!skin) return false;
+    return this.data.totalPoints >= skin.cost && !this.isSkinUnlocked(skinId);
+  }
+
+  unlockSkin(skinId: string): boolean {
+    const skin = PLAYER_SKINS.find(s => s.id === skinId);
+    if (!skin) return false;
+
+    if (this.spendPoints(skin.cost)) {
+      if (!this.data.unlockedSkins.includes(skinId)) {
+        this.data.unlockedSkins.push(skinId);
+      }
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getSelectedSkin(): PlayerSkin {
+    const skinId = this.data.settings.selectedSkin;
+    const skin = PLAYER_SKINS.find(s => s.id === skinId);
+    return skin ?? PLAYER_SKINS[0];
+  }
+
+  selectSkin(skinId: string): boolean {
+    if (this.isSkinUnlocked(skinId)) {
+      this.data.settings.selectedSkin = skinId;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
   resetProgress(): void {
-    this.data = { ...DEFAULT_SAVE, unlockedLevels: [...DEFAULT_SAVE.unlockedLevels] };
+    this.data = {
+      ...DEFAULT_SAVE,
+      unlockedLevels: [...DEFAULT_SAVE.unlockedLevels],
+      unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
+    };
     this.save();
   }
 }

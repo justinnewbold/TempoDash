@@ -2,7 +2,7 @@ import { GameState } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager, MusicStyle } from '../systems/Audio';
-import { SaveManager, LEVEL_UNLOCK_COSTS } from '../systems/SaveManager';
+import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
@@ -34,6 +34,11 @@ export class Game {
   private selectedLevelIndex = 0;
   private menuAnimation = 0;
   private levelScoreThisRun = 0;
+
+  // Screen shake
+  private shakeIntensity = 0;
+  private shakeDuration = 0;
+  private shakeTimer = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -75,6 +80,7 @@ export class Game {
   private loadLevel(levelId: number): void {
     this.level = createLevel(levelId);
     this.player = new Player(this.level.playerStart);
+    this.player.setSkin(this.save.getSelectedSkin());
     this.state.currentLevel = levelId;
     this.cameraX = 0;
 
@@ -83,6 +89,8 @@ export class Game {
       2: 'dark',
       3: 'epic',
       4: 'dark',
+      5: 'epic',
+      6: 'energetic',
     };
     this.audio.setStyle(musicStyles[levelId] || 'energetic');
   }
@@ -102,6 +110,9 @@ export class Game {
       case 'settings':
         this.handleSettingsClick(x, y);
         break;
+      case 'skins':
+        this.handleSkinsClick(x, y);
+        break;
       case 'levelComplete':
         this.nextLevel();
         break;
@@ -114,17 +125,22 @@ export class Game {
   private handleMainMenuClick(x: number, y: number): void {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
-    const buttonHeight = 50;
 
-    // Play button
+    // Play button (y=305, so clickable area is 280-330)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 280 && y <= 280 + buttonHeight) {
+        y >= 280 && y <= 330) {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Settings button
+    // Skins button (y=375, so clickable area is 350-400)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 350 && y <= 350 + buttonHeight) {
+        y >= 350 && y <= 400) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'skins';
+    }
+    // Settings button (y=445, so clickable area is 420-470)
+    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
+        y >= 420 && y <= 470) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -138,14 +154,15 @@ export class Game {
       return;
     }
 
-    // Level cards
-    const cardWidth = 180;
-    const cardHeight = 200;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + 40 * (TOTAL_LEVELS - 1))) / 2;
+    // Level cards (must match renderLevelSelect dimensions)
+    const cardWidth = 130;
+    const cardHeight = 190;
+    const cardGap = 18;
+    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
-      const cardX = startX + i * (cardWidth + 40);
+      const cardX = startX + i * (cardWidth + cardGap);
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
         const levelId = i + 1;
         if (this.save.isLevelUnlocked(levelId)) {
@@ -185,6 +202,54 @@ export class Game {
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
+    }
+
+    // Screen shake toggle
+    const toggleWidth = 60;
+    const toggleX = GAME_WIDTH / 2 - toggleWidth / 2;
+    if (x >= toggleX && x <= toggleX + toggleWidth && y >= 385 && y <= 415) {
+      const currentShake = this.save.getSettings().screenShake;
+      this.save.updateSettings({ screenShake: !currentShake });
+      this.audio.playSelect();
+    }
+  }
+
+  private handleSkinsClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Skin cards (3 per row, 2 rows)
+    const cardWidth = 140;
+    const cardHeight = 160;
+    const cols = 3;
+    const gap = 30;
+    const startX = (GAME_WIDTH - (cardWidth * cols + gap * (cols - 1))) / 2;
+    const startY = 140;
+
+    for (let i = 0; i < PLAYER_SKINS.length; i++) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const cardX = startX + col * (cardWidth + gap);
+      const cardY = startY + row * (cardHeight + gap);
+
+      if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
+        const skin = PLAYER_SKINS[i];
+        if (this.save.isSkinUnlocked(skin.id)) {
+          // Select this skin
+          this.save.selectSkin(skin.id);
+          this.audio.playSelect();
+        } else if (this.save.canUnlockSkin(skin.id)) {
+          // Unlock this skin
+          if (this.save.unlockSkin(skin.id)) {
+            this.audio.playUnlock();
+          }
+        }
+        return;
+      }
     }
   }
 
@@ -236,6 +301,13 @@ export class Game {
         break;
 
       case 'settings':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'skins':
         if (e.code === 'Escape') {
           this.audio.playSelect();
           this.state.gameStatus = 'mainMenu';
@@ -329,6 +401,11 @@ export class Game {
       this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
     }
 
+    // Decay screen shake
+    if (this.shakeTimer > 0) {
+      this.shakeTimer -= deltaTime;
+    }
+
     if (this.state.gameStatus !== 'playing') {
       this.level.update(deltaTime);
       return;
@@ -339,8 +416,15 @@ export class Game {
 
     const wasGroundedBefore = this.player.isGrounded;
     const wasAliveBefore = !this.player.isDead;
+    const prevVelocityY = this.player.velocityY;
+    const wasDashing = this.player.isDashing;
 
     this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+
+    // Trigger dash shake
+    if (!wasDashing && this.player.isDashing) {
+      this.triggerShake(4, 80); // Light shake on dash start
+    }
 
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
@@ -352,8 +436,15 @@ export class Game {
       this.audio.playJump();
     }
 
+    // Detect bounce (sudden large upward velocity change)
+    const bounceThreshold = -600;
+    if (prevVelocityY >= 0 && this.player.velocityY < bounceThreshold) {
+      this.triggerShake(6, 120); // Medium shake on bounce
+    }
+
     if (wasAliveBefore && this.player.isDead) {
       this.audio.playDeath();
+      this.triggerShake(12, 350); // Strong shake on death
     }
 
     const targetCameraX = this.player.x - 150;
@@ -388,6 +479,12 @@ export class Game {
   }
 
   private render(): void {
+    // Get shake offset
+    const shake = this.getShakeOffset();
+
+    this.ctx.save();
+    this.ctx.translate(shake.x, shake.y);
+
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
@@ -398,6 +495,8 @@ export class Game {
       this.renderPlayingUI();
     }
 
+    this.ctx.restore();
+
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.renderMainMenu();
@@ -407,6 +506,9 @@ export class Game {
         break;
       case 'settings':
         this.renderSettings();
+        break;
+      case 'skins':
+        this.renderSkins();
         break;
       case 'paused':
         this.renderPaused();
@@ -526,14 +628,14 @@ export class Game {
 
     // Buttons
     this.renderMenuButton('PLAY', GAME_WIDTH / 2, 305, true);
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 375, false);
+    this.renderMenuButton('SKINS', GAME_WIDTH / 2, 375, false);
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 445, false);
 
-    // Controls hint
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    // Controls hint (smaller to fit)
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('SPACE to jump | Tap again for double & triple jump', GAME_WIDTH / 2, 440);
-    this.ctx.fillText('SHIFT to dash | M to toggle music', GAME_WIDTH / 2, 465);
+    this.ctx.fillText('SPACE/tap to jump | SHIFT to dash | M to mute', GAME_WIDTH / 2, 500);
 
     this.ctx.restore();
   }
@@ -586,18 +688,19 @@ export class Game {
     this.ctx.shadowBlur = 0;
     this.ctx.fillText('< Back (ESC)', 20, 45);
 
-    // Level cards
-    const cardWidth = 180;
-    const cardHeight = 200;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + 40 * (TOTAL_LEVELS - 1))) / 2;
+    // Level cards (smaller to fit more levels)
+    const cardWidth = 130;
+    const cardHeight = 190;
+    const cardGap = 18;
+    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff'];
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff'];
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
-      const cardX = startX + i * (cardWidth + 40);
+      const cardX = startX + i * (cardWidth + cardGap);
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
       const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
@@ -701,12 +804,185 @@ export class Game {
     this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 270);
     this.renderSlider(sliderX, 290, sliderWidth, this.audio.getSfxVolume());
 
+    // Screen shake toggle
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Screen Shake', GAME_WIDTH / 2, 360);
+    this.renderToggle(GAME_WIDTH / 2, 385, this.save.getSettings().screenShake);
+
     // Mute indicator
     this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 370);
+    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 440);
 
     this.ctx.restore();
+  }
+
+  private renderSkins(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLAYER SKINS', GAME_WIDTH / 2, 80);
+
+    // Points
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.fillText(`Points: ${this.save.getTotalPoints()}`, GAME_WIDTH / 2, 115);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Skin cards (3 per row, 2 rows)
+    const cardWidth = 140;
+    const cardHeight = 160;
+    const cols = 3;
+    const gap = 30;
+    const startX = (GAME_WIDTH - (cardWidth * cols + gap * (cols - 1))) / 2;
+    const startY = 140;
+
+    const selectedSkinId = this.save.getSettings().selectedSkin;
+
+    for (let i = 0; i < PLAYER_SKINS.length; i++) {
+      const skin = PLAYER_SKINS[i];
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const cardX = startX + col * (cardWidth + gap);
+      const cardY = startY + row * (cardHeight + gap);
+
+      const isUnlocked = this.save.isSkinUnlocked(skin.id);
+      const isSelected = skin.id === selectedSkinId;
+      const canUnlock = this.save.canUnlockSkin(skin.id);
+
+      // Card background
+      this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
+      this.ctx.strokeStyle = isSelected ? '#ffd700' : (isUnlocked ? skin.primaryColor : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)'));
+      this.ctx.lineWidth = isSelected ? 4 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 12);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.textAlign = 'center';
+      const centerX = cardX + cardWidth / 2;
+
+      // Skin preview (colored square)
+      const previewSize = 50;
+      const previewY = cardY + 25;
+
+      if (isUnlocked) {
+        // Draw animated preview for rainbow
+        if (skin.id === 'rainbow') {
+          const hue = (this.menuAnimation * 50) % 360;
+          const gradient = this.ctx.createLinearGradient(
+            centerX - previewSize / 2, previewY,
+            centerX + previewSize / 2, previewY + previewSize
+          );
+          gradient.addColorStop(0, `hsl(${hue}, 100%, 60%)`);
+          gradient.addColorStop(1, `hsl(${(hue + 60) % 360}, 100%, 50%)`);
+          this.ctx.fillStyle = gradient;
+        } else {
+          const gradient = this.ctx.createLinearGradient(
+            centerX - previewSize / 2, previewY,
+            centerX + previewSize / 2, previewY + previewSize
+          );
+          gradient.addColorStop(0, skin.primaryColor);
+          gradient.addColorStop(1, skin.secondaryColor);
+          this.ctx.fillStyle = gradient;
+        }
+        this.ctx.shadowColor = skin.glowColor;
+        this.ctx.shadowBlur = 15;
+      } else {
+        this.ctx.fillStyle = 'rgba(80, 80, 80, 0.8)';
+        this.ctx.shadowBlur = 0;
+      }
+
+      this.ctx.fillRect(centerX - previewSize / 2, previewY, previewSize, previewSize);
+      this.ctx.shadowBlur = 0;
+
+      // Eye on preview
+      if (isUnlocked) {
+        this.ctx.fillStyle = skin.eyeColor;
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + previewSize / 4, previewY + previewSize / 4, 6, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#000';
+        this.ctx.beginPath();
+        this.ctx.arc(centerX + previewSize / 4 + 2, previewY + previewSize / 4, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // Skin name
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
+      this.ctx.fillText(skin.name, centerX, cardY + 95);
+
+      if (isUnlocked) {
+        if (isSelected) {
+          this.ctx.font = '12px "Segoe UI", sans-serif';
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.fillText('EQUIPPED', centerX, cardY + 115);
+        } else {
+          this.ctx.font = '12px "Segoe UI", sans-serif';
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          this.ctx.fillText('Click to equip', centerX, cardY + 115);
+        }
+      } else {
+        // Cost
+        this.ctx.font = '12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
+        this.ctx.fillText(`${skin.cost} pts`, centerX, cardY + 115);
+
+        if (canUnlock) {
+          this.ctx.font = '11px "Segoe UI", sans-serif';
+          this.ctx.fillText('Click to unlock!', centerX, cardY + 135);
+        } else {
+          this.ctx.font = '18px "Segoe UI", sans-serif';
+          this.ctx.fillText('🔒', centerX, cardY + 140);
+        }
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderToggle(x: number, y: number, enabled: boolean): void {
+    const width = 60;
+    const height = 30;
+    const toggleX = x - width / 2;
+
+    // Track background
+    this.ctx.fillStyle = enabled ? 'rgba(0, 255, 170, 0.3)' : 'rgba(100, 100, 100, 0.3)';
+    this.ctx.strokeStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.5)';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(toggleX, y, width, height, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Toggle knob
+    const knobX = enabled ? toggleX + width - 17 : toggleX + 17;
+    this.ctx.fillStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.8)';
+    this.ctx.beginPath();
+    this.ctx.arc(knobX, y + height / 2, 11, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Label
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = enabled ? '#00ffaa' : 'rgba(150, 150, 150, 0.8)';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(enabled ? 'ON' : 'OFF', x, y + height + 20);
   }
 
   private renderSlider(x: number, y: number, width: number, value: number): void {
@@ -821,5 +1097,26 @@ export class Game {
   private renderOverlay(): void {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private triggerShake(intensity: number, duration: number): void {
+    // Only shake if screen shake is enabled in settings
+    if (!this.save.getSettings().screenShake) return;
+
+    this.shakeIntensity = intensity;
+    this.shakeDuration = duration;
+    this.shakeTimer = duration;
+  }
+
+  private getShakeOffset(): { x: number; y: number } {
+    if (this.shakeTimer <= 0) return { x: 0, y: 0 };
+
+    const progress = this.shakeTimer / this.shakeDuration;
+    const currentIntensity = this.shakeIntensity * progress;
+
+    return {
+      x: (Math.random() - 0.5) * currentIntensity * 2,
+      y: (Math.random() - 0.5) * currentIntensity * 2,
+    };
   }
 }
