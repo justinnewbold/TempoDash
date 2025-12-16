@@ -1,13 +1,15 @@
-import { GameState } from '../types';
+import { GameState, CustomLevel } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager, MusicStyle } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
+import { CustomLevelManager } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { PlatformType } from '../types';
+import { LevelEditor } from '../editor/LevelEditor';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -54,6 +56,12 @@ export class Game {
   private endlessPlatforms: Platform[] = [];
   private nextPlatformX = 0;
 
+  // Level Editor
+  private customLevelManager: CustomLevelManager;
+  private editor: LevelEditor | null = null;
+  private editingLevel: CustomLevel | null = null;
+  private customLevelScrollOffset = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = GAME_WIDTH;
@@ -69,6 +77,7 @@ export class Game {
     this.input.setCanvas(canvas);
     this.audio = new AudioManager();
     this.save = new SaveManager();
+    this.customLevelManager = new CustomLevelManager();
 
     // Apply saved settings
     const settings = this.save.getSettings();
@@ -82,6 +91,11 @@ export class Game {
 
     // Setup click/touch
     canvas.addEventListener('click', (e) => this.handleClick(e));
+
+    // Setup mouse events for editor
+    canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+    canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+    canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
 
     // Setup beat callback
     this.audio.setBeatCallback((beat) => {
@@ -121,11 +135,17 @@ export class Game {
       case 'levelSelect':
         this.handleLevelSelectClick(x, y, e.shiftKey);
         break;
+      case 'customLevels':
+        this.handleCustomLevelsClick(x, y);
+        break;
       case 'settings':
         this.handleSettingsClick(x, y);
         break;
       case 'skins':
         this.handleSkinsClick(x, y);
+        break;
+      case 'editor':
+        this.handleEditorClick(e);
         break;
       case 'levelComplete':
         this.nextLevel();
@@ -141,27 +161,39 @@ export class Game {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
 
-    // Play button (y=285, clickable area 260-310)
+    // Play button (y=260)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 260 && y <= 310) {
+        y >= 235 && y <= 285) {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Endless button (y=345, clickable area 320-370)
+    // Endless button (y=310)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 320 && y <= 370) {
+        y >= 285 && y <= 335) {
       this.audio.playSelect();
       this.startEndlessMode();
     }
-    // Skins button (y=405, clickable area 380-430)
+    // Editor button (left side, y=360)
+    if (x >= centerX - buttonWidth / 2 - 10 && x <= centerX - 10 &&
+        y >= 340 && y <= 385) {
+      this.audio.playSelect();
+      this.openEditor();
+    }
+    // Custom Levels button (right side, y=360)
+    if (x >= centerX + 10 && x <= centerX + buttonWidth / 2 + 10 &&
+        y >= 340 && y <= 385) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'customLevels';
+    }
+    // Skins button (y=415)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 380 && y <= 430) {
+        y >= 395 && y <= 440) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
     }
-    // Settings button (y=465, clickable area 440-490)
+    // Settings button (y=465)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 440 && y <= 490) {
+        y >= 445 && y <= 490) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -335,7 +367,25 @@ export class Game {
         }
         break;
 
+      case 'customLevels':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'editor':
+        this.handleEditorKeyDown(e);
+        break;
+
+      case 'editorTest':
+        if (e.code === 'Escape') {
+          this.returnToEditor();
+        }
+        break;
+
       case 'playing':
+      case 'practice':
       case 'endless':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
@@ -551,7 +601,13 @@ export class Game {
       this.shakeTimer -= deltaTime;
     }
 
-    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless') {
+    // Editor mode has its own update
+    if (this.state.gameStatus === 'editor') {
+      this.updateEditor(deltaTime);
+      return;
+    }
+
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'editorTest') {
       this.level.update(deltaTime);
       return;
     }
@@ -665,6 +721,12 @@ export class Game {
   }
 
   private render(): void {
+    // Editor mode has its own rendering
+    if (this.state.gameStatus === 'editor') {
+      this.renderEditor();
+      return;
+    }
+
     // Get shake offset
     const shake = this.getShakeOffset();
 
@@ -680,6 +742,12 @@ export class Game {
       this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
+    } else if (this.state.gameStatus === 'editorTest') {
+      // Render test mode
+      this.level.render(this.ctx, this.cameraX);
+      this.player.render(this.ctx, this.cameraX);
+      this.renderPlayingUI();
+      this.renderEditorTestUI();
     } else {
       this.level.render(this.ctx, this.cameraX);
 
@@ -697,6 +765,9 @@ export class Game {
         break;
       case 'levelSelect':
         this.renderLevelSelect();
+        break;
+      case 'customLevels':
+        this.renderCustomLevels();
         break;
       case 'settings':
         this.renderSettings();
@@ -841,17 +912,22 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 4 buttons)
-    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 285, true);
-    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 345, false);
-    this.renderMenuButton('SKINS', GAME_WIDTH / 2, 405, false);
+    // Buttons (repositioned to fit 6 buttons)
+    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
+    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 310, false);
+
+    // Editor and Custom Levels side by side
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 362, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 362, '#00ff88');
+
+    this.renderMenuButton('SKINS', GAME_WIDTH / 2, 415, false);
     this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 465, false);
 
     // Controls hint (smaller to fit)
-    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('SPACE/tap to jump | SHIFT to dash | M to mute', GAME_WIDTH / 2, 520);
+    this.ctx.fillText('SPACE/tap: jump | SHIFT: dash | M: mute', GAME_WIDTH / 2, 515);
 
     this.ctx.restore();
   }
@@ -876,6 +952,33 @@ export class Game {
     this.ctx.shadowBlur = primary ? 10 : 0;
     this.ctx.shadowColor = '#00ffff';
     this.ctx.fillText(text, x, y + 7);
+  }
+
+  private renderSmallMenuButton(text: string, x: number, y: number, color: string): void {
+    const width = 100;
+    const height = 40;
+
+    this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba').replace('#', 'rgba(');
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+    }
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 2;
+
+    this.ctx.beginPath();
+    this.ctx.roundRect(x - width / 2, y - height / 2, width, height, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = color;
+    this.ctx.shadowBlur = 5;
+    this.ctx.shadowColor = color;
+    this.ctx.fillText(text, x, y + 4);
   }
 
   private renderLevelSelect(): void {
@@ -1471,5 +1574,434 @@ export class Game {
       x: (Math.random() - 0.5) * currentIntensity * 2,
       y: (Math.random() - 0.5) * currentIntensity * 2,
     };
+  }
+
+  // ==================== LEVEL EDITOR METHODS ====================
+
+  private openEditor(levelToEdit?: CustomLevel): void {
+    if (levelToEdit) {
+      this.editingLevel = levelToEdit;
+    } else {
+      this.editingLevel = this.customLevelManager.createNewLevel();
+    }
+    this.editor = new LevelEditor(this.editingLevel);
+    this.state.gameStatus = 'editor';
+
+    // Resize canvas for editor (needs more space for UI)
+    this.canvas.width = GAME_WIDTH + 200; // sidebar
+    this.canvas.height = GAME_HEIGHT + 60; // toolbar
+  }
+
+  private closeEditor(): void {
+    // Restore canvas size
+    this.canvas.width = GAME_WIDTH;
+    this.canvas.height = GAME_HEIGHT;
+    this.editor = null;
+    this.editingLevel = null;
+    this.state.gameStatus = 'mainMenu';
+  }
+
+  private saveCurrentLevel(): void {
+    if (this.editor && this.editingLevel) {
+      const level = this.editor.getLevel();
+      this.customLevelManager.saveLevel(level);
+      this.editingLevel = level;
+    }
+  }
+
+  private handleEditorClick(e: MouseEvent): void {
+    if (!this.editor) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+    // Check toolbar area
+    if (y < this.editor.getToolbarHeight()) {
+      this.editor.handleToolbarClick(x, y);
+      return;
+    }
+
+    // Check sidebar area
+    if (x < this.editor.getSidebarWidth()) {
+      this.editor.handleSidebarClick(x, y);
+      return;
+    }
+
+    // Editor canvas area
+    this.editor.handleMouseDown(x, y);
+  }
+
+  private handleCustomLevelsClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Create New Level button
+    if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 + 100 &&
+        y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
+      this.audio.playSelect();
+      this.openEditor();
+      return;
+    }
+
+    // Level cards
+    const levels = this.customLevelManager.getAllLevels();
+    const cardWidth = 200;
+    const cardHeight = 120;
+    const cardsPerRow = 3;
+    const startX = (GAME_WIDTH - (cardWidth * cardsPerRow + 20 * (cardsPerRow - 1))) / 2;
+    const startY = 120;
+
+    for (let i = 0; i < levels.length; i++) {
+      const row = Math.floor(i / cardsPerRow);
+      const col = i % cardsPerRow;
+      const cardX = startX + col * (cardWidth + 20);
+      const cardY = startY + row * (cardHeight + 15) - this.customLevelScrollOffset;
+
+      if (cardY < 100 || cardY > GAME_HEIGHT - 100) continue;
+
+      if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
+        // Check for play button (left side)
+        if (x >= cardX + 10 && x <= cardX + 60 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+          this.audio.playSelect();
+          this.playCustomLevel(levels[i]);
+          return;
+        }
+        // Check for edit button (middle)
+        if (x >= cardX + 70 && x <= cardX + 120 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+          this.audio.playSelect();
+          this.openEditor(levels[i]);
+          return;
+        }
+        // Check for delete button (right side)
+        if (x >= cardX + 130 && x <= cardX + 180 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+          this.audio.playSelect();
+          this.customLevelManager.deleteLevel(levels[i].id);
+          return;
+        }
+      }
+    }
+  }
+
+  private playCustomLevel(customLevel: CustomLevel): void {
+    // Convert custom level to playable format
+    const config = this.customLevelManager.toLevelConfig(customLevel);
+
+    // Create a Level instance from the config
+    this.level = new Level(config);
+    this.player = new Player(config.playerStart);
+    this.player.setSkin(this.save.getSelectedSkin());
+    this.cameraX = 0;
+    this.attempts = 0;
+    this.levelScoreThisRun = 0;
+    this.isPracticeMode = false;
+    this.isEndlessMode = false;
+
+    this.audio.start();
+    this.state.gameStatus = 'playing';
+  }
+
+  private renderCustomLevels(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.shadowColor = '#00ff88';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('MY LEVELS', GAME_WIDTH / 2, 60);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Level count
+    const levels = this.customLevelManager.getAllLevels();
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.fillText(`${levels.length} custom level${levels.length !== 1 ? 's' : ''}`, GAME_WIDTH / 2, 90);
+
+    // Level cards
+    if (levels.length === 0) {
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.fillText('No custom levels yet!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
+      this.ctx.fillText('Click "Create New" to make one.', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10);
+    } else {
+      const cardWidth = 200;
+      const cardHeight = 120;
+      const cardsPerRow = 3;
+      const startX = (GAME_WIDTH - (cardWidth * cardsPerRow + 20 * (cardsPerRow - 1))) / 2;
+      const startY = 120;
+
+      for (let i = 0; i < levels.length; i++) {
+        const level = levels[i];
+        const row = Math.floor(i / cardsPerRow);
+        const col = i % cardsPerRow;
+        const cardX = startX + col * (cardWidth + 20);
+        const cardY = startY + row * (cardHeight + 15) - this.customLevelScrollOffset;
+
+        if (cardY < 80 || cardY > GAME_HEIGHT - 120) continue;
+
+        // Card background
+        this.ctx.fillStyle = 'rgba(40, 40, 60, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 10);
+        this.ctx.fill();
+
+        this.ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        // Level name
+        this.ctx.textAlign = 'left';
+        this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(level.name.slice(0, 18), cardX + 10, cardY + 25);
+
+        // Level info
+        this.ctx.font = '11px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#aaaaaa';
+        this.ctx.fillText(`BPM: ${level.bpm}`, cardX + 10, cardY + 45);
+        this.ctx.fillText(`Platforms: ${level.platforms.length}`, cardX + 10, cardY + 60);
+        this.ctx.fillText(`Coins: ${level.coins.length}`, cardX + 100, cardY + 60);
+
+        // Buttons
+        this.ctx.textAlign = 'center';
+
+        // Play button
+        this.ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX + 10, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.fill();
+        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#00ff88';
+        this.ctx.fillText('PLAY', cardX + 35, cardY + cardHeight - 18);
+
+        // Edit button
+        this.ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX + 70, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#8888ff';
+        this.ctx.fillText('EDIT', cardX + 95, cardY + cardHeight - 18);
+
+        // Delete button
+        this.ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX + 130, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ff5555';
+        this.ctx.fillText('DEL', cardX + 155, cardY + cardHeight - 18);
+      }
+    }
+
+    // Create New button
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 - 100, GAME_HEIGHT - 80, 200, 40, 10);
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#ff00ff';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('+ CREATE NEW LEVEL', GAME_WIDTH / 2, GAME_HEIGHT - 54);
+
+    this.ctx.restore();
+  }
+
+  private renderEditor(): void {
+    if (this.editor) {
+      this.editor.render(this.ctx);
+
+      // Add save/test/exit buttons overlay
+      this.ctx.save();
+      this.ctx.textAlign = 'center';
+
+      const buttonY = 15;
+      const rightX = this.canvas.width - 20;
+
+      // Save button
+      this.ctx.fillStyle = 'rgba(0, 200, 100, 0.8)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(rightX - 230, buttonY, 70, 30, 5);
+      this.ctx.fill();
+      this.ctx.font = 'bold 12px sans-serif';
+      this.ctx.fillStyle = 'white';
+      this.ctx.fillText('SAVE', rightX - 195, buttonY + 20);
+
+      // Test button
+      this.ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(rightX - 150, buttonY, 70, 30, 5);
+      this.ctx.fill();
+      this.ctx.fillStyle = 'white';
+      this.ctx.fillText('TEST', rightX - 115, buttonY + 20);
+
+      // Exit button
+      this.ctx.fillStyle = 'rgba(200, 50, 50, 0.8)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(rightX - 70, buttonY, 70, 30, 5);
+      this.ctx.fill();
+      this.ctx.fillStyle = 'white';
+      this.ctx.fillText('EXIT', rightX - 35, buttonY + 20);
+
+      this.ctx.restore();
+    }
+  }
+
+  private updateEditor(deltaTime: number): void {
+    if (this.editor) {
+      this.editor.update(deltaTime);
+    }
+  }
+
+  private handleEditorKeyDown(e: KeyboardEvent): void {
+    if (!this.editor) return;
+
+    // Handle save/test/exit shortcuts
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      this.saveCurrentLevel();
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      this.closeEditor();
+      return;
+    }
+
+    if (e.key === 'F5' || (e.ctrlKey && e.key === 'Enter')) {
+      e.preventDefault();
+      this.testLevel();
+      return;
+    }
+
+    // Arrow keys for camera pan
+    if (e.key === 'ArrowRight') {
+      this.editor.moveCamera(50);
+    } else if (e.key === 'ArrowLeft') {
+      this.editor.moveCamera(-50);
+    }
+
+    this.editor.handleKeyDown(e.key);
+  }
+
+  private testLevel(): void {
+    if (!this.editor) return;
+
+    // Save first
+    this.saveCurrentLevel();
+
+    // Store editor state
+    const level = this.editor.getLevel();
+
+    // Play the level in test mode
+    const config = this.customLevelManager.toLevelConfig(level);
+    this.level = new Level(config);
+    this.player = new Player(config.playerStart);
+    this.player.setSkin(this.save.getSelectedSkin());
+    this.cameraX = 0;
+    this.attempts = 0;
+    this.levelScoreThisRun = 0;
+    this.isPracticeMode = true; // Use practice mode for testing
+
+    // Restore canvas size for gameplay
+    this.canvas.width = GAME_WIDTH;
+    this.canvas.height = GAME_HEIGHT;
+
+    this.audio.start();
+    this.state.gameStatus = 'editorTest';
+  }
+
+  private returnToEditor(): void {
+    if (this.editingLevel) {
+      this.canvas.width = GAME_WIDTH + 200;
+      this.canvas.height = GAME_HEIGHT + 60;
+      this.editor = new LevelEditor(this.editingLevel);
+      this.state.gameStatus = 'editor';
+      this.audio.stop();
+    }
+  }
+
+  private handleMouseMove(e: MouseEvent): void {
+    if (this.state.gameStatus !== 'editor' || !this.editor) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+    this.editor.handleMouseMove(x, y);
+  }
+
+  private handleMouseUp(_e: MouseEvent): void {
+    if (this.state.gameStatus !== 'editor' || !this.editor) return;
+
+    this.editor.handleMouseUp();
+  }
+
+  private handleMouseDown(e: MouseEvent): void {
+    if (this.state.gameStatus !== 'editor' || !this.editor) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+    // Check toolbar area
+    if (y < this.editor.getToolbarHeight()) {
+      this.editor.handleToolbarClick(x, y);
+
+      // Check for save/test/exit buttons
+      const rightX = this.canvas.width - 20;
+      if (y >= 15 && y <= 45) {
+        if (x >= rightX - 230 && x <= rightX - 160) {
+          this.saveCurrentLevel();
+        } else if (x >= rightX - 150 && x <= rightX - 80) {
+          this.testLevel();
+        } else if (x >= rightX - 70 && x <= rightX) {
+          this.closeEditor();
+        }
+      }
+      return;
+    }
+
+    // Check sidebar area
+    if (x < this.editor.getSidebarWidth()) {
+      this.editor.handleSidebarClick(x, y);
+      return;
+    }
+
+    // Editor canvas area
+    this.editor.handleMouseDown(x, y);
+  }
+
+  private renderEditorTestUI(): void {
+    this.ctx.save();
+
+    // Test mode indicator
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('TEST MODE - Press ESC to return to editor', GAME_WIDTH / 2, GAME_HEIGHT - 20);
+
+    this.ctx.restore();
   }
 }
