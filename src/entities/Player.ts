@@ -368,26 +368,6 @@ export class Player {
     ctx.lineWidth = 2;
     ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
-    // Eye/face design (in top-right corner - front of movement)
-    const eyeX = this.width / 2 - 10;
-    const eyeY = -this.height / 2 + 10;
-
-    ctx.fillStyle = this.skin.eyeColor;
-    ctx.beginPath();
-    ctx.arc(eyeX, eyeY, 7, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(eyeX + 2, eyeY, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Small highlight in eye
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(eyeX + 3.5, eyeY - 2, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-
     ctx.restore();
 
     // Animated pulse effect around player (when grounded)
