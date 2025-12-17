@@ -62,6 +62,9 @@ export class Game {
   private editingLevel: CustomLevel | null = null;
   private customLevelScrollOffset = 0;
 
+  // Tutorial
+  private showingTutorial = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvas.width = GAME_WIDTH;
@@ -124,6 +127,12 @@ export class Game {
   }
 
   private handleClick(e: MouseEvent): void {
+    // Dismiss tutorial on click
+    if (this.showingTutorial) {
+      this.dismissTutorial();
+      return;
+    }
+
     const rect = this.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
     const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
@@ -307,6 +316,12 @@ export class Game {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    // Dismiss tutorial on any key
+    if (this.showingTutorial) {
+      this.dismissTutorial();
+      return;
+    }
+
     // Mute toggle
     if (e.code === 'KeyM') {
       this.audio.toggleMute();
@@ -435,7 +450,13 @@ export class Game {
     this.checkpointY = this.level.playerStart.y;
     this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
-    this.audio.start();
+
+    // Show tutorial on first play
+    if (!this.save.hasTutorialBeenShown()) {
+      this.showingTutorial = true;
+    } else {
+      this.audio.start();
+    }
   }
 
   private nextLevel(): void {
@@ -759,6 +780,12 @@ export class Game {
 
     this.ctx.restore();
 
+    // Show tutorial overlay if active
+    if (this.showingTutorial) {
+      this.renderTutorial();
+      return; // Don't render other overlays
+    }
+
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.renderMainMenu();
@@ -874,6 +901,52 @@ export class Game {
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
+
+    // Dash cooldown indicator (bottom-left)
+    const dashX = 30;
+    const dashY = GAME_HEIGHT - 30;
+    const dashRadius = 15;
+    const cooldownProgress = this.player.getDashCooldownProgress();
+    const canDash = this.player.canDash();
+
+    // Background circle
+    this.ctx.beginPath();
+    this.ctx.arc(dashX, dashY, dashRadius, 0, Math.PI * 2);
+    this.ctx.fillStyle = canDash ? 'rgba(255, 200, 50, 0.3)' : 'rgba(100, 100, 100, 0.3)';
+    this.ctx.fill();
+
+    // Cooldown arc (fills clockwise as cooldown recharges)
+    if (cooldownProgress > 0) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(dashX, dashY);
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + (1 - cooldownProgress) * Math.PI * 2;
+      this.ctx.arc(dashX, dashY, dashRadius, startAngle, endAngle);
+      this.ctx.closePath();
+      this.ctx.fillStyle = 'rgba(255, 200, 50, 0.6)';
+      this.ctx.fill();
+    }
+
+    // Border
+    this.ctx.beginPath();
+    this.ctx.arc(dashX, dashY, dashRadius, 0, Math.PI * 2);
+    this.ctx.strokeStyle = canDash ? '#ffcc00' : 'rgba(150, 150, 150, 0.5)';
+    this.ctx.lineWidth = canDash ? 2 : 1;
+    this.ctx.stroke();
+
+    // Dash icon (lightning bolt or "D")
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = canDash ? '#ffcc00' : 'rgba(150, 150, 150, 0.8)';
+    this.ctx.shadowBlur = canDash ? 5 : 0;
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.fillText('⚡', dashX, dashY + 5);
+    this.ctx.shadowBlur = 0;
+
+    // "SHIFT" label below
+    this.ctx.font = '9px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('SHIFT', dashX, dashY + 28);
 
     this.ctx.restore();
   }
@@ -1016,6 +1089,7 @@ export class Game {
 
     const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths'];
     const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff'];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5]; // 1-5 stars
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
@@ -1050,11 +1124,18 @@ export class Game {
       this.ctx.shadowBlur = 0;
       this.ctx.fillText(levelNames[i], centerX, cardY + 85);
 
+      // Difficulty stars
+      const difficulty = levelDifficulty[i];
+      const starStr = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
+      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffaa00' : 'rgba(150, 150, 150, 0.6)';
+      this.ctx.fillText(starStr, centerX, cardY + 100);
+
       if (isUnlocked) {
         // High score (more vertical space from name)
         this.ctx.font = '14px "Segoe UI", sans-serif';
         this.ctx.fillStyle = '#ffd700';
-        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 120);
+        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 125);
 
         // Click to play (moved up from card edge)
         this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -1064,7 +1145,7 @@ export class Game {
         // Lock icon (more space from level name, smaller size)
         this.ctx.font = '20px "Segoe UI", sans-serif';
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText('🔒', centerX, cardY + 120);
+        this.ctx.fillText('🔒', centerX, cardY + 125);
 
         // Cost (adjusted spacing)
         this.ctx.font = '13px "Segoe UI", sans-serif';
@@ -1075,7 +1156,7 @@ export class Game {
           // Click to unlock (moved up from card edge)
           this.ctx.font = '12px "Segoe UI", sans-serif';
           this.ctx.fillStyle = '#ffd700';
-          this.ctx.fillText('Click to unlock!', centerX, cardY + 172);
+          this.ctx.fillText('Click to unlock!', centerX, cardY + 170);
         }
       }
     }
@@ -1345,13 +1426,56 @@ export class Game {
     this.ctx.shadowBlur = 15;
 
     this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
-    this.ctx.fillText('PAUSED', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20);
+    this.ctx.fillText('PAUSED', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80);
 
-    this.ctx.font = '20px "Segoe UI", sans-serif';
+    // Controls reminder box
+    const boxY = GAME_HEIGHT / 2 - 30;
+    const boxWidth = 320;
+    const boxHeight = 160;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 - boxWidth / 2, boxY, boxWidth, boxHeight, 10);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Controls title
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
     this.ctx.shadowBlur = 5;
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
-    this.ctx.fillText('Press Q to quit to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60);
+    this.ctx.fillText('CONTROLS', GAME_WIDTH / 2, boxY + 25);
+
+    // Control list
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+
+    const controls = [
+      ['SPACE / TAP', 'Jump'],
+      ['SHIFT / 2-FINGER', 'Dash'],
+      ['M', 'Mute/Unmute'],
+      ['ESC', 'Pause/Resume'],
+    ];
+
+    let lineY = boxY + 50;
+    for (const [key, action] of controls) {
+      this.ctx.textAlign = 'right';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.fillText(key, GAME_WIDTH / 2 - 10, lineY);
+      this.ctx.textAlign = 'left';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText(action, GAME_WIDTH / 2 + 10, lineY);
+      lineY += 22;
+    }
+
+    // Resume/Quit instructions
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 115);
+    this.ctx.fillStyle = '#ff6666';
+    this.ctx.fillText('Press Q to quit to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140);
 
     this.ctx.restore();
   }
@@ -2003,5 +2127,96 @@ export class Game {
     this.ctx.fillText('TEST MODE - Press ESC to return to editor', GAME_WIDTH / 2, GAME_HEIGHT - 20);
 
     this.ctx.restore();
+  }
+
+  private renderTutorial(): void {
+    // Semi-transparent overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('HOW TO PLAY', GAME_WIDTH / 2, 80);
+
+    // Controls box
+    const boxWidth = 400;
+    const boxHeight = 280;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 110;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#00ffff';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Controls content
+    this.ctx.shadowBlur = 0;
+    const controls = [
+      { icon: '⬆️', key: 'SPACE / W / TAP', action: 'Jump (tap again in air for double jump!)' },
+      { icon: '⚡', key: 'SHIFT / 2-FINGER', action: 'Dash forward quickly' },
+      { icon: '🎵', key: 'M', action: 'Mute/Unmute music' },
+      { icon: '⏸️', key: 'ESC', action: 'Pause game' },
+    ];
+
+    let y = boxY + 45;
+    for (const control of controls) {
+      // Icon
+      this.ctx.font = '24px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(control.icon, boxX + 35, y);
+
+      // Key
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(control.key, boxX + 70, y - 5);
+
+      // Action
+      this.ctx.font = '13px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText(control.action, boxX + 70, y + 15);
+
+      this.ctx.textAlign = 'center';
+      y += 55;
+    }
+
+    // Tips
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff00ff';
+    this.ctx.fillText('TIPS', GAME_WIDTH / 2, boxY + boxHeight + 40);
+
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    this.ctx.fillText('Time your jumps to the beat for better rhythm!', GAME_WIDTH / 2, boxY + boxHeight + 65);
+    this.ctx.fillText('Collect coins for bonus points!', GAME_WIDTH / 2, boxY + boxHeight + 85);
+
+    // Continue prompt
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.shadowColor = '#00ffaa';
+    this.ctx.shadowBlur = 10;
+    const pulse = Math.sin(this.menuAnimation * 4) * 0.3 + 0.7;
+    this.ctx.globalAlpha = pulse;
+    this.ctx.fillText('TAP or PRESS ANY KEY to start!', GAME_WIDTH / 2, GAME_HEIGHT - 40);
+    this.ctx.globalAlpha = 1;
+
+    this.ctx.restore();
+  }
+
+  private dismissTutorial(): void {
+    if (this.showingTutorial) {
+      this.showingTutorial = false;
+      this.save.markTutorialShown();
+      this.audio.start();
+    }
   }
 }

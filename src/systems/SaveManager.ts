@@ -82,6 +82,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   sfxVolume: 0.5,
   screenShake: true,
   selectedSkin: 'default',
+  tutorialShown: false,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -258,5 +259,15 @@ export class SaveManager {
       return true;
     }
     return false;
+  }
+
+  // Tutorial
+  hasTutorialBeenShown(): boolean {
+    return this.data.settings.tutorialShown;
+  }
+
+  markTutorialShown(): void {
+    this.data.settings.tutorialShown = true;
+    this.save();
   }
 }

@@ -2,6 +2,16 @@ import { CustomLevel, BackgroundConfig, PlatformConfig, CoinConfig, Vector2, Rec
 import { GAME_HEIGHT } from '../constants';
 
 const STORAGE_KEY = 'tempodash_custom_levels';
+const MAX_STORAGE_SIZE = 4 * 1024 * 1024; // 4MB limit (leaving room for other data)
+const MAX_LEVEL_LENGTH = 50000; // Maximum level length in pixels
+const MIN_PLATFORM_SIZE = 20; // Minimum platform dimension
+
+// Validation result type
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
 
 // Default background for new levels
 const DEFAULT_BACKGROUND: BackgroundConfig = {
@@ -22,9 +32,14 @@ const DEFAULT_BACKGROUND: BackgroundConfig = {
 
 export class CustomLevelManager {
   private levels: CustomLevel[] = [];
+  private lastSaveError: string | null = null;
 
   constructor() {
     this.loadFromStorage();
+  }
+
+  getLastSaveError(): string | null {
+    return this.lastSaveError;
   }
 
   private loadFromStorage(): void {
@@ -39,12 +54,173 @@ export class CustomLevelManager {
     }
   }
 
-  private saveToStorage(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.levels));
-    } catch (e) {
-      console.error('Failed to save custom levels:', e);
+  private getStorageSize(): number {
+    let total = 0;
+    for (const key in localStorage) {
+      if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
+        total += localStorage.getItem(key)?.length || 0;
+      }
     }
+    return total * 2; // UTF-16 uses 2 bytes per character
+  }
+
+  private saveToStorage(): boolean {
+    this.lastSaveError = null;
+    try {
+      const data = JSON.stringify(this.levels);
+      const dataSize = data.length * 2;
+
+      // Check if we're approaching the limit
+      const currentSize = this.getStorageSize();
+      if (currentSize + dataSize > MAX_STORAGE_SIZE) {
+        this.lastSaveError = `Storage limit reached (${Math.round(currentSize / 1024)}KB used). Delete some levels to save new ones.`;
+        console.error(this.lastSaveError);
+        return false;
+      }
+
+      localStorage.setItem(STORAGE_KEY, data);
+      return true;
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        this.lastSaveError = 'Storage quota exceeded. Delete some levels to make room.';
+      } else {
+        this.lastSaveError = 'Failed to save level. Please try again.';
+      }
+      console.error('Failed to save custom levels:', e);
+      return false;
+    }
+  }
+
+  // Validate a level before playing
+  validateLevel(level: CustomLevel): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check required fields
+    if (!level.name || level.name.trim() === '') {
+      errors.push('Level must have a name');
+    }
+
+    if (!level.platforms || level.platforms.length === 0) {
+      errors.push('Level must have at least one platform');
+    }
+
+    if (!level.playerStart) {
+      errors.push('Level must have a player start position');
+    }
+
+    if (!level.goal) {
+      errors.push('Level must have a goal');
+    }
+
+    // Validate platforms
+    let hasValidStartPlatform = false;
+    let hasValidGoalPlatform = false;
+
+    for (let i = 0; i < level.platforms.length; i++) {
+      const p = level.platforms[i];
+
+      // Check platform dimensions
+      if (p.width < MIN_PLATFORM_SIZE) {
+        errors.push(`Platform ${i + 1} is too narrow (min ${MIN_PLATFORM_SIZE}px)`);
+      }
+      if (p.height < MIN_PLATFORM_SIZE) {
+        errors.push(`Platform ${i + 1} is too short (min ${MIN_PLATFORM_SIZE}px)`);
+      }
+      if (p.width > 5000) {
+        warnings.push(`Platform ${i + 1} is very wide (${p.width}px)`);
+      }
+
+      // Check if platform is within reasonable bounds
+      if (p.x < -500) {
+        warnings.push(`Platform ${i + 1} is far to the left of the start`);
+      }
+      if (p.x > MAX_LEVEL_LENGTH) {
+        warnings.push(`Platform ${i + 1} is beyond the recommended level length`);
+      }
+      if (p.y < 0 || p.y > GAME_HEIGHT + 100) {
+        warnings.push(`Platform ${i + 1} may be off-screen (y=${p.y})`);
+      }
+
+      // Check if player start has a platform beneath it
+      if (level.playerStart) {
+        const playerBottom = level.playerStart.y + 40; // Player height
+        if (p.x <= level.playerStart.x &&
+            p.x + p.width >= level.playerStart.x + 30 && // Player width
+            Math.abs(playerBottom - p.y) < 50) {
+          hasValidStartPlatform = true;
+        }
+      }
+
+      // Check if goal has a platform beneath it
+      if (level.goal) {
+        const goalBottom = level.goal.y + level.goal.height;
+        if (p.x <= level.goal.x &&
+            p.x + p.width >= level.goal.x + level.goal.width &&
+            Math.abs(goalBottom - p.y) < 50) {
+          hasValidGoalPlatform = true;
+        }
+      }
+    }
+
+    if (!hasValidStartPlatform && level.platforms.length > 0) {
+      warnings.push('Player start position may not have a platform beneath it');
+    }
+
+    if (!hasValidGoalPlatform && level.platforms.length > 0) {
+      warnings.push('Goal may not have a platform beneath it');
+    }
+
+    // Validate player start position
+    if (level.playerStart) {
+      if (level.playerStart.x < 0 || level.playerStart.x > MAX_LEVEL_LENGTH) {
+        errors.push('Player start position is out of bounds');
+      }
+      if (level.playerStart.y < 0 || level.playerStart.y > GAME_HEIGHT) {
+        errors.push('Player start Y position is off-screen');
+      }
+    }
+
+    // Validate goal position
+    if (level.goal) {
+      if (level.goal.x < 0 || level.goal.x > MAX_LEVEL_LENGTH) {
+        errors.push('Goal position is out of bounds');
+      }
+      if (level.goal.width < 20 || level.goal.height < 20) {
+        errors.push('Goal is too small');
+      }
+      if (level.goal.x <= level.playerStart.x + 100) {
+        warnings.push('Goal is very close to the start');
+      }
+    }
+
+    // Validate coins
+    for (let i = 0; i < level.coins.length; i++) {
+      const coin = level.coins[i];
+      if (coin.x < 0 || coin.x > MAX_LEVEL_LENGTH) {
+        warnings.push(`Coin ${i + 1} may be out of bounds`);
+      }
+      if (coin.y < 0 || coin.y > GAME_HEIGHT) {
+        warnings.push(`Coin ${i + 1} may be off-screen`);
+      }
+    }
+
+    // Validate BPM
+    if (level.bpm < 60 || level.bpm > 200) {
+      warnings.push(`BPM ${level.bpm} is outside the recommended range (60-200)`);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+
+  // Check if a level is playable (no critical errors)
+  isLevelPlayable(level: CustomLevel): boolean {
+    const result = this.validateLevel(level);
+    return result.valid;
   }
 
   // Generate a unique ID
@@ -78,8 +254,8 @@ export class CustomLevelManager {
     return level;
   }
 
-  // Save a level (create or update)
-  saveLevel(level: CustomLevel): void {
+  // Save a level (create or update) - returns true on success
+  saveLevel(level: CustomLevel): boolean {
     level.updatedAt = Date.now();
 
     const existingIndex = this.levels.findIndex(l => l.id === level.id);
@@ -89,7 +265,22 @@ export class CustomLevelManager {
       this.levels.push(level);
     }
 
-    this.saveToStorage();
+    const success = this.saveToStorage();
+    if (!success && existingIndex < 0) {
+      // Roll back the addition if save failed
+      this.levels.pop();
+    }
+    return success;
+  }
+
+  // Get storage usage info
+  getStorageInfo(): { used: number; max: number; percentage: number } {
+    const used = this.getStorageSize();
+    return {
+      used,
+      max: MAX_STORAGE_SIZE,
+      percentage: Math.round((used / MAX_STORAGE_SIZE) * 100)
+    };
   }
 
   // Delete a level

@@ -305,6 +305,16 @@ export class Player {
     };
   }
 
+  // Get dash cooldown progress (0 = ready, 1 = just used)
+  getDashCooldownProgress(): number {
+    return Math.max(0, this.dashCooldown / Player.DASH_COOLDOWN);
+  }
+
+  // Check if dash is ready
+  canDash(): boolean {
+    return this.dashCooldown <= 0 && !this.isDashing;
+  }
+
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     const screenX = this.x - cameraX;
     const screenY = this.y;
@@ -321,6 +331,24 @@ export class Player {
       glowColor = `hsl(${hue}, 100%, 70%)`;
     }
 
+    // Draw speed lines when dashing
+    if (this.isDashing) {
+      ctx.save();
+      const dashProgress = this.dashTimer / Player.DASH_DURATION;
+      for (let i = 0; i < 8; i++) {
+        const lineY = screenY + (i - 3.5) * 12;
+        const lineLength = 40 + Math.random() * 60;
+        const lineAlpha = 0.3 + dashProgress * 0.4;
+        ctx.strokeStyle = `rgba(255, 220, 100, ${lineAlpha})`;
+        ctx.lineWidth = 2 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.moveTo(screenX - lineLength - 20, lineY);
+        ctx.lineTo(screenX - 20, lineY);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // Draw trail (different color when dashing)
     for (const point of this.trail) {
       const trailScreenX = point.x - cameraX;
@@ -329,12 +357,28 @@ export class Player {
       ctx.rotate((point.rotation * Math.PI) / 180);
       // Yellow/orange trail when dashing, skin color when normal
       const trailColor = this.isDashing
-        ? `rgba(255, 200, 50, ${point.alpha * 0.5})`
+        ? `rgba(255, 200, 50, ${point.alpha * 0.6})`
         : this.skin.trailColor.replace('0.3)', `${point.alpha * 0.3})`);
       ctx.fillStyle = trailColor;
       ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
                    this.width * point.alpha, this.height * point.alpha);
       ctx.restore();
+    }
+
+    // Draw afterimages when dashing
+    if (this.isDashing && this.trail.length > 0) {
+      for (let i = 0; i < Math.min(3, this.trail.length); i++) {
+        const point = this.trail[this.trail.length - 1 - i * 3];
+        if (!point) continue;
+        const afterX = point.x - cameraX;
+        ctx.save();
+        ctx.globalAlpha = 0.3 - i * 0.1;
+        ctx.translate(afterX + this.width / 2, point.y + this.height / 2);
+        ctx.rotate((point.rotation * Math.PI) / 180);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        ctx.restore();
+      }
     }
 
     // Draw player cube

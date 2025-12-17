@@ -127,6 +127,7 @@ export interface GameSettings {
   sfxVolume: number;
   screenShake: boolean;
   selectedSkin: string;
+  tutorialShown: boolean;
 }
 
 export interface PlayerSkin {
@@ -141,8 +142,6 @@ export interface PlayerSkin {
 }
 
 export interface InputState {
-  left: boolean;
-  right: boolean;
   jump: boolean;
   jumpPressed: boolean;
   dash: boolean;
