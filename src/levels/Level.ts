@@ -11,6 +11,7 @@ export class Level {
   platforms: Platform[] = [];
   coins: Coin[] = [];
   coinsCollected = 0;
+  totalCoins = 0;
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
@@ -35,6 +36,7 @@ export class Level {
       for (const coinConfig of config.coins) {
         this.coins.push(new Coin(coinConfig));
       }
+      this.totalCoins = config.coins.length;
     }
 
     // Calculate level length (furthest platform or goal)
@@ -92,6 +94,8 @@ export class Level {
   getProgress(playerX: number): number {
     const startX = this.playerStart.x;
     const endX = this.goal.x;
+    // Prevent division by zero
+    if (endX === startX) return playerX >= endX ? 1 : 0;
     const progress = (playerX - startX) / (endX - startX);
     return Math.max(0, Math.min(1, progress));
   }

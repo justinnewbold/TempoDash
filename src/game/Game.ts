@@ -1,4 +1,4 @@
-import { GameState, CustomLevel } from '../types';
+import { GameState, CustomLevel, Achievement } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager, MusicStyle } from '../systems/Audio';
@@ -44,6 +44,15 @@ export class Game {
   private shakeDuration = 0;
   private shakeTimer = 0;
 
+  // Death flash effect
+  private deathFlashOpacity = 0;
+
+  // Combo system
+  private comboCount = 0;
+  private comboTimer = 0;
+  private comboDuration = 1500; // 1.5 seconds to maintain combo
+  private comboDisplayTimer = 0; // For animation
+
   // Practice mode
   private isPracticeMode = false;
   private checkpointX = 0;
@@ -64,6 +73,15 @@ export class Game {
 
   // Tutorial
   private showingTutorial = false;
+
+  // Achievement notifications
+  private achievementQueue: Achievement[] = [];
+  private currentAchievementNotification: Achievement | null = null;
+  private achievementNotificationTimer = 0;
+  private achievementNotificationDuration = 3000; // 3 seconds
+
+  // Play time tracking
+  private lastPlayTimeUpdate = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -153,6 +171,9 @@ export class Game {
       case 'skins':
         this.handleSkinsClick(x, y);
         break;
+      case 'achievements':
+        this.handleAchievementsClick(x, y);
+        break;
       case 'editor':
         this.handleEditorClick(e);
         break;
@@ -169,6 +190,7 @@ export class Game {
   private handleMainMenuClick(x: number, y: number): void {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
+    const smallButtonWidth = 100;
 
     // Play button (y=260)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
@@ -182,27 +204,33 @@ export class Game {
       this.audio.playSelect();
       this.startEndlessMode();
     }
-    // Editor button (left side, y=360)
-    if (x >= centerX - buttonWidth / 2 - 10 && x <= centerX - 10 &&
-        y >= 340 && y <= 385) {
+    // Editor button (left side, y=362)
+    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
+        y >= 342 && y <= 382) {
       this.audio.playSelect();
       this.openEditor();
     }
-    // Custom Levels button (right side, y=360)
-    if (x >= centerX + 10 && x <= centerX + buttonWidth / 2 + 10 &&
-        y >= 340 && y <= 385) {
+    // Custom Levels button (right side, y=362)
+    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
+        y >= 342 && y <= 382) {
       this.audio.playSelect();
       this.state.gameStatus = 'customLevels';
     }
-    // Skins button (y=415)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 395 && y <= 440) {
+    // Skins button (left side, y=415)
+    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
+        y >= 395 && y <= 435) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
     }
-    // Settings button (y=465)
+    // Achievements button (right side, y=415)
+    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
+        y >= 395 && y <= 435) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'achievements';
+    }
+    // Settings button (y=468)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 445 && y <= 490) {
+        y >= 443 && y <= 493) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -315,6 +343,16 @@ export class Game {
     }
   }
 
+  private handleAchievementsClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+    // Achievements don't need click handling - just viewing
+  }
+
   private handleKeyDown(e: KeyboardEvent): void {
     // Dismiss tutorial on any key
     if (this.showingTutorial) {
@@ -376,6 +414,13 @@ export class Game {
         break;
 
       case 'skins':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'achievements':
         if (e.code === 'Escape') {
           this.audio.playSelect();
           this.state.gameStatus = 'mainMenu';
@@ -581,6 +626,11 @@ export class Game {
   private respawnPlayer(): void {
     this.attempts++;
 
+    // Reset combo on death
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.comboDisplayTimer = 0;
+
     if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
@@ -612,6 +662,19 @@ export class Game {
     // Update menu animation
     this.menuAnimation += deltaTime / 1000;
 
+    // Update achievement notifications
+    this.updateAchievementNotifications(deltaTime);
+
+    // Track play time
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless') {
+      this.lastPlayTimeUpdate += deltaTime;
+      if (this.lastPlayTimeUpdate >= 10000) { // Save every 10 seconds
+        this.save.addPlayTime(this.lastPlayTimeUpdate);
+        this.lastPlayTimeUpdate = 0;
+        this.checkAchievements();
+      }
+    }
+
     // Decay beat pulse
     if (this.beatPulse > 0) {
       this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
@@ -620,6 +683,11 @@ export class Game {
     // Decay screen shake
     if (this.shakeTimer > 0) {
       this.shakeTimer -= deltaTime;
+    }
+
+    // Decay death flash
+    if (this.deathFlashOpacity > 0) {
+      this.deathFlashOpacity = Math.max(0, this.deathFlashOpacity - deltaTime / 300);
     }
 
     // Editor mode has its own update
@@ -666,6 +734,35 @@ export class Game {
     const coinsCollected = this.level.checkCoinCollection(this.player);
     if (coinsCollected > 0) {
       this.audio.playSelect(); // Use select sound for coins for now
+
+      // Update combo
+      this.comboCount += coinsCollected;
+      this.comboTimer = this.comboDuration;
+      this.comboDisplayTimer = 500; // Show combo text for 500ms
+
+      // Check combo achievements
+      if (this.comboCount >= 5) {
+        this.tryUnlockAchievement('combo_5');
+      }
+      if (this.comboCount >= 10) {
+        this.tryUnlockAchievement('combo_10');
+      }
+
+      // Update longest combo
+      this.save.updateLongestCombo(this.comboCount);
+    }
+
+    // Decay combo timer
+    if (this.comboTimer > 0) {
+      this.comboTimer -= deltaTime;
+      if (this.comboTimer <= 0) {
+        this.comboCount = 0;
+      }
+    }
+
+    // Decay combo display
+    if (this.comboDisplayTimer > 0) {
+      this.comboDisplayTimer -= deltaTime;
     }
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
@@ -681,6 +778,10 @@ export class Game {
     if (wasAliveBefore && this.player.isDead) {
       this.audio.playDeath();
       this.triggerShake(12, 350); // Strong shake on death
+      this.deathFlashOpacity = 0.6; // Trigger death flash
+      // Track death for achievements
+      this.save.recordDeath();
+      this.tryUnlockAchievement('first_death');
     }
 
     const targetCameraX = this.player.x - 150;
@@ -708,6 +809,18 @@ export class Game {
         if (this.isEndlessMode) {
           // Game over in endless mode
           this.save.setEndlessHighScore(this.endlessDistance);
+
+          // Check endless mode achievements
+          if (this.endlessDistance >= 50) {
+            this.tryUnlockAchievement('endless_50');
+          }
+          if (this.endlessDistance >= 100) {
+            this.tryUnlockAchievement('endless_100');
+          }
+          if (this.endlessDistance >= 500) {
+            this.tryUnlockAchievement('endless_500');
+          }
+
           this.isEndlessMode = false;
           this.state.gameStatus = 'gameOver';
           this.audio.stop();
@@ -731,6 +844,28 @@ export class Game {
 
         // Check for high score
         this.save.setHighScore(this.state.currentLevel, this.levelScoreThisRun);
+
+        // Track level completion for achievements
+        this.save.recordLevelComplete();
+        this.tryUnlockAchievement('first_clear');
+
+        // Check perfect run (no deaths this run)
+        if (this.attempts === 1) {
+          this.tryUnlockAchievement('perfect_level');
+        }
+
+        // Check all coins collected
+        const totalCoins = this.level.totalCoins;
+        if (totalCoins > 0 && this.level.coinsCollected >= totalCoins) {
+          this.tryUnlockAchievement('all_coins_level');
+        }
+
+        // Track coins for this level
+        this.save.setLevelCoins(this.state.currentLevel, this.level.coinsCollected);
+        this.save.recordCoinsCollected(this.level.coinsCollected);
+
+        // Check achievements
+        this.checkAchievements();
       } else {
         this.levelScoreThisRun = 0; // No points in practice mode
       }
@@ -778,6 +913,12 @@ export class Game {
       }
     }
 
+    // Death flash effect
+    if (this.deathFlashOpacity > 0) {
+      this.ctx.fillStyle = `rgba(255, 0, 0, ${this.deathFlashOpacity})`;
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
+
     this.ctx.restore();
 
     // Show tutorial overlay if active
@@ -802,6 +943,9 @@ export class Game {
       case 'skins':
         this.renderSkins();
         break;
+      case 'achievements':
+        this.renderAchievements();
+        break;
       case 'paused':
         this.renderPaused();
         break;
@@ -812,6 +956,9 @@ export class Game {
         this.renderLevelComplete();
         break;
     }
+
+    // Achievement notification (always on top)
+    this.renderAchievementNotification();
   }
 
   private renderPlayingUI(): void {
@@ -876,12 +1023,49 @@ export class Game {
       this.ctx.fillText(`★ ${this.level.coinsCollected}/${this.level.getTotalCoins()}`, GAME_WIDTH - 20, 28);
     }
 
-    // Mute indicator (top-right, below coins)
+    // Personal best indicator (top-right, below coins)
+    const highScore = this.save.getHighScore(this.state.currentLevel);
+    if (highScore > 0) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 170, 0, 0.8)';
+      this.ctx.fillText(`Best: ${highScore}pts`, GAME_WIDTH - 20, this.level.getTotalCoins() > 0 ? 46 : 28);
+    }
+
+    // Mute indicator (top-right, below other info)
     if (this.audio.isMusicMuted()) {
       this.ctx.textAlign = 'right';
       this.ctx.font = '12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ff6666';
-      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 48);
+      let muteY = 28;
+      if (this.level.getTotalCoins() > 0) muteY += 18;
+      if (highScore > 0) muteY += 14;
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, muteY);
+    }
+
+    // Combo counter (center, when active)
+    if (this.comboCount > 1 && this.comboDisplayTimer > 0) {
+      const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
+      const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+
+      this.ctx.textAlign = 'center';
+      this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
+
+      // Color based on combo count
+      let comboColor = '#ffd700';
+      if (this.comboCount >= 10) {
+        comboColor = '#ff00ff';
+      } else if (this.comboCount >= 5) {
+        comboColor = '#ff6600';
+      }
+
+      this.ctx.fillStyle = comboColor;
+      this.ctx.shadowColor = comboColor;
+      this.ctx.shadowBlur = 15;
+      this.ctx.globalAlpha = comboAlpha;
+      this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
+      this.ctx.globalAlpha = 1;
+      this.ctx.shadowBlur = 4;
     }
 
     // Beat indicator
@@ -985,7 +1169,7 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 6 buttons)
+    // Buttons (repositioned to fit 7 buttons)
     this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
     this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 310, false);
 
@@ -993,8 +1177,12 @@ export class Game {
     this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 362, '#ff00ff');
     this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 362, '#00ff88');
 
-    this.renderMenuButton('SKINS', GAME_WIDTH / 2, 415, false);
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 465, false);
+    // Skins and Achievements side by side
+    const achieveProgress = this.save.getAchievementProgress();
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 415, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 415, '#ff6600');
+
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 468, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -1354,6 +1542,87 @@ export class Game {
           this.ctx.fillText('🔒', centerX, cardY + 140);
         }
       }
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderAchievements(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.shadowColor = '#ff6600';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('ACHIEVEMENTS', GAME_WIDTH / 2, 70);
+
+    // Progress
+    const progress = this.save.getAchievementProgress();
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.fillText(`${progress.unlocked} / ${progress.total} Unlocked`, GAME_WIDTH / 2, 100);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Achievement grid (4 per row)
+    const allAchievements = this.save.getAllAchievements();
+    const cardWidth = 170;
+    const cardHeight = 85;
+    const cols = 4;
+    const gap = 15;
+    const startX = (GAME_WIDTH - (cardWidth * cols + gap * (cols - 1))) / 2;
+    const startY = 125;
+
+    for (let i = 0; i < allAchievements.length; i++) {
+      const achievement = allAchievements[i];
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const cardX = startX + col * (cardWidth + gap);
+      const cardY = startY + row * (cardHeight + gap);
+
+      const isUnlocked = this.save.hasAchievement(achievement.id);
+      const isSecret = achievement.secret && !isUnlocked;
+
+      // Card background
+      this.ctx.fillStyle = isUnlocked ? 'rgba(255, 100, 0, 0.2)' : 'rgba(50, 50, 50, 0.5)';
+      this.ctx.strokeStyle = isUnlocked ? '#ff6600' : 'rgba(100, 100, 100, 0.5)';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.textAlign = 'center';
+      const centerX = cardX + cardWidth / 2;
+
+      // Icon
+      this.ctx.font = '24px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(100, 100, 100, 0.8)';
+      this.ctx.fillText(isSecret ? '❓' : achievement.icon, centerX, cardY + 30);
+
+      // Name
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
+      this.ctx.fillText(isSecret ? '???' : achievement.name, centerX, cardY + 52);
+
+      // Description
+      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? 'rgba(255, 255, 255, 0.7)' : 'rgba(100, 100, 100, 0.7)';
+      const description = isSecret ? 'Secret achievement' : achievement.description;
+      // Truncate long descriptions
+      const maxChars = 28;
+      const displayDesc = description.length > maxChars ? description.substring(0, maxChars - 3) + '...' : description;
+      this.ctx.fillText(displayDesc, centerX, cardY + 70);
     }
 
     this.ctx.restore();
@@ -1728,7 +1997,11 @@ export class Game {
   private saveCurrentLevel(): void {
     if (this.editor && this.editingLevel) {
       const level = this.editor.getLevel();
-      this.customLevelManager.saveLevel(level);
+      if (this.customLevelManager.saveLevel(level)) {
+        this.editor.markAsSaved();
+        // Check for level creator achievement
+        this.tryUnlockAchievement('level_creator');
+      }
       this.editingLevel = level;
     }
   }
@@ -1993,6 +2266,14 @@ export class Game {
   private updateEditor(deltaTime: number): void {
     if (this.editor) {
       this.editor.update(deltaTime);
+
+      // Check for auto-save (only when not dragging to prevent partial saves)
+      if (this.editor.needsAutoSave() && this.editingLevel && !this.editor.isDraggingElement()) {
+        const updatedLevel = this.editor.getLevel();
+        if (this.customLevelManager.saveLevel(updatedLevel)) {
+          this.editor.markAsSaved();
+        }
+      }
     }
   }
 
@@ -2217,6 +2498,122 @@ export class Game {
       this.showingTutorial = false;
       this.save.markTutorialShown();
       this.audio.start();
+    }
+  }
+
+  // Achievement system methods
+  private tryUnlockAchievement(achievementId: string): void {
+    const achievement = this.save.unlockAchievement(achievementId);
+    if (achievement) {
+      this.achievementQueue.push(achievement);
+    }
+  }
+
+  private updateAchievementNotifications(deltaTime: number): void {
+    // If no current notification but queue has items, show next
+    if (!this.currentAchievementNotification && this.achievementQueue.length > 0) {
+      this.currentAchievementNotification = this.achievementQueue.shift()!;
+      this.achievementNotificationTimer = 0;
+    }
+
+    // Update current notification timer
+    if (this.currentAchievementNotification) {
+      this.achievementNotificationTimer += deltaTime;
+      if (this.achievementNotificationTimer >= this.achievementNotificationDuration) {
+        this.currentAchievementNotification = null;
+        this.achievementNotificationTimer = 0;
+      }
+    }
+  }
+
+  private renderAchievementNotification(): void {
+    if (!this.currentAchievementNotification) return;
+
+    const achievement = this.currentAchievementNotification;
+    const progress = this.achievementNotificationTimer / this.achievementNotificationDuration;
+
+    // Slide in from top, stay, then slide out
+    let yOffset = 0;
+    const slideInDuration = 0.15;
+    const slideOutStart = 0.85;
+
+    if (progress < slideInDuration) {
+      // Slide in
+      yOffset = -80 * (1 - progress / slideInDuration);
+    } else if (progress > slideOutStart) {
+      // Slide out
+      yOffset = -80 * ((progress - slideOutStart) / (1 - slideOutStart));
+    }
+
+    const y = 20 + yOffset;
+    const width = 280;
+    const height = 60;
+    const x = (GAME_WIDTH - width) / 2;
+
+    this.ctx.save();
+
+    // Background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 3;
+    this.ctx.shadowColor = '#ff6600';
+    this.ctx.shadowBlur = 15;
+    this.ctx.beginPath();
+    this.ctx.roundRect(x, y, width, height, 10);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.shadowBlur = 0;
+
+    // Icon
+    this.ctx.font = '28px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(achievement.icon, x + 15, y + 40);
+
+    // Text
+    this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.fillText('ACHIEVEMENT UNLOCKED!', x + 55, y + 22);
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(achievement.name, x + 55, y + 42);
+
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    const desc = achievement.description.length > 35 ? achievement.description.substring(0, 32) + '...' : achievement.description;
+    this.ctx.fillText(desc, x + 55, y + 56);
+
+    this.ctx.restore();
+  }
+
+  private checkAchievements(): void {
+    // Check all-levels achievement
+    if (this.save.getTotalLevelsCompleted() >= TOTAL_LEVELS) {
+      this.tryUnlockAchievement('all_levels');
+    }
+
+    // Check all-skins achievement
+    let allSkinsUnlocked = true;
+    for (const skin of PLAYER_SKINS) {
+      if (!this.save.isSkinUnlocked(skin.id)) {
+        allSkinsUnlocked = false;
+        break;
+      }
+    }
+    if (allSkinsUnlocked) {
+      this.tryUnlockAchievement('all_skins');
+    }
+
+    // Check death count achievements
+    const deaths = this.save.getTotalDeaths();
+    if (deaths >= 100) {
+      this.tryUnlockAchievement('survivor');
+    }
+
+    // Check play time achievement (1 hour = 3600000ms)
+    if (this.save.getTotalPlayTime() >= 3600000) {
+      this.tryUnlockAchievement('dedicated');
     }
   }
 }

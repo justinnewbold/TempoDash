@@ -34,6 +34,11 @@ export class LevelEditor {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
 
+  // Auto-save state
+  private hasUnsavedChanges = false;
+  private lastSaveTime = Date.now();
+  private autoSaveInterval = 30000; // 30 seconds
+
   // Mouse state
   private mouseX = 0;
   private mouseY = 0;
@@ -190,6 +195,27 @@ export class LevelEditor {
     if (this.undoStack.length > 50) {
       this.undoStack.shift();
     }
+    // Mark as having unsaved changes
+    this.hasUnsavedChanges = true;
+  }
+
+  // Auto-save methods
+  needsAutoSave(): boolean {
+    if (!this.hasUnsavedChanges) return false;
+    return Date.now() - this.lastSaveTime >= this.autoSaveInterval;
+  }
+
+  markAsSaved(): void {
+    this.hasUnsavedChanges = false;
+    this.lastSaveTime = Date.now();
+  }
+
+  hasChanges(): boolean {
+    return this.hasUnsavedChanges;
+  }
+
+  isDraggingElement(): boolean {
+    return this.state.isDragging;
   }
 
   undo(): void {
@@ -363,7 +389,9 @@ export class LevelEditor {
 
     switch (this.state.selectedElement.type) {
       case 'platform': {
-        const platform = this.level.platforms[this.state.selectedElement.index];
+        const idx = this.state.selectedElement.index;
+        if (idx < 0 || idx >= this.level.platforms.length) break;
+        const platform = this.level.platforms[idx];
         if (this.resizeHandle === 'se') {
           // Resize
           platform.width = Math.max(20, this.snapToGrid(this.mouseWorldX - platform.x));
@@ -376,7 +404,9 @@ export class LevelEditor {
         break;
       }
       case 'coin': {
-        const coin = this.level.coins[this.state.selectedElement.index];
+        const idx = this.state.selectedElement.index;
+        if (idx < 0 || idx >= this.level.coins.length) break;
+        const coin = this.level.coins[idx];
         coin.x = Math.max(0, snappedX + this.dragOffset.x);
         coin.y = Math.max(0, Math.min(GAME_HEIGHT, snappedY + this.dragOffset.y));
         break;
