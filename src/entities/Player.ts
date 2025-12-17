@@ -189,7 +189,19 @@ export class Player {
       }
 
       if (collision === 'right') {
-        // Right side collision (rare, but handle it) = death
+        // Apply same ledge assist logic to right side
+        const playerMidpoint = this.y + this.height * 0.5;
+        const platformTop = bounds.y;
+
+        if (playerMidpoint < platformTop) {
+          this.y = platformTop - this.height;
+          this.velocityY = 0;
+          this.isGrounded = true;
+          this.airJumpsRemaining = 2;
+          continue;
+        }
+
+        // Otherwise it's a real side collision = death
         this.isDead = true;
         return;
       }

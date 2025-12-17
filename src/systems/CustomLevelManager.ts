@@ -21,7 +21,7 @@ const DEFAULT_BACKGROUND: BackgroundConfig = {
   accentColor: '#00ffff',
   particles: {
     count: 30,
-    color: 'rgba(255, 255, 255',
+    color: 'rgba(255, 255, 255, 0.5)',
     minSize: 1,
     maxSize: 3,
     speed: 30,
@@ -194,14 +194,16 @@ export class CustomLevelManager {
       }
     }
 
-    // Validate coins
-    for (let i = 0; i < level.coins.length; i++) {
-      const coin = level.coins[i];
-      if (coin.x < 0 || coin.x > MAX_LEVEL_LENGTH) {
-        warnings.push(`Coin ${i + 1} may be out of bounds`);
-      }
-      if (coin.y < 0 || coin.y > GAME_HEIGHT) {
-        warnings.push(`Coin ${i + 1} may be off-screen`);
+    // Validate coins (if present)
+    if (level.coins && Array.isArray(level.coins)) {
+      for (let i = 0; i < level.coins.length; i++) {
+        const coin = level.coins[i];
+        if (coin.x < 0 || coin.x > MAX_LEVEL_LENGTH) {
+          warnings.push(`Coin ${i + 1} may be out of bounds`);
+        }
+        if (coin.y < 0 || coin.y > GAME_HEIGHT) {
+          warnings.push(`Coin ${i + 1} may be off-screen`);
+        }
       }
     }
 
@@ -337,6 +339,16 @@ export class CustomLevelManager {
       // Validate required fields
       if (!level.name || !level.platforms || !level.playerStart || !level.goal) {
         throw new Error('Invalid level format');
+      }
+
+      // Ensure coins array exists
+      if (!level.coins || !Array.isArray(level.coins)) {
+        level.coins = [];
+      }
+
+      // Ensure background exists
+      if (!level.background) {
+        level.background = { ...DEFAULT_BACKGROUND };
       }
 
       // Assign new ID to avoid conflicts
