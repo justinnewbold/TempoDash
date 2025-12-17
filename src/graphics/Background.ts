@@ -37,6 +37,50 @@ interface AuroraBand {
   offset: number;
 }
 
+interface Ember {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  wobble: number;
+  wobbleSpeed: number;
+  brightness: number;
+}
+
+interface Bubble {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  wobble: number;
+  wobbleSpeed: number;
+  opacity: number;
+}
+
+interface LavaFlow {
+  x: number;
+  width: number;
+  speed: number;
+  offset: number;
+}
+
+interface Coral {
+  x: number;
+  height: number;
+  width: number;
+  branches: number;
+  hue: number;
+}
+
+interface Fish {
+  x: number;
+  y: number;
+  speed: number;
+  size: number;
+  hue: number;
+  direction: number;
+}
+
 export class Background {
   private config: BackgroundConfig;
   private time = 0;
@@ -51,6 +95,17 @@ export class Background {
   // Level 2 specific
   private sunY = GAME_HEIGHT * 0.65;
   private mountainPoints: number[][] = [];
+
+  // Volcano specific
+  private embers: Ember[] = [];
+  private lavaFlows: LavaFlow[] = [];
+  private volcanoPoints: number[] = [];
+
+  // Ocean specific
+  private bubbles: Bubble[] = [];
+  private corals: Coral[] = [];
+  private fish: Fish[] = [];
+  private causticPhase = 0;
 
   constructor(config: BackgroundConfig) {
     this.config = config;
@@ -80,9 +135,27 @@ export class Background {
       this.initializeAurora();
     }
 
+    if (effects.includes('embers')) {
+      this.initializeEmbers();
+    }
+
+    if (effects.includes('bubbles')) {
+      this.initializeBubbles();
+    }
+
     // Level 2 neon background mountains
     if (this.config.type === 'neon') {
       this.initializeMountains();
+    }
+
+    // Level 5 volcano
+    if (this.config.type === 'volcano') {
+      this.initializeVolcano();
+    }
+
+    // Level 6 ocean
+    if (this.config.type === 'ocean') {
+      this.initializeOcean();
     }
   }
 
@@ -163,14 +236,113 @@ export class Background {
     }
   }
 
+  private initializeEmbers(): void {
+    for (let i = 0; i < 50; i++) {
+      this.embers.push({
+        x: Math.random() * GAME_WIDTH,
+        y: Math.random() * GAME_HEIGHT,
+        size: Math.random() * 4 + 2,
+        speed: Math.random() * 80 + 40,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: Math.random() * 2 + 1,
+        brightness: Math.random() * 0.5 + 0.5,
+      });
+    }
+  }
+
+  private initializeBubbles(): void {
+    for (let i = 0; i < 30; i++) {
+      this.bubbles.push({
+        x: Math.random() * GAME_WIDTH,
+        y: Math.random() * GAME_HEIGHT,
+        size: Math.random() * 15 + 5,
+        speed: Math.random() * 40 + 20,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: Math.random() * 1.5 + 0.5,
+        opacity: Math.random() * 0.4 + 0.2,
+      });
+    }
+  }
+
+  private initializeVolcano(): void {
+    // Volcano silhouette points
+    const segments = 16;
+    for (let i = 0; i <= segments; i++) {
+      const x = (GAME_WIDTH / segments) * i;
+      let y = GAME_HEIGHT * 0.6;
+
+      // Create volcano shape in the center
+      const centerDist = Math.abs(i - segments / 2) / (segments / 2);
+      if (centerDist < 0.4) {
+        // Volcano peak
+        y = GAME_HEIGHT * 0.25 + centerDist * 200;
+      } else {
+        // Slopes
+        y = GAME_HEIGHT * 0.5 + Math.sin(i * 0.5) * 30;
+      }
+      this.volcanoPoints.push(x, y);
+    }
+
+    // Lava flows
+    for (let i = 0; i < 5; i++) {
+      this.lavaFlows.push({
+        x: GAME_WIDTH * 0.4 + Math.random() * GAME_WIDTH * 0.2,
+        width: Math.random() * 20 + 10,
+        speed: Math.random() * 0.5 + 0.3,
+        offset: Math.random() * Math.PI * 2,
+      });
+    }
+
+    // Initialize embers for volcano
+    this.initializeEmbers();
+  }
+
+  private initializeOcean(): void {
+    // Coral formations
+    for (let i = 0; i < 8; i++) {
+      this.corals.push({
+        x: i * (GAME_WIDTH / 6) + Math.random() * 80,
+        height: Math.random() * 100 + 60,
+        width: Math.random() * 40 + 20,
+        branches: Math.floor(Math.random() * 4) + 2,
+        hue: Math.random() * 60 + 300, // Pink/purple/coral colors
+      });
+    }
+
+    // Fish
+    for (let i = 0; i < 12; i++) {
+      this.fish.push({
+        x: Math.random() * GAME_WIDTH * 2,
+        y: Math.random() * GAME_HEIGHT * 0.6 + GAME_HEIGHT * 0.1,
+        speed: Math.random() * 30 + 20,
+        size: Math.random() * 10 + 5,
+        hue: Math.random() * 360,
+        direction: Math.random() > 0.5 ? 1 : -1,
+      });
+    }
+
+    // Initialize bubbles for ocean
+    this.initializeBubbles();
+  }
+
   update(deltaTime: number): void {
     this.time += deltaTime;
+    this.causticPhase += deltaTime * 0.001;
 
     // Update particles
     this.updateParticles(deltaTime);
 
     // Update grid
     this.updateGrid(deltaTime);
+
+    // Update embers
+    this.updateEmbers(deltaTime);
+
+    // Update bubbles
+    this.updateBubbles(deltaTime);
+
+    // Update fish
+    this.updateFish(deltaTime);
   }
 
   private updateParticles(deltaTime: number): void {
@@ -213,6 +385,47 @@ export class Background {
     }
   }
 
+  private updateEmbers(deltaTime: number): void {
+    for (const ember of this.embers) {
+      ember.y -= ember.speed * (deltaTime / 1000);
+      ember.wobble += ember.wobbleSpeed * (deltaTime / 1000);
+      ember.x += Math.sin(ember.wobble) * 0.5;
+
+      if (ember.y < -20) {
+        ember.y = GAME_HEIGHT + 20;
+        ember.x = Math.random() * GAME_WIDTH;
+      }
+    }
+  }
+
+  private updateBubbles(deltaTime: number): void {
+    for (const bubble of this.bubbles) {
+      bubble.y -= bubble.speed * (deltaTime / 1000);
+      bubble.wobble += bubble.wobbleSpeed * (deltaTime / 1000);
+      bubble.x += Math.sin(bubble.wobble) * 0.8;
+
+      if (bubble.y < -bubble.size) {
+        bubble.y = GAME_HEIGHT + bubble.size;
+        bubble.x = Math.random() * GAME_WIDTH;
+      }
+    }
+  }
+
+  private updateFish(deltaTime: number): void {
+    for (const fish of this.fish) {
+      fish.x += fish.speed * fish.direction * (deltaTime / 1000);
+
+      // Wrap around screen
+      if (fish.direction > 0 && fish.x > GAME_WIDTH + 50) {
+        fish.x = -50;
+        fish.y = Math.random() * GAME_HEIGHT * 0.5 + GAME_HEIGHT * 0.1;
+      } else if (fish.direction < 0 && fish.x < -50) {
+        fish.x = GAME_WIDTH + 50;
+        fish.y = Math.random() * GAME_HEIGHT * 0.5 + GAME_HEIGHT * 0.1;
+      }
+    }
+  }
+
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     // Draw base gradient
     this.drawBaseGradient(ctx);
@@ -230,6 +443,12 @@ export class Background {
         break;
       case 'forest':
         this.drawForestBackground(ctx, cameraX);
+        break;
+      case 'volcano':
+        this.drawVolcanoBackground(ctx, cameraX);
+        break;
+      case 'ocean':
+        this.drawOceanBackground(ctx, cameraX);
         break;
     }
 
@@ -500,6 +719,265 @@ export class Background {
     ctx.fill();
   }
 
+  private drawVolcanoBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const parallax = cameraX * 0.05;
+
+    // Fiery sky gradient
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT * 0.6);
+    skyGradient.addColorStop(0, '#1a0500');
+    skyGradient.addColorStop(0.3, '#3d0a00');
+    skyGradient.addColorStop(0.6, '#5c1500');
+    skyGradient.addColorStop(1, '#8b2500');
+    ctx.fillStyle = skyGradient;
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.6);
+
+    // Distant volcano silhouette with glow
+    const volcanoX = GAME_WIDTH / 2 - parallax * 0.5;
+
+    // Volcano glow (lava inside crater)
+    const craterGlow = ctx.createRadialGradient(
+      volcanoX, GAME_HEIGHT * 0.2, 0,
+      volcanoX, GAME_HEIGHT * 0.2, 150
+    );
+    craterGlow.addColorStop(0, 'rgba(255, 100, 0, 0.8)');
+    craterGlow.addColorStop(0.3, 'rgba(255, 50, 0, 0.4)');
+    craterGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+    ctx.fillStyle = craterGlow;
+    ctx.beginPath();
+    ctx.arc(volcanoX, GAME_HEIGHT * 0.2, 150, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Volcano shape
+    ctx.beginPath();
+    ctx.moveTo(volcanoX - 300, GAME_HEIGHT * 0.7);
+    ctx.lineTo(volcanoX - 80, GAME_HEIGHT * 0.2);
+    ctx.lineTo(volcanoX - 40, GAME_HEIGHT * 0.25);
+    ctx.lineTo(volcanoX + 40, GAME_HEIGHT * 0.25);
+    ctx.lineTo(volcanoX + 80, GAME_HEIGHT * 0.2);
+    ctx.lineTo(volcanoX + 300, GAME_HEIGHT * 0.7);
+    ctx.closePath();
+
+    const volcanoGradient = ctx.createLinearGradient(volcanoX, GAME_HEIGHT * 0.2, volcanoX, GAME_HEIGHT * 0.7);
+    volcanoGradient.addColorStop(0, '#2d1200');
+    volcanoGradient.addColorStop(0.5, '#1a0a00');
+    volcanoGradient.addColorStop(1, '#0d0500');
+    ctx.fillStyle = volcanoGradient;
+    ctx.fill();
+
+    // Lava flows on volcano
+    ctx.strokeStyle = '#ff4400';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#ff6600';
+    ctx.shadowBlur = 10;
+    for (const flow of this.lavaFlows) {
+      const flowX = volcanoX + (flow.x - GAME_WIDTH / 2) * 0.3;
+      const wobble = Math.sin(this.time * flow.speed + flow.offset) * 5;
+      ctx.beginPath();
+      ctx.moveTo(flowX + wobble, GAME_HEIGHT * 0.25);
+      ctx.quadraticCurveTo(
+        flowX + wobble * 2, GAME_HEIGHT * 0.45,
+        flowX + wobble * 0.5, GAME_HEIGHT * 0.65
+      );
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Ground lava pools
+    const lavaGround = ctx.createLinearGradient(0, GAME_HEIGHT * 0.7, 0, GAME_HEIGHT);
+    lavaGround.addColorStop(0, '#2d0500');
+    lavaGround.addColorStop(0.3, '#4d0a00');
+    lavaGround.addColorStop(1, '#1a0500');
+    ctx.fillStyle = lavaGround;
+    ctx.fillRect(0, GAME_HEIGHT * 0.7, GAME_WIDTH, GAME_HEIGHT * 0.3);
+
+    // Animated lava pools
+    for (let i = 0; i < 5; i++) {
+      const poolX = ((i * 200 + 50 - parallax * 0.2) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      const poolY = GAME_HEIGHT * 0.8 + Math.sin(i * 2) * 20;
+      const pulse = Math.sin(this.time * 0.002 + i) * 0.3 + 0.7;
+
+      const poolGlow = ctx.createRadialGradient(poolX, poolY, 0, poolX, poolY, 40 * pulse);
+      poolGlow.addColorStop(0, 'rgba(255, 150, 0, 0.8)');
+      poolGlow.addColorStop(0.5, 'rgba(255, 80, 0, 0.4)');
+      poolGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+      ctx.fillStyle = poolGlow;
+      ctx.beginPath();
+      ctx.ellipse(poolX, poolY, 50 * pulse, 20 * pulse, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Smoke/ash clouds
+    ctx.fillStyle = 'rgba(50, 30, 20, 0.3)';
+    for (let i = 0; i < 4; i++) {
+      const cloudX = volcanoX + Math.sin(this.time * 0.0005 + i * 2) * 100;
+      const cloudY = GAME_HEIGHT * 0.1 + i * 30;
+      ctx.beginPath();
+      ctx.arc(cloudX, cloudY, 60 + i * 20, 0, Math.PI * 2);
+      ctx.arc(cloudX + 40, cloudY - 10, 50 + i * 15, 0, Math.PI * 2);
+      ctx.arc(cloudX - 30, cloudY + 10, 40 + i * 10, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawOceanBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const parallax = cameraX * 0.08;
+
+    // Deep ocean gradient
+    const oceanGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+    oceanGradient.addColorStop(0, '#001a33');
+    oceanGradient.addColorStop(0.3, '#002244');
+    oceanGradient.addColorStop(0.6, '#003366');
+    oceanGradient.addColorStop(1, '#001a2e');
+    ctx.fillStyle = oceanGradient;
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Caustic light rays from surface
+    ctx.globalAlpha = 0.15;
+    for (let i = 0; i < 8; i++) {
+      const rayX = ((i * 150 - parallax * 0.3) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      const rayWidth = 30 + Math.sin(this.causticPhase + i) * 15;
+      const rayGradient = ctx.createLinearGradient(rayX, 0, rayX + rayWidth, GAME_HEIGHT * 0.7);
+      rayGradient.addColorStop(0, '#88ddff');
+      rayGradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+      ctx.fillStyle = rayGradient;
+      ctx.beginPath();
+      ctx.moveTo(rayX, 0);
+      ctx.lineTo(rayX + rayWidth, 0);
+      ctx.lineTo(rayX + rayWidth * 2, GAME_HEIGHT * 0.7);
+      ctx.lineTo(rayX + rayWidth, GAME_HEIGHT * 0.7);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Underwater caustic pattern (wavy light on surfaces)
+    ctx.strokeStyle = 'rgba(100, 200, 255, 0.1)';
+    ctx.lineWidth = 2;
+    for (let y = 50; y < GAME_HEIGHT; y += 80) {
+      ctx.beginPath();
+      for (let x = 0; x < GAME_WIDTH; x += 10) {
+        const waveY = y + Math.sin((x + this.time * 0.05) * 0.03 + this.causticPhase) * 15;
+        if (x === 0) {
+          ctx.moveTo(x, waveY);
+        } else {
+          ctx.lineTo(x, waveY);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // Coral formations
+    for (const coral of this.corals) {
+      const coralX = ((coral.x - parallax * 0.2) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      this.drawCoral(ctx, coralX, GAME_HEIGHT, coral);
+    }
+
+    // Fish
+    for (const fish of this.fish) {
+      const fishX = ((fish.x - parallax * 0.15) % (GAME_WIDTH + 100)) - 50;
+      this.drawFish(ctx, fishX, fish.y, fish);
+    }
+
+    // Seaweed
+    ctx.strokeStyle = 'rgba(0, 100, 50, 0.5)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 10; i++) {
+      const seaweedX = ((i * 120 + 30 - parallax * 0.25) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      const seaweedHeight = 80 + Math.sin(i * 1.5) * 40;
+      ctx.beginPath();
+      ctx.moveTo(seaweedX, GAME_HEIGHT);
+      for (let y = 0; y < seaweedHeight; y += 10) {
+        const wobble = Math.sin((this.time * 0.002) + y * 0.1 + i) * 8;
+        ctx.lineTo(seaweedX + wobble, GAME_HEIGHT - y);
+      }
+      ctx.stroke();
+    }
+
+    // Floating particles (plankton)
+    ctx.fillStyle = 'rgba(150, 220, 255, 0.4)';
+    for (let i = 0; i < 30; i++) {
+      const planktonX = ((i * 37 + this.time * 0.02) % GAME_WIDTH);
+      const planktonY = (i * 23 + Math.sin(this.time * 0.001 + i) * 30) % GAME_HEIGHT;
+      ctx.beginPath();
+      ctx.arc(planktonX, planktonY, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawCoral(ctx: CanvasRenderingContext2D, x: number, baseY: number, coral: Coral): void {
+    const hsl = `hsl(${coral.hue}, 60%, 40%)`;
+    const hslLight = `hsl(${coral.hue}, 70%, 55%)`;
+
+    ctx.fillStyle = hsl;
+    ctx.strokeStyle = hslLight;
+    ctx.lineWidth = 2;
+
+    // Main coral body
+    ctx.beginPath();
+    ctx.moveTo(x - coral.width / 2, baseY);
+    ctx.quadraticCurveTo(x - coral.width / 2, baseY - coral.height * 0.7, x, baseY - coral.height);
+    ctx.quadraticCurveTo(x + coral.width / 2, baseY - coral.height * 0.7, x + coral.width / 2, baseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Coral branches
+    for (let i = 0; i < coral.branches; i++) {
+      const branchX = x - coral.width / 3 + (i / coral.branches) * coral.width * 0.66;
+      const branchHeight = coral.height * (0.4 + Math.random() * 0.3);
+      const branchY = baseY - coral.height * 0.3;
+
+      ctx.beginPath();
+      ctx.moveTo(branchX, branchY);
+      ctx.quadraticCurveTo(
+        branchX + (Math.random() - 0.5) * 20,
+        branchY - branchHeight / 2,
+        branchX + (Math.random() - 0.5) * 15,
+        branchY - branchHeight
+      );
+      ctx.stroke();
+
+      // Branch tip
+      ctx.beginPath();
+      ctx.arc(branchX + (Math.random() - 0.5) * 15, branchY - branchHeight, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawFish(ctx: CanvasRenderingContext2D, x: number, y: number, fish: Fish): void {
+    ctx.save();
+    ctx.translate(x, y);
+    if (fish.direction < 0) {
+      ctx.scale(-1, 1);
+    }
+
+    // Fish body
+    ctx.fillStyle = `hsla(${fish.hue}, 70%, 50%, 0.8)`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, fish.size, fish.size * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail
+    ctx.beginPath();
+    ctx.moveTo(-fish.size * 0.8, 0);
+    ctx.lineTo(-fish.size * 1.5, -fish.size * 0.4);
+    ctx.lineTo(-fish.size * 1.5, fish.size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(fish.size * 0.4, -fish.size * 0.1, fish.size * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(fish.size * 0.45, -fish.size * 0.1, fish.size * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
   private renderEffects(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const effects = this.config.effects || [];
 
@@ -521,6 +999,14 @@ export class Background {
 
     if (effects.includes('pulse')) {
       this.renderPulse(ctx);
+    }
+
+    if (effects.includes('embers')) {
+      this.renderEmbers(ctx);
+    }
+
+    if (effects.includes('bubbles')) {
+      this.renderBubbles(ctx);
     }
   }
 
@@ -617,5 +1103,57 @@ export class Background {
       return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`;
     }
     return '255, 255, 255';
+  }
+
+  private renderEmbers(ctx: CanvasRenderingContext2D): void {
+    for (const ember of this.embers) {
+      const flicker = Math.sin(this.time * 0.01 + ember.wobble) * 0.3 + 0.7;
+      const alpha = ember.brightness * flicker;
+
+      // Ember glow
+      const glowGradient = ctx.createRadialGradient(
+        ember.x, ember.y, 0,
+        ember.x, ember.y, ember.size * 3
+      );
+      glowGradient.addColorStop(0, `rgba(255, 150, 0, ${alpha * 0.8})`);
+      glowGradient.addColorStop(0.5, `rgba(255, 80, 0, ${alpha * 0.3})`);
+      glowGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(ember.x, ember.y, ember.size * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ember core
+      ctx.fillStyle = `rgba(255, 200, 50, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(ember.x, ember.y, ember.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private renderBubbles(ctx: CanvasRenderingContext2D): void {
+    for (const bubble of this.bubbles) {
+      // Bubble body
+      ctx.strokeStyle = `rgba(150, 220, 255, ${bubble.opacity})`;
+      ctx.fillStyle = `rgba(100, 200, 255, ${bubble.opacity * 0.2})`;
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.arc(bubble.x, bubble.y, bubble.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Bubble highlight
+      ctx.fillStyle = `rgba(255, 255, 255, ${bubble.opacity * 0.6})`;
+      ctx.beginPath();
+      ctx.arc(
+        bubble.x - bubble.size * 0.3,
+        bubble.y - bubble.size * 0.3,
+        bubble.size * 0.25,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
   }
 }

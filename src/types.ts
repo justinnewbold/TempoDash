@@ -101,6 +101,7 @@ export interface GameState {
 export type MenuState =
   | 'mainMenu'
   | 'levelSelect'
+  | 'customLevels'
   | 'settings'
   | 'skins'
   | 'playing'
@@ -108,7 +109,9 @@ export type MenuState =
   | 'endless'
   | 'paused'
   | 'levelComplete'
-  | 'gameOver';
+  | 'gameOver'
+  | 'editor'
+  | 'editorTest';
 
 export interface SaveData {
   totalPoints: number;
@@ -144,4 +147,52 @@ export interface InputState {
   jumpPressed: boolean;
   dash: boolean;
   dashPressed: boolean;
+}
+
+// Custom Level Builder Types
+export interface CustomLevel {
+  id: string;
+  name: string;
+  author: string;
+  createdAt: number;
+  updatedAt: number;
+  bpm: number;
+  background: BackgroundConfig;
+  playerStart: Vector2;
+  goal: Rectangle;
+  platforms: PlatformConfig[];
+  coins: CoinConfig[];
+}
+
+export interface EditorState {
+  selectedTool: EditorTool;
+  selectedPlatformType: PlatformType;
+  gridSize: number;
+  showGrid: boolean;
+  selectedElement: SelectedElement | null;
+  cameraX: number;
+  zoom: number;
+  isDragging: boolean;
+  dragStart: Vector2 | null;
+}
+
+export type EditorTool =
+  | 'select'
+  | 'platform'
+  | 'coin'
+  | 'playerStart'
+  | 'goal'
+  | 'delete'
+  | 'pan';
+
+export interface SelectedElement {
+  type: 'platform' | 'coin' | 'playerStart' | 'goal';
+  index: number;
+}
+
+export interface EditorAction {
+  type: 'add' | 'remove' | 'modify';
+  elementType: 'platform' | 'coin' | 'playerStart' | 'goal' | 'background';
+  before: unknown;
+  after: unknown;
 }
