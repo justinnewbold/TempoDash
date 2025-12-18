@@ -2322,7 +2322,7 @@ export class Game {
 
   private updateEditor(deltaTime: number): void {
     if (this.editor) {
-      this.editor.update(deltaTime);
+      this.editor.updateEditor(deltaTime);
 
       // Check for auto-save (only when not dragging to prevent partial saves)
       if (this.editor.needsAutoSave() && this.editingLevel && !this.editor.isDraggingElement()) {
