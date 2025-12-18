@@ -5,7 +5,8 @@ import { GAME_HEIGHT } from '../constants';
 // Level 1: "First Flight" - 128 BPM
 // Beat interval: 164px (350 px/s ÷ 128 BPM × 60)
 // Jump distance: 210px, Jump height: 90px
-// Design: Introduce basic mechanics with forgiving timing
+// STRATEGY: Tutorial level - coin trails guide the player
+// Coins show WHERE to jump and WHEN, teaching rhythm-based gameplay
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
@@ -32,15 +33,23 @@ const level1Config: LevelConfig = {
     effects: ['stars'],
   },
   coins: [
-    // Easy coin in intro section
-    { x: BEAT * 2, y: GROUND_Y - 60 },
-    // Coin above first spike (reward for jumping)
-    { x: BEAT * 4.5, y: GROUND_Y - 80 },
-    // Coin on elevated bounce platform
-    { x: BEAT * 18, y: GROUND_Y - 120 },
-    // Coins on elevated platforms in phrase 6
-    { x: BEAT * 24.5, y: GROUND_Y - 100 },
-    { x: BEAT * 26, y: GROUND_Y - 100 },
+    // TUTORIAL: Coin trail teaches jump timing
+    // Coin 1-2: Arc showing jump trajectory over first spike
+    { x: BEAT * 4.3, y: GROUND_Y - 70 },
+    { x: BEAT * 4.6, y: GROUND_Y - 90 },
+    // Coin 3-4: Rhythm trail for double spike section
+    { x: BEAT * 8.5, y: GROUND_Y - 80 },
+    { x: BEAT * 10.5, y: GROUND_Y - 80 },
+    // Coin 5: Shows gap jump distance
+    { x: BEAT * 12.5, y: GROUND_Y - 60 },
+    // Coin 6-7: Bounce pad height teaching
+    { x: BEAT * 17, y: GROUND_Y - 100 },
+    { x: BEAT * 17.5, y: GROUND_Y - 120 },
+    // Coin 8: Landing spot indicator
+    { x: BEAT * 18, y: GROUND_Y - 90 },
+    // Coin 9-10: Platform hop guide
+    { x: BEAT * 24.5, y: GROUND_Y - 80 },
+    { x: BEAT * 26, y: GROUND_Y - 80 },
   ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe starting zone =====
