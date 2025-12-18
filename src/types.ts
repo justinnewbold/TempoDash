@@ -17,6 +17,8 @@ export interface PlatformConfig {
   height: number;
   type: PlatformType;
   movePattern?: MovePattern;
+  phaseOffset?: number;
+  phaseGroup?: number;
   color?: string;
 }
 

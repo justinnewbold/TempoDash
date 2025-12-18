@@ -71,7 +71,7 @@ export class Player {
     this.dashCooldown = 0;
   }
 
-  update(deltaTime: number, input: InputState, platforms: Platform[]): void {
+  update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0): void {
     if (this.isDead) return;
 
     this.animationTime += deltaTime;
@@ -99,9 +99,9 @@ export class Player {
     // Update trail
     this.updateTrail(deltaTime);
 
-    // Auto-move forward at constant speed (faster when dashing)
+    // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
-    this.x += PLAYER.SPEED * speedMult * (deltaTime / 1000);
+    this.x += PLAYER.SPEED * speedMult * speedMultiplier * (deltaTime / 1000);
 
     // Handle jumping (auto-jump when holding - jump as soon as grounded)
     if (input.jump && this.isGrounded) {
