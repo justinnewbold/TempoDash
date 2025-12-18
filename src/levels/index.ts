@@ -5,8 +5,9 @@ import { Level3 } from './Level3';
 import { Level4 } from './Level4';
 import { Level5 } from './Level5';
 import { Level6 } from './Level6';
+import { Level7 } from './Level7';
 
-export { Level, Level1, Level2, Level3, Level4, Level5, Level6 };
+export { Level, Level1, Level2, Level3, Level4, Level5, Level6, Level7 };
 
 export function createLevel(levelId: number): Level {
   switch (levelId) {
@@ -22,9 +23,11 @@ export function createLevel(levelId: number): Level {
       return new Level5();
     case 6:
       return new Level6();
+    case 7:
+      return new Level7();
     default:
       return new Level1();
   }
 }
 
-export const TOTAL_LEVELS = 6;
+export const TOTAL_LEVELS = 7;
