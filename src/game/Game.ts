@@ -86,6 +86,11 @@ export class Game {
   // High-DPI support
   private dpr = 1;
 
+  // Speed increase system - each jump increases speed by 0.25%
+  private speedMultiplier = 1.0;
+  private jumpCount = 0;
+  private static readonly SPEED_INCREASE_PER_JUMP = 0.0025; // 0.25%
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -144,6 +149,9 @@ export class Game {
     this.player.setSkin(this.save.getSelectedSkin());
     this.state.currentLevel = levelId;
     this.cameraX = 0;
+    // Reset speed multiplier for new level
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
 
     const musicStyles: Record<number, MusicStyle> = {
       1: 'energetic',
@@ -643,6 +651,10 @@ export class Game {
     this.comboTimer = 0;
     this.comboDisplayTimer = 0;
 
+    // Reset speed multiplier on death
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+
     if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
@@ -723,7 +735,7 @@ export class Game {
 
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
-      this.player.update(deltaTime, inputState, this.endlessPlatforms);
+      this.player.update(deltaTime, inputState, this.endlessPlatforms, this.speedMultiplier);
 
       // Update distance
       this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
@@ -734,7 +746,7 @@ export class Game {
       // Clean up platforms behind camera
       this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
     } else {
-      this.player.update(deltaTime, inputState, this.level.getActivePlatforms());
+      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), this.speedMultiplier);
     }
 
     // Trigger dash shake
@@ -779,6 +791,9 @@ export class Game {
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
       this.audio.playJump();
+      // Increase speed by 0.25% per jump (compound growth)
+      this.jumpCount++;
+      this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
     }
 
     // Detect bounce (sudden large upward velocity change)
@@ -1034,6 +1049,17 @@ export class Game {
       this.ctx.font = '14px "Segoe UI", sans-serif';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       this.ctx.fillText(`Attempt ${this.attempts}`, 20, 48);
+    }
+
+    // Speed boost indicator (below attempt counter)
+    if (this.speedMultiplier > 1.001) {
+      const speedPercent = Math.floor((this.speedMultiplier - 1) * 100);
+      // Color coded: green < 10%, orange 10-20%, red > 20%
+      const speedColor = speedPercent > 20 ? '#ff4444' : speedPercent > 10 ? '#ffaa00' : '#00ffaa';
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = speedColor;
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(`Speed +${speedPercent}%`, 20, this.isPracticeMode ? 78 : 64);
     }
 
     // Coins collected (top-right)
