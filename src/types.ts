@@ -104,6 +104,7 @@ export type MenuState =
   | 'customLevels'
   | 'settings'
   | 'skins'
+  | 'achievements'
   | 'playing'
   | 'practice'
   | 'endless'
@@ -120,13 +121,50 @@ export interface SaveData {
   highScores: Record<number, number>;
   endlessHighScore: number;
   settings: GameSettings;
+  // New tracking fields
+  achievements: string[];
+  levelCoins: Record<number, number>; // levelId -> coins collected (max)
+  totalDeaths: number;
+  totalCoinsCollected: number;
+  totalLevelsCompleted: number;
+  totalPlayTime: number; // in milliseconds
+  longestCombo: number;
 }
+
+// Achievement definitions
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  secret?: boolean;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: 'first_death', name: 'First Steps', description: 'Die for the first time', icon: '💀' },
+  { id: 'first_clear', name: 'Victory!', description: 'Complete your first level', icon: '🏆' },
+  { id: 'perfect_level', name: 'Perfectionist', description: 'Complete a level without dying', icon: '⭐' },
+  { id: 'all_coins_level', name: 'Coin Collector', description: 'Collect all coins in a level', icon: '🪙' },
+  { id: 'speed_demon', name: 'Speed Demon', description: 'Use dash 50 times', icon: '⚡' },
+  { id: 'bouncy', name: 'Bouncy', description: 'Bounce 100 times on bounce platforms', icon: '🦘' },
+  { id: 'survivor', name: 'Survivor', description: 'Die 100 times and keep playing', icon: '💪' },
+  { id: 'endless_50', name: 'Endurance', description: 'Reach 50m in endless mode', icon: '🏃' },
+  { id: 'endless_100', name: 'Marathon', description: 'Reach 100m in endless mode', icon: '🎖️' },
+  { id: 'endless_500', name: 'Unstoppable', description: 'Reach 500m in endless mode', icon: '🌟' },
+  { id: 'combo_5', name: 'Combo Starter', description: 'Get a 5 coin combo', icon: '🔥' },
+  { id: 'combo_10', name: 'Combo Master', description: 'Get a 10 coin combo', icon: '💥' },
+  { id: 'all_levels', name: 'Champion', description: 'Complete all levels', icon: '👑' },
+  { id: 'all_skins', name: 'Fashionista', description: 'Unlock all skins', icon: '🎨' },
+  { id: 'level_creator', name: 'Creator', description: 'Create a custom level', icon: '🛠️' },
+  { id: 'dedicated', name: 'Dedicated', description: 'Play for 1 hour total', icon: '⏰', secret: true },
+];
 
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
   screenShake: boolean;
   selectedSkin: string;
+  tutorialShown: boolean;
 }
 
 export interface PlayerSkin {
@@ -141,8 +179,6 @@ export interface PlayerSkin {
 }
 
 export interface InputState {
-  left: boolean;
-  right: boolean;
   jump: boolean;
   jumpPressed: boolean;
   dash: boolean;

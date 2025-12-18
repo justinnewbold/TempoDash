@@ -3,7 +3,7 @@ import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
-import { COLORS } from '../constants';
+import { COLORS, GAME_WIDTH } from '../constants';
 
 export class Level {
   id: number;
@@ -11,6 +11,7 @@ export class Level {
   platforms: Platform[] = [];
   coins: Coin[] = [];
   coinsCollected = 0;
+  totalCoins = 0;
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
@@ -35,6 +36,7 @@ export class Level {
       for (const coinConfig of config.coins) {
         this.coins.push(new Coin(coinConfig));
       }
+      this.totalCoins = config.coins.length;
     }
 
     // Calculate level length (furthest platform or goal)
@@ -92,6 +94,8 @@ export class Level {
   getProgress(playerX: number): number {
     const startX = this.playerStart.x;
     const endX = this.goal.x;
+    // Prevent division by zero
+    if (endX === startX) return playerX >= endX ? 1 : 0;
     const progress = (playerX - startX) / (endX - startX);
     return Math.max(0, Math.min(1, progress));
   }
@@ -113,7 +117,7 @@ export class Level {
 
     // Draw platforms
     for (const platform of this.platforms) {
-      platform.render(ctx, cameraX);
+      platform.render(ctx, cameraX, GAME_WIDTH);
     }
 
     // Draw coins
@@ -128,8 +132,8 @@ export class Level {
   private renderGoal(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const screenX = this.goal.x - cameraX;
 
-    // Skip if off screen
-    if (screenX + this.goal.width < -50 || screenX > ctx.canvas.width + 50) {
+    // Skip if off screen (use logical game width)
+    if (screenX + this.goal.width < -50 || screenX > GAME_WIDTH + 50) {
       return;
     }
 

@@ -106,12 +106,12 @@ export class Platform {
     return !this.isDestroyed && !this.isPhased;
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0, gameWidth: number = 960): void {
     if (this.isDestroyed) return;
 
-    // Skip rendering if off-screen
+    // Skip rendering if off-screen (use logical game width, not canvas pixel width)
     const screenX = this.x - cameraX;
-    if (screenX + this.width < -100 || screenX > ctx.canvas.width + 100) {
+    if (screenX + this.width < -100 || screenX > gameWidth + 100) {
       return;
     }
 

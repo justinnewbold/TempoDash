@@ -34,6 +34,11 @@ export class LevelEditor {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
 
+  // Auto-save state
+  private hasUnsavedChanges = false;
+  private lastSaveTime = Date.now();
+  private autoSaveInterval = 30000; // 30 seconds
+
   // Mouse state
   private mouseX = 0;
   private mouseY = 0;
@@ -89,7 +94,7 @@ export class LevelEditor {
         primaryColor: '#0a0a1a',
         secondaryColor: '#151530',
         accentColor: '#00ffff',
-        particles: { count: 30, color: 'rgba(255, 255, 255', minSize: 1, maxSize: 3, speed: 30, direction: 'down' },
+        particles: { count: 30, color: 'rgba(255, 255, 255, 0.5)', minSize: 1, maxSize: 3, speed: 30, direction: 'down' },
         effects: ['stars'],
       },
       neon: {
@@ -97,7 +102,7 @@ export class LevelEditor {
         primaryColor: '#0d0221',
         secondaryColor: '#1a0533',
         accentColor: '#ff00ff',
-        particles: { count: 40, color: 'rgba(255, 0, 255', minSize: 1, maxSize: 4, speed: 40, direction: 'up' },
+        particles: { count: 40, color: 'rgba(255, 0, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'up' },
         effects: ['grid', 'scanlines', 'pulse'],
       },
       space: {
@@ -105,7 +110,7 @@ export class LevelEditor {
         primaryColor: '#0a1628',
         secondaryColor: '#1a2a4a',
         accentColor: '#88ddff',
-        particles: { count: 80, color: 'rgba(200, 230, 255', minSize: 1, maxSize: 4, speed: 40, direction: 'down' },
+        particles: { count: 80, color: 'rgba(200, 230, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'down' },
         effects: ['stars', 'aurora'],
       },
       forest: {
@@ -113,7 +118,7 @@ export class LevelEditor {
         primaryColor: '#0a1a0a',
         secondaryColor: '#1a2a1a',
         accentColor: '#66ff66',
-        particles: { count: 40, color: 'rgba(100, 200, 100', minSize: 2, maxSize: 5, speed: 20, direction: 'down' },
+        particles: { count: 40, color: 'rgba(100, 200, 100, 0.5)', minSize: 2, maxSize: 5, speed: 20, direction: 'down' },
         effects: ['stars'],
       },
       volcano: {
@@ -121,7 +126,7 @@ export class LevelEditor {
         primaryColor: '#1a0a00',
         secondaryColor: '#2d1200',
         accentColor: '#ff4400',
-        particles: { count: 60, color: 'rgba(255, 100, 0', minSize: 2, maxSize: 5, speed: 50, direction: 'up' },
+        particles: { count: 60, color: 'rgba(255, 100, 0, 0.5)', minSize: 2, maxSize: 5, speed: 50, direction: 'up' },
         effects: ['embers', 'pulse'],
       },
       ocean: {
@@ -129,7 +134,7 @@ export class LevelEditor {
         primaryColor: '#001a33',
         secondaryColor: '#002244',
         accentColor: '#00ccff',
-        particles: { count: 40, color: 'rgba(150, 220, 255', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
+        particles: { count: 40, color: 'rgba(150, 220, 255, 0.5)', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
         effects: ['bubbles'],
       },
     };
@@ -190,6 +195,27 @@ export class LevelEditor {
     if (this.undoStack.length > 50) {
       this.undoStack.shift();
     }
+    // Mark as having unsaved changes
+    this.hasUnsavedChanges = true;
+  }
+
+  // Auto-save methods
+  needsAutoSave(): boolean {
+    if (!this.hasUnsavedChanges) return false;
+    return Date.now() - this.lastSaveTime >= this.autoSaveInterval;
+  }
+
+  markAsSaved(): void {
+    this.hasUnsavedChanges = false;
+    this.lastSaveTime = Date.now();
+  }
+
+  hasChanges(): boolean {
+    return this.hasUnsavedChanges;
+  }
+
+  isDraggingElement(): boolean {
+    return this.state.isDragging;
   }
 
   undo(): void {
@@ -363,7 +389,9 @@ export class LevelEditor {
 
     switch (this.state.selectedElement.type) {
       case 'platform': {
-        const platform = this.level.platforms[this.state.selectedElement.index];
+        const idx = this.state.selectedElement.index;
+        if (idx < 0 || idx >= this.level.platforms.length) break;
+        const platform = this.level.platforms[idx];
         if (this.resizeHandle === 'se') {
           // Resize
           platform.width = Math.max(20, this.snapToGrid(this.mouseWorldX - platform.x));
@@ -376,9 +404,11 @@ export class LevelEditor {
         break;
       }
       case 'coin': {
-        const coin = this.level.coins[this.state.selectedElement.index];
-        coin.x = Math.max(0, snappedX + this.dragOffset.x);
-        coin.y = Math.max(0, Math.min(GAME_HEIGHT, snappedY + this.dragOffset.y));
+        const idx = this.state.selectedElement.index;
+        if (idx < 0 || idx >= this.level.coins.length) break;
+        const coin = this.level.coins[idx];
+        coin.x = Math.max(0, snappedX);
+        coin.y = Math.max(0, Math.min(GAME_HEIGHT, snappedY));
         break;
       }
       case 'playerStart': {

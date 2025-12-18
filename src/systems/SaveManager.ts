@@ -1,4 +1,4 @@
-import { SaveData, GameSettings, PlayerSkin } from '../types';
+import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement } from '../types';
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
@@ -82,6 +82,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   sfxVolume: 0.5,
   screenShake: true,
   selectedSkin: 'default',
+  tutorialShown: false,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -91,6 +92,13 @@ const DEFAULT_SAVE: SaveData = {
   highScores: {},
   endlessHighScore: 0,
   settings: { ...DEFAULT_SETTINGS },
+  achievements: [],
+  levelCoins: {},
+  totalDeaths: 0,
+  totalCoinsCollected: 0,
+  totalLevelsCompleted: 0,
+  totalPlayTime: 0,
+  longestCombo: 0,
 };
 
 export class SaveManager {
@@ -112,6 +120,13 @@ export class SaveManager {
           highScores: parsed.highScores ?? {},
           endlessHighScore: parsed.endlessHighScore ?? 0,
           settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
+          achievements: parsed.achievements ?? [],
+          levelCoins: parsed.levelCoins ?? {},
+          totalDeaths: parsed.totalDeaths ?? 0,
+          totalCoinsCollected: parsed.totalCoinsCollected ?? 0,
+          totalLevelsCompleted: parsed.totalLevelsCompleted ?? 0,
+          totalPlayTime: parsed.totalPlayTime ?? 0,
+          longestCombo: parsed.longestCombo ?? 0,
         };
       }
     } catch (e) {
@@ -121,6 +136,8 @@ export class SaveManager {
       ...DEFAULT_SAVE,
       unlockedLevels: [...DEFAULT_SAVE.unlockedLevels],
       unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
+      achievements: [],
+      levelCoins: {},
     };
   }
 
@@ -242,6 +259,8 @@ export class SaveManager {
       ...DEFAULT_SAVE,
       unlockedLevels: [...DEFAULT_SAVE.unlockedLevels],
       unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
+      achievements: [],
+      levelCoins: {},
     };
     this.save();
   }
@@ -258,5 +277,115 @@ export class SaveManager {
       return true;
     }
     return false;
+  }
+
+  // Tutorial
+  hasTutorialBeenShown(): boolean {
+    return this.data.settings.tutorialShown;
+  }
+
+  markTutorialShown(): void {
+    this.data.settings.tutorialShown = true;
+    this.save();
+  }
+
+  // Achievement system
+  hasAchievement(achievementId: string): boolean {
+    return this.data.achievements.includes(achievementId);
+  }
+
+  unlockAchievement(achievementId: string): Achievement | null {
+    if (this.hasAchievement(achievementId)) return null;
+
+    const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
+    if (!achievement) return null;
+
+    this.data.achievements.push(achievementId);
+    this.save();
+    return achievement;
+  }
+
+  getUnlockedAchievements(): Achievement[] {
+    return ACHIEVEMENTS.filter(a => this.data.achievements.includes(a.id));
+  }
+
+  getAllAchievements(): Achievement[] {
+    return ACHIEVEMENTS;
+  }
+
+  getAchievementProgress(): { unlocked: number; total: number } {
+    return {
+      unlocked: this.data.achievements.length,
+      total: ACHIEVEMENTS.length,
+    };
+  }
+
+  // Stats tracking
+  recordDeath(): void {
+    this.data.totalDeaths++;
+    this.save();
+  }
+
+  getTotalDeaths(): number {
+    return this.data.totalDeaths;
+  }
+
+  recordCoinsCollected(count: number): void {
+    this.data.totalCoinsCollected += count;
+    this.save();
+  }
+
+  getTotalCoinsCollected(): number {
+    return this.data.totalCoinsCollected;
+  }
+
+  recordLevelComplete(): void {
+    this.data.totalLevelsCompleted++;
+    this.save();
+  }
+
+  getTotalLevelsCompleted(): number {
+    return this.data.totalLevelsCompleted;
+  }
+
+  addPlayTime(ms: number): void {
+    this.data.totalPlayTime += ms;
+    this.save();
+  }
+
+  getTotalPlayTime(): number {
+    return this.data.totalPlayTime;
+  }
+
+  updateLongestCombo(combo: number): boolean {
+    if (combo > this.data.longestCombo) {
+      this.data.longestCombo = combo;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getLongestCombo(): number {
+    return this.data.longestCombo;
+  }
+
+  // Level coin tracking
+  setLevelCoins(levelId: number, coins: number): boolean {
+    const current = this.data.levelCoins[levelId] ?? 0;
+    if (coins > current) {
+      this.data.levelCoins[levelId] = coins;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getLevelCoins(levelId: number): number {
+    return this.data.levelCoins[levelId] ?? 0;
+  }
+
+  getAllLevelCoins(): Record<number, number> {
+    return { ...this.data.levelCoins };
   }
 }

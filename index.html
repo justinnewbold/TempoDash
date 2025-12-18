@@ -28,6 +28,11 @@
       canvas {
         display: block;
         border-radius: 5px;
+        /* Ensure crisp rendering on all browsers */
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-crisp-edges;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
       }
       #ui-overlay {
         position: absolute;
