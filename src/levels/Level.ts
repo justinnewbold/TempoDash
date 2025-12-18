@@ -3,7 +3,7 @@ import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
-import { COLORS } from '../constants';
+import { COLORS, GAME_WIDTH } from '../constants';
 
 export class Level {
   id: number;
@@ -117,7 +117,7 @@ export class Level {
 
     // Draw platforms
     for (const platform of this.platforms) {
-      platform.render(ctx, cameraX);
+      platform.render(ctx, cameraX, GAME_WIDTH);
     }
 
     // Draw coins
@@ -132,8 +132,8 @@ export class Level {
   private renderGoal(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const screenX = this.goal.x - cameraX;
 
-    // Skip if off screen
-    if (screenX + this.goal.width < -50 || screenX > ctx.canvas.width + 50) {
+    // Skip if off screen (use logical game width)
+    if (screenX + this.goal.width < -50 || screenX > GAME_WIDTH + 50) {
       return;
     }
 

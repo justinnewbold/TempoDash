@@ -83,16 +83,28 @@ export class Game {
   // Play time tracking
   private lastPlayTimeUpdate = 0;
 
+  // High-DPI support
+  private dpr = 1;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.canvas.width = GAME_WIDTH;
-    this.canvas.height = GAME_HEIGHT;
+
+    // High-DPI canvas setup for crisp graphics
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+    this.canvas.width = GAME_WIDTH * this.dpr;
+    this.canvas.height = GAME_HEIGHT * this.dpr;
+    this.canvas.style.width = `${GAME_WIDTH}px`;
+    this.canvas.style.height = `${GAME_HEIGHT}px`;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       throw new Error('Could not get 2D context');
     }
     this.ctx = ctx;
+
+    // Scale context for high-DPI and disable smoothing for crisp edges
+    this.ctx.scale(this.dpr, this.dpr);
+    this.setupCrispRendering();
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -874,6 +886,15 @@ export class Game {
       this.audio.stop();
       this.audio.playLevelComplete();
     }
+  }
+
+  private setupCrispRendering(): void {
+    // Disable image smoothing for crisp pixel-perfect rendering
+    this.ctx.imageSmoothingEnabled = false;
+    // TypeScript doesn't know about these vendor prefixes, but they help older browsers
+    (this.ctx as unknown as Record<string, boolean>).mozImageSmoothingEnabled = false;
+    (this.ctx as unknown as Record<string, boolean>).webkitImageSmoothingEnabled = false;
+    (this.ctx as unknown as Record<string, boolean>).msImageSmoothingEnabled = false;
   }
 
   private render(): void {
@@ -1980,15 +2001,25 @@ export class Game {
     this.editor = new LevelEditor(this.editingLevel);
     this.state.gameStatus = 'editor';
 
-    // Resize canvas for editor (needs more space for UI)
-    this.canvas.width = GAME_WIDTH + 200; // sidebar
-    this.canvas.height = GAME_HEIGHT + 60; // toolbar
+    // Resize canvas for editor (needs more space for UI) with high-DPI support
+    const editorWidth = GAME_WIDTH + 200;
+    const editorHeight = GAME_HEIGHT + 60;
+    this.canvas.width = editorWidth * this.dpr;
+    this.canvas.height = editorHeight * this.dpr;
+    this.canvas.style.width = `${editorWidth}px`;
+    this.canvas.style.height = `${editorHeight}px`;
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.setupCrispRendering();
   }
 
   private closeEditor(): void {
-    // Restore canvas size
-    this.canvas.width = GAME_WIDTH;
-    this.canvas.height = GAME_HEIGHT;
+    // Restore canvas size with high-DPI support
+    this.canvas.width = GAME_WIDTH * this.dpr;
+    this.canvas.height = GAME_HEIGHT * this.dpr;
+    this.canvas.style.width = `${GAME_WIDTH}px`;
+    this.canvas.style.height = `${GAME_HEIGHT}px`;
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.setupCrispRendering();
     this.editor = null;
     this.editingLevel = null;
     this.state.gameStatus = 'mainMenu';
@@ -2327,9 +2358,13 @@ export class Game {
     this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing
 
-    // Restore canvas size for gameplay
-    this.canvas.width = GAME_WIDTH;
-    this.canvas.height = GAME_HEIGHT;
+    // Restore canvas size for gameplay with high-DPI support
+    this.canvas.width = GAME_WIDTH * this.dpr;
+    this.canvas.height = GAME_HEIGHT * this.dpr;
+    this.canvas.style.width = `${GAME_WIDTH}px`;
+    this.canvas.style.height = `${GAME_HEIGHT}px`;
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.setupCrispRendering();
 
     this.audio.start();
     this.state.gameStatus = 'editorTest';
@@ -2337,8 +2372,14 @@ export class Game {
 
   private returnToEditor(): void {
     if (this.editingLevel) {
-      this.canvas.width = GAME_WIDTH + 200;
-      this.canvas.height = GAME_HEIGHT + 60;
+      const editorWidth = GAME_WIDTH + 200;
+      const editorHeight = GAME_HEIGHT + 60;
+      this.canvas.width = editorWidth * this.dpr;
+      this.canvas.height = editorHeight * this.dpr;
+      this.canvas.style.width = `${editorWidth}px`;
+      this.canvas.style.height = `${editorHeight}px`;
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.setupCrispRendering();
       this.editor = new LevelEditor(this.editingLevel);
       this.state.gameStatus = 'editor';
       this.audio.stop();
