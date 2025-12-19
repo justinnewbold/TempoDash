@@ -11,6 +11,7 @@ export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
   4: 3000,   // Level 4 costs 3000 points
   5: 5000,   // Level 5 costs 5000 points
   6: 7500,   // Level 6 costs 7500 points
+  7: 10000,  // Level 7 costs 10000 points
 };
 
 // Available player skins
