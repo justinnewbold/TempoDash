@@ -370,7 +370,7 @@ export class Player {
       // Yellow/orange trail when dashing, skin color when normal
       const trailColor = this.isDashing
         ? `rgba(255, 200, 50, ${point.alpha * 0.6})`
-        : this.skin.trailColor.replace('0.3)', `${point.alpha * 0.3})`);
+        : this.colorWithAlpha(this.skin.trailColor, point.alpha * 0.3);
       ctx.fillStyle = trailColor;
       ctx.fillRect(-this.width / 2 * point.alpha, -this.height / 2 * point.alpha,
                    this.width * point.alpha, this.height * point.alpha);

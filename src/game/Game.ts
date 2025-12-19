@@ -175,6 +175,7 @@ export class Game {
       4: 'dark',
       5: 'epic',
       6: 'energetic',
+      7: 'epic',
     };
     this.audio.setStyle(musicStyles[levelId] || 'energetic');
   }
@@ -2121,8 +2122,9 @@ export class Game {
     if (!this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
+    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
+    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
 
     // Check toolbar area
     if (y < this.editor.getToolbarHeight()) {
@@ -2470,8 +2472,9 @@ export class Game {
     if (this.state.gameStatus !== 'editor' || !this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
+    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
+    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
 
     this.editor.handleMouseMove(x, y);
   }
@@ -2486,15 +2489,16 @@ export class Game {
     if (this.state.gameStatus !== 'editor' || !this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
+    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
+    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
 
     // Check toolbar area
     if (y < this.editor.getToolbarHeight()) {
       this.editor.handleToolbarClick(x, y);
 
       // Check for save/test/exit buttons
-      const rightX = this.canvas.width - 20;
+      const rightX = GAME_WIDTH - 20;
       if (y >= 15 && y <= 45) {
         if (x >= rightX - 230 && x <= rightX - 160) {
           this.saveCurrentLevel();

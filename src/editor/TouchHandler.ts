@@ -3,6 +3,8 @@
  * Handles: tap, double-tap, long-press, drag, pinch-zoom, two-finger pan
  */
 
+import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+
 export interface TouchPoint {
   x: number;
   y: number;
@@ -86,8 +88,9 @@ export class TouchHandler {
 
   private getCanvasCoords(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
+    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
+    const scaleX = GAME_WIDTH / rect.width;
+    const scaleY = GAME_HEIGHT / rect.height;
     return {
       x: (clientX - rect.left) * scaleX,
       y: (clientY - rect.top) * scaleY,
