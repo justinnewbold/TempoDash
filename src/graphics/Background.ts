@@ -1037,10 +1037,28 @@ export class Background {
   }
 
   private renderParticles(ctx: CanvasRenderingContext2D): void {
-    const color = this.config.particles?.color || '#ffffff';
+    const color = this.config.particles?.color || 'rgba(255, 255, 255, 0.5)';
 
     for (const particle of this.particles) {
-      ctx.fillStyle = color.replace(')', `, ${particle.opacity})`).replace('rgb', 'rgba');
+      // Handle both rgb and rgba color formats
+      let fillColor: string;
+      if (color.startsWith('rgba')) {
+        // Already rgba - replace the alpha value with particle opacity
+        fillColor = color.replace(/,\s*[\d.]+\)$/, `, ${particle.opacity})`);
+      } else if (color.startsWith('rgb')) {
+        // Convert rgb to rgba
+        fillColor = color.replace(')', `, ${particle.opacity})`).replace('rgb', 'rgba');
+      } else {
+        // Fallback for hex or other formats - use as-is with globalAlpha
+        ctx.globalAlpha = particle.opacity;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      ctx.fillStyle = fillColor;
       ctx.beginPath();
       ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
       ctx.fill();

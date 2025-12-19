@@ -454,7 +454,7 @@ export class Player {
       // Use skin's glow color with alpha for pulse
       const pulseColor = this.skin.id === 'rainbow'
         ? `hsla(${(this.animationTime * 0.1) % 360}, 100%, 60%, ${0.3 * pulse})`
-        : glowColor.replace(')', `, ${0.3 * pulse})`).replace('rgb', 'rgba');
+        : this.colorWithAlpha(glowColor, 0.3 * pulse);
       ctx.strokeStyle = pulseColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(
@@ -465,5 +465,27 @@ export class Player {
       );
       ctx.restore();
     }
+  }
+
+  // Helper to convert any color format to rgba with specified alpha
+  private colorWithAlpha(color: string, alpha: number): string {
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      const hex = color.slice(1);
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    // Handle rgba - replace alpha value
+    if (color.startsWith('rgba')) {
+      return color.replace(/,\s*[\d.]+\)$/, `, ${alpha})`);
+    }
+    // Handle rgb - convert to rgba
+    if (color.startsWith('rgb')) {
+      return color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+    }
+    // Fallback - return as-is
+    return color;
   }
 }
