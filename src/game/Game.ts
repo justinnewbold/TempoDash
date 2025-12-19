@@ -127,8 +127,23 @@ export class Game {
     // Setup keyboard
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
-    // Setup click/touch
+    // Setup click/touch for menus
     canvas.addEventListener('click', (e) => this.handleClick(e));
+
+    // Touch support for menu navigation (click events unreliable on mobile)
+    canvas.addEventListener('touchend', (e) => {
+      // Only handle single-touch taps for menu navigation
+      if (e.changedTouches.length === 1 && this.state.gameStatus !== 'playing') {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const x = (touch.clientX - rect.left) * (GAME_WIDTH / rect.width);
+        const y = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+
+        // Create a synthetic event-like object for the handlers
+        this.handleTouchMenuClick(x, y);
+      }
+    }, { passive: false });
 
     // Setup mouse events for editor
     canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -202,6 +217,45 @@ export class Game {
         break;
       case 'gameOver':
         this.endlessDistance = 0; // Reset for next endless run
+        this.state.gameStatus = 'mainMenu';
+        break;
+    }
+  }
+
+  private handleTouchMenuClick(x: number, y: number): void {
+    // Dismiss tutorial on touch
+    if (this.showingTutorial) {
+      this.dismissTutorial();
+      return;
+    }
+
+    switch (this.state.gameStatus) {
+      case 'mainMenu':
+        this.handleMainMenuClick(x, y);
+        break;
+      case 'levelSelect':
+        this.handleLevelSelectClick(x, y, false); // No shift key on touch
+        break;
+      case 'customLevels':
+        this.handleCustomLevelsClick(x, y);
+        break;
+      case 'settings':
+        this.handleSettingsClick(x, y);
+        break;
+      case 'skins':
+        this.handleSkinsClick(x, y);
+        break;
+      case 'achievements':
+        this.handleAchievementsClick(x, y);
+        break;
+      case 'editor':
+        // Editor has its own touch handling via TouchHandler
+        break;
+      case 'levelComplete':
+        this.nextLevel();
+        break;
+      case 'gameOver':
+        this.endlessDistance = 0;
         this.state.gameStatus = 'mainMenu';
         break;
     }
