@@ -1377,9 +1377,9 @@ export class Game {
     const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
     const cardY = 180;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff'];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5]; // 1-5 stars
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000'];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5]; // 1-5 stars
 
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
