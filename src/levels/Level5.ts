@@ -26,7 +26,7 @@ const level5Config: LevelConfig = {
     accentColor: '#ff4400',
     particles: {
       count: 60,
-      color: 'rgba(255, 100, 0',
+      color: 'rgba(255, 100, 0, 0.5)',
       minSize: 2,
       maxSize: 5,
       speed: 50,
