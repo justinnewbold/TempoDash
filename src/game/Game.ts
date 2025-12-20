@@ -91,15 +91,19 @@ export class Game {
   private jumpCount = 0;
   private static readonly SPEED_INCREASE_PER_JUMP = 0.0025; // 0.25%
 
+  // Orientation and screen sizing
+  private isPortrait = false;
+  private orientationMessageTimer = 0;
+  private showOrientationHint = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
     // High-DPI canvas setup for crisp graphics
     this.dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
-    this.canvas.width = GAME_WIDTH * this.dpr;
-    this.canvas.height = GAME_HEIGHT * this.dpr;
-    this.canvas.style.width = `${GAME_WIDTH}px`;
-    this.canvas.style.height = `${GAME_HEIGHT}px`;
+
+    // Initial screen sizing
+    this.handleResize();
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
@@ -110,6 +114,13 @@ export class Game {
     // Scale context for high-DPI and disable smoothing for crisp edges
     this.ctx.scale(this.dpr, this.dpr);
     this.setupCrispRendering();
+
+    // Listen for resize and orientation changes
+    window.addEventListener('resize', () => this.handleResize());
+    window.addEventListener('orientationchange', () => {
+      // Small delay to let the browser update dimensions
+      setTimeout(() => this.handleResize(), 100);
+    });
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -132,6 +143,14 @@ export class Game {
 
     // Touch support for menu navigation (click events unreliable on mobile)
     canvas.addEventListener('touchend', (e) => {
+      // Dismiss orientation hint on any tap
+      if (this.showOrientationHint) {
+        e.preventDefault();
+        this.showOrientationHint = false;
+        this.orientationMessageTimer = 0;
+        return;
+      }
+
       // Only handle single-touch taps for menu navigation
       if (e.changedTouches.length === 1 && this.state.gameStatus !== 'playing') {
         e.preventDefault();
@@ -181,6 +200,13 @@ export class Game {
   }
 
   private handleClick(e: MouseEvent): void {
+    // Dismiss orientation hint on click
+    if (this.showOrientationHint) {
+      this.showOrientationHint = false;
+      this.orientationMessageTimer = 0;
+      return;
+    }
+
     // Dismiss tutorial on click
     if (this.showingTutorial) {
       this.dismissTutorial();
@@ -769,6 +795,14 @@ export class Game {
       this.deathFlashOpacity = Math.max(0, this.deathFlashOpacity - deltaTime / 300);
     }
 
+    // Decay orientation hint timer
+    if (this.orientationMessageTimer > 0) {
+      this.orientationMessageTimer -= deltaTime;
+      if (this.orientationMessageTimer <= 0) {
+        this.showOrientationHint = false;
+      }
+    }
+
     // Editor mode has its own update
     if (this.state.gameStatus === 'editor') {
       this.updateEditor(deltaTime);
@@ -967,6 +1001,60 @@ export class Game {
     (this.ctx as unknown as Record<string, boolean>).msImageSmoothingEnabled = false;
   }
 
+  private handleResize(): void {
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // Detect orientation
+    this.isPortrait = windowHeight > windowWidth;
+
+    // Calculate optimal canvas size while maintaining 16:9 aspect ratio
+    const targetRatio = GAME_WIDTH / GAME_HEIGHT;
+    const screenRatio = windowWidth / windowHeight;
+
+    let canvasWidth: number;
+    let canvasHeight: number;
+
+    if (screenRatio > targetRatio) {
+      // Screen is wider than game - fit to height
+      canvasHeight = windowHeight;
+      canvasWidth = canvasHeight * targetRatio;
+    } else {
+      // Screen is taller than game - fit to width
+      canvasWidth = windowWidth;
+      canvasHeight = canvasWidth / targetRatio;
+    }
+
+    // Calculate offset for centering
+    const canvasOffsetX = (windowWidth - canvasWidth) / 2;
+    const canvasOffsetY = (windowHeight - canvasHeight) / 2;
+
+    // Update canvas size with high-DPI support
+    this.canvas.width = GAME_WIDTH * this.dpr;
+    this.canvas.height = GAME_HEIGHT * this.dpr;
+    this.canvas.style.width = `${canvasWidth}px`;
+    this.canvas.style.height = `${canvasHeight}px`;
+
+    // Center canvas on screen
+    this.canvas.style.position = 'absolute';
+    this.canvas.style.left = `${canvasOffsetX}px`;
+    this.canvas.style.top = `${canvasOffsetY}px`;
+
+    // Re-scale context for high-DPI after resize
+    if (this.ctx) {
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.setupCrispRendering();
+    }
+
+    // Show orientation hint in portrait mode for a few seconds on mobile
+    if (this.isPortrait && this.input && this.input.isMobileDevice()) {
+      this.showOrientationHint = true;
+      this.orientationMessageTimer = 3000; // Show for 3 seconds
+    } else {
+      this.showOrientationHint = false;
+    }
+  }
+
   private render(): void {
     // Editor mode has its own rendering
     if (this.state.gameStatus === 'editor') {
@@ -1050,6 +1138,84 @@ export class Game {
 
     // Achievement notification (always on top)
     this.renderAchievementNotification();
+
+    // Portrait mode orientation hint (on top of everything)
+    if (this.showOrientationHint && this.isPortrait) {
+      this.renderOrientationHint();
+    }
+  }
+
+  private renderOrientationHint(): void {
+    // Semi-transparent overlay
+    const fadeProgress = Math.min(1, this.orientationMessageTimer / 500);
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * fadeProgress})`;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Rotate phone icon (simple representation)
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2 - 30;
+
+    this.ctx.save();
+    this.ctx.translate(centerX, centerY);
+
+    // Animate rotation
+    const rotateAngle = Math.sin(Date.now() * 0.003) * 0.3;
+    this.ctx.rotate(rotateAngle);
+
+    // Draw phone outline
+    this.ctx.strokeStyle = `rgba(255, 255, 255, ${fadeProgress})`;
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(-25, -45, 50, 90, 8);
+    this.ctx.stroke();
+
+    // Phone screen
+    this.ctx.fillStyle = `rgba(100, 200, 255, ${0.3 * fadeProgress})`;
+    this.ctx.fillRect(-20, -35, 40, 65);
+
+    // Home button
+    this.ctx.beginPath();
+    this.ctx.arc(0, 38, 5, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    this.ctx.restore();
+
+    // Rotation arrows
+    this.ctx.strokeStyle = `rgba(100, 255, 150, ${fadeProgress})`;
+    this.ctx.lineWidth = 2;
+
+    // Left arrow (curved)
+    this.ctx.beginPath();
+    this.ctx.arc(centerX - 50, centerY, 20, Math.PI * 0.5, Math.PI * 1.5);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(centerX - 50, centerY - 20);
+    this.ctx.lineTo(centerX - 58, centerY - 12);
+    this.ctx.lineTo(centerX - 42, centerY - 12);
+    this.ctx.closePath();
+    this.ctx.fillStyle = `rgba(100, 255, 150, ${fadeProgress})`;
+    this.ctx.fill();
+
+    // Right arrow (curved)
+    this.ctx.beginPath();
+    this.ctx.arc(centerX + 50, centerY, 20, -Math.PI * 0.5, Math.PI * 0.5);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(centerX + 50, centerY + 20);
+    this.ctx.lineTo(centerX + 42, centerY + 12);
+    this.ctx.lineTo(centerX + 58, centerY + 12);
+    this.ctx.closePath();
+    this.ctx.fill();
+
+    // Text
+    this.ctx.fillStyle = `rgba(255, 255, 255, ${fadeProgress})`;
+    this.ctx.font = 'bold 18px Arial, sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Rotate for best experience', centerX, centerY + 80);
+
+    this.ctx.font = '14px Arial, sans-serif';
+    this.ctx.fillStyle = `rgba(180, 180, 180, ${fadeProgress})`;
+    this.ctx.fillText('Tap anywhere to dismiss', centerX, centerY + 105);
   }
 
   private renderPlayingUI(): void {
