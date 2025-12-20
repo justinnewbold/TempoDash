@@ -91,15 +91,19 @@ export class Game {
   private jumpCount = 0;
   private static readonly SPEED_INCREASE_PER_JUMP = 0.0025; // 0.25%
 
+  // Orientation and screen sizing
+  private isPortrait = false;
+  private orientationMessageTimer = 0;
+  private showOrientationHint = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
     // High-DPI canvas setup for crisp graphics
     this.dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
-    this.canvas.width = GAME_WIDTH * this.dpr;
-    this.canvas.height = GAME_HEIGHT * this.dpr;
-    this.canvas.style.width = `${GAME_WIDTH}px`;
-    this.canvas.style.height = `${GAME_HEIGHT}px`;
+
+    // Initial screen sizing
+    this.handleResize();
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
@@ -110,6 +114,13 @@ export class Game {
     // Scale context for high-DPI and disable smoothing for crisp edges
     this.ctx.scale(this.dpr, this.dpr);
     this.setupCrispRendering();
+
+    // Listen for resize and orientation changes
+    window.addEventListener('resize', () => this.handleResize());
+    window.addEventListener('orientationchange', () => {
+      // Small delay to let the browser update dimensions
+      setTimeout(() => this.handleResize(), 100);
+    });
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -132,6 +143,14 @@ export class Game {
 
     // Touch support for menu navigation (click events unreliable on mobile)
     canvas.addEventListener('touchend', (e) => {
+      // Dismiss orientation hint on any tap
+      if (this.showOrientationHint) {
+        e.preventDefault();
+        this.showOrientationHint = false;
+        this.orientationMessageTimer = 0;
+        return;
+      }
+
       // Only handle single-touch taps for menu navigation
       if (e.changedTouches.length === 1 && this.state.gameStatus !== 'playing') {
         e.preventDefault();
@@ -181,6 +200,13 @@ export class Game {
   }
 
   private handleClick(e: MouseEvent): void {
+    // Dismiss orientation hint on click
+    if (this.showOrientationHint) {
+      this.showOrientationHint = false;
+      this.orientationMessageTimer = 0;
+      return;
+    }
+
     // Dismiss tutorial on click
     if (this.showingTutorial) {
       this.dismissTutorial();
@@ -319,26 +345,70 @@ export class Game {
       return;
     }
 
-    // Level cards (must match renderLevelSelect dimensions)
+    // Level cards - carousel style (must match renderLevelSelect dimensions)
     const cardWidth = 130;
     const cardHeight = 190;
-    const cardGap = 18;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
+    const cardGap = 25;
     const cardY = 180;
+    const centerX = GAME_WIDTH / 2;
 
+    // Left navigation arrow
+    if (x >= 20 && x <= 80 && y >= cardY && y <= cardY + cardHeight) {
+      if (this.selectedLevelIndex > 0) {
+        this.selectedLevelIndex--;
+        this.audio.playSelect();
+      }
+      return;
+    }
+
+    // Right navigation arrow
+    if (x >= GAME_WIDTH - 80 && x <= GAME_WIDTH - 20 && y >= cardY && y <= cardY + cardHeight) {
+      if (this.selectedLevelIndex < TOTAL_LEVELS - 1) {
+        this.selectedLevelIndex++;
+        this.audio.playSelect();
+      }
+      return;
+    }
+
+    // Check clicks on level cards
     for (let i = 0; i < TOTAL_LEVELS; i++) {
-      const cardX = startX + i * (cardWidth + cardGap);
+      const offsetFromSelected = i - this.selectedLevelIndex;
+      const cardX = centerX - cardWidth / 2 + offsetFromSelected * (cardWidth + cardGap);
+
+      // Skip if card is off screen
+      if (cardX < -cardWidth || cardX > GAME_WIDTH + cardWidth) continue;
+
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
-        const levelId = i + 1;
-        if (this.save.isLevelUnlocked(levelId)) {
-          this.audio.playSelect();
-          this.startLevel(levelId, shiftKey); // Practice mode if shift is held
-        } else if (this.save.canUnlockLevel(levelId)) {
-          if (this.save.unlockLevel(levelId)) {
-            this.audio.playUnlock();
+        if (i === this.selectedLevelIndex) {
+          // Clicked on the center/selected card - play or unlock
+          const levelId = i + 1;
+          if (this.save.isLevelUnlocked(levelId)) {
+            this.audio.playSelect();
+            this.startLevel(levelId, shiftKey); // Practice mode if shift is held
+          } else if (this.save.canUnlockLevel(levelId)) {
+            if (this.save.unlockLevel(levelId)) {
+              this.audio.playUnlock();
+            }
           }
+        } else {
+          // Clicked on a non-selected card - navigate to it
+          this.selectedLevelIndex = i;
+          this.audio.playSelect();
         }
         return;
+      }
+    }
+
+    // Level indicator dots - allow clicking on them to navigate
+    const dotsY = cardY + cardHeight + 30;
+    if (y >= dotsY - 10 && y <= dotsY + 10) {
+      for (let i = 0; i < TOTAL_LEVELS; i++) {
+        const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
+        if (x >= dotX - 10 && x <= dotX + 10) {
+          this.selectedLevelIndex = i;
+          this.audio.playSelect();
+          return;
+        }
       }
     }
   }
@@ -769,6 +839,14 @@ export class Game {
       this.deathFlashOpacity = Math.max(0, this.deathFlashOpacity - deltaTime / 300);
     }
 
+    // Decay orientation hint timer
+    if (this.orientationMessageTimer > 0) {
+      this.orientationMessageTimer -= deltaTime;
+      if (this.orientationMessageTimer <= 0) {
+        this.showOrientationHint = false;
+      }
+    }
+
     // Editor mode has its own update
     if (this.state.gameStatus === 'editor') {
       this.updateEditor(deltaTime);
@@ -967,6 +1045,60 @@ export class Game {
     (this.ctx as unknown as Record<string, boolean>).msImageSmoothingEnabled = false;
   }
 
+  private handleResize(): void {
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // Detect orientation
+    this.isPortrait = windowHeight > windowWidth;
+
+    // Calculate optimal canvas size while maintaining 16:9 aspect ratio
+    const targetRatio = GAME_WIDTH / GAME_HEIGHT;
+    const screenRatio = windowWidth / windowHeight;
+
+    let canvasWidth: number;
+    let canvasHeight: number;
+
+    if (screenRatio > targetRatio) {
+      // Screen is wider than game - fit to height
+      canvasHeight = windowHeight;
+      canvasWidth = canvasHeight * targetRatio;
+    } else {
+      // Screen is taller than game - fit to width
+      canvasWidth = windowWidth;
+      canvasHeight = canvasWidth / targetRatio;
+    }
+
+    // Calculate offset for centering
+    const canvasOffsetX = (windowWidth - canvasWidth) / 2;
+    const canvasOffsetY = (windowHeight - canvasHeight) / 2;
+
+    // Update canvas size with high-DPI support
+    this.canvas.width = GAME_WIDTH * this.dpr;
+    this.canvas.height = GAME_HEIGHT * this.dpr;
+    this.canvas.style.width = `${canvasWidth}px`;
+    this.canvas.style.height = `${canvasHeight}px`;
+
+    // Center canvas on screen
+    this.canvas.style.position = 'absolute';
+    this.canvas.style.left = `${canvasOffsetX}px`;
+    this.canvas.style.top = `${canvasOffsetY}px`;
+
+    // Re-scale context for high-DPI after resize
+    if (this.ctx) {
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.setupCrispRendering();
+    }
+
+    // Show orientation hint in portrait mode for a few seconds on mobile
+    if (this.isPortrait && this.input && this.input.isMobileDevice()) {
+      this.showOrientationHint = true;
+      this.orientationMessageTimer = 3000; // Show for 3 seconds
+    } else {
+      this.showOrientationHint = false;
+    }
+  }
+
   private render(): void {
     // Editor mode has its own rendering
     if (this.state.gameStatus === 'editor') {
@@ -1050,6 +1182,84 @@ export class Game {
 
     // Achievement notification (always on top)
     this.renderAchievementNotification();
+
+    // Portrait mode orientation hint (on top of everything)
+    if (this.showOrientationHint && this.isPortrait) {
+      this.renderOrientationHint();
+    }
+  }
+
+  private renderOrientationHint(): void {
+    // Semi-transparent overlay
+    const fadeProgress = Math.min(1, this.orientationMessageTimer / 500);
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * fadeProgress})`;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Rotate phone icon (simple representation)
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2 - 30;
+
+    this.ctx.save();
+    this.ctx.translate(centerX, centerY);
+
+    // Animate rotation
+    const rotateAngle = Math.sin(Date.now() * 0.003) * 0.3;
+    this.ctx.rotate(rotateAngle);
+
+    // Draw phone outline
+    this.ctx.strokeStyle = `rgba(255, 255, 255, ${fadeProgress})`;
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(-25, -45, 50, 90, 8);
+    this.ctx.stroke();
+
+    // Phone screen
+    this.ctx.fillStyle = `rgba(100, 200, 255, ${0.3 * fadeProgress})`;
+    this.ctx.fillRect(-20, -35, 40, 65);
+
+    // Home button
+    this.ctx.beginPath();
+    this.ctx.arc(0, 38, 5, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    this.ctx.restore();
+
+    // Rotation arrows
+    this.ctx.strokeStyle = `rgba(100, 255, 150, ${fadeProgress})`;
+    this.ctx.lineWidth = 2;
+
+    // Left arrow (curved)
+    this.ctx.beginPath();
+    this.ctx.arc(centerX - 50, centerY, 20, Math.PI * 0.5, Math.PI * 1.5);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(centerX - 50, centerY - 20);
+    this.ctx.lineTo(centerX - 58, centerY - 12);
+    this.ctx.lineTo(centerX - 42, centerY - 12);
+    this.ctx.closePath();
+    this.ctx.fillStyle = `rgba(100, 255, 150, ${fadeProgress})`;
+    this.ctx.fill();
+
+    // Right arrow (curved)
+    this.ctx.beginPath();
+    this.ctx.arc(centerX + 50, centerY, 20, -Math.PI * 0.5, Math.PI * 0.5);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(centerX + 50, centerY + 20);
+    this.ctx.lineTo(centerX + 42, centerY + 12);
+    this.ctx.lineTo(centerX + 58, centerY + 12);
+    this.ctx.closePath();
+    this.ctx.fill();
+
+    // Text
+    this.ctx.fillStyle = `rgba(255, 255, 255, ${fadeProgress})`;
+    this.ctx.font = 'bold 18px Arial, sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Rotate for best experience', centerX, centerY + 80);
+
+    this.ctx.font = '14px Arial, sans-serif';
+    this.ctx.fillStyle = `rgba(180, 180, 180, ${fadeProgress})`;
+    this.ctx.fillText('Tap anywhere to dismiss', centerX, centerY + 105);
   }
 
   private renderPlayingUI(): void {
@@ -1370,94 +1580,156 @@ export class Game {
     this.ctx.shadowBlur = 0;
     this.ctx.fillText('< Back (ESC)', 20, 45);
 
-    // Level cards (smaller to fit more levels)
+    // Level cards - carousel style with selected level in center
     const cardWidth = 130;
     const cardHeight = 190;
-    const cardGap = 18;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
+    const cardGap = 25;
     const cardY = 180;
+    const centerX = GAME_WIDTH / 2;
 
     const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet'];
     const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000'];
     const levelDifficulty = [1, 2, 3, 3, 4, 5, 5]; // 1-5 stars
 
+    // Navigation arrows
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.font = 'bold 40px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+
+    // Left arrow (show if not at first level)
+    if (this.selectedLevelIndex > 0) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText('◀', 50, cardY + cardHeight / 2 + 10);
+    }
+
+    // Right arrow (show if not at last level)
+    if (this.selectedLevelIndex < TOTAL_LEVELS - 1) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText('▶', GAME_WIDTH - 50, cardY + cardHeight / 2 + 10);
+    }
+
+    // Render level cards with the selected one centered
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
-      const cardX = startX + i * (cardWidth + cardGap);
+      const isSelected = i === this.selectedLevelIndex;
+
+      // Calculate position relative to selected level
+      const offsetFromSelected = i - this.selectedLevelIndex;
+      const cardX = centerX - cardWidth / 2 + offsetFromSelected * (cardWidth + cardGap);
+
+      // Skip if card is too far off screen
+      if (cardX < -cardWidth || cardX > GAME_WIDTH + cardWidth) continue;
+
+      // Scale and fade non-selected cards
+      const scale = isSelected ? 1.0 : 0.85;
+      const alpha = isSelected ? 1.0 : 0.6;
+
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
       const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
       const highScore = this.save.getHighScore(levelId);
 
+      this.ctx.save();
+
+      // Apply scale transform around card center
+      const scaledCardWidth = cardWidth * scale;
+      const scaledCardHeight = cardHeight * scale;
+      const scaledCardX = cardX + (cardWidth - scaledCardWidth) / 2;
+      const scaledCardY = cardY + (cardHeight - scaledCardHeight) / 2;
+
+      this.ctx.globalAlpha = alpha;
+
       // Card background
       this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
       this.ctx.strokeStyle = isUnlocked ? levelColors[i] : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
-      this.ctx.lineWidth = 3;
+      this.ctx.lineWidth = isSelected ? 4 : 3;
       this.ctx.beginPath();
-      this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 15);
+      this.ctx.roundRect(scaledCardX, scaledCardY, scaledCardWidth, scaledCardHeight, 15 * scale);
       this.ctx.fill();
       this.ctx.stroke();
 
-      this.ctx.textAlign = 'center';
-      const centerX = cardX + cardWidth / 2;
+      // Selected glow effect
+      if (isSelected) {
+        this.ctx.shadowColor = levelColors[i];
+        this.ctx.shadowBlur = 20;
+        this.ctx.stroke();
+        this.ctx.shadowBlur = 0;
+      }
 
-      // Level number (moved up slightly)
-      this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      const cardCenterX = scaledCardX + scaledCardWidth / 2;
+
+      // Level number
+      this.ctx.font = `bold ${Math.round(42 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? levelColors[i] : 'rgba(100, 100, 100, 0.8)';
       this.ctx.shadowColor = levelColors[i];
-      this.ctx.shadowBlur = isUnlocked ? 15 : 0;
-      this.ctx.fillText(`${levelId}`, centerX, cardY + 55);
+      this.ctx.shadowBlur = isUnlocked && isSelected ? 15 : 0;
+      this.ctx.fillText(`${levelId}`, cardCenterX, scaledCardY + 55 * scale);
 
-      // Level name (adjusted position)
-      this.ctx.font = 'bold 15px "Segoe UI", sans-serif';
+      // Level name
+      this.ctx.font = `bold ${Math.round(15 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText(levelNames[i], centerX, cardY + 85);
+      this.ctx.fillText(levelNames[i], cardCenterX, scaledCardY + 85 * scale);
 
       // Difficulty stars
       const difficulty = levelDifficulty[i];
       const starStr = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
-      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.font = `${Math.round(10 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffaa00' : 'rgba(150, 150, 150, 0.6)';
-      this.ctx.fillText(starStr, centerX, cardY + 100);
+      this.ctx.fillText(starStr, cardCenterX, scaledCardY + 100 * scale);
 
       if (isUnlocked) {
-        // High score (more vertical space from name)
-        this.ctx.font = '14px "Segoe UI", sans-serif';
+        // High score
+        this.ctx.font = `${Math.round(14 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = '#ffd700';
-        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 125);
+        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', cardCenterX, scaledCardY + 125 * scale);
 
-        // Click to play (moved up from card edge)
-        this.ctx.font = '12px "Segoe UI", sans-serif';
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        this.ctx.fillText('Click to play', centerX, cardY + 160);
+        // Click to play (only show on selected)
+        if (isSelected) {
+          this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 160 * scale);
+        }
       } else {
-        // Lock icon (more space from level name, smaller size)
-        this.ctx.font = '20px "Segoe UI", sans-serif';
+        // Lock icon
+        this.ctx.font = `${Math.round(20 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText('🔒', centerX, cardY + 125);
+        this.ctx.fillText('🔒', cardCenterX, scaledCardY + 125 * scale);
 
-        // Cost (adjusted spacing)
-        this.ctx.font = '13px "Segoe UI", sans-serif';
+        // Cost
+        this.ctx.font = `${Math.round(13 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText(`${cost} pts to unlock`, centerX, cardY + 150);
+        this.ctx.fillText(`${cost} pts to unlock`, cardCenterX, scaledCardY + 150 * scale);
 
-        if (canUnlock) {
-          // Click to unlock (moved up from card edge)
-          this.ctx.font = '12px "Segoe UI", sans-serif';
+        if (canUnlock && isSelected) {
+          // Click to unlock
+          this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
           this.ctx.fillStyle = '#ffd700';
-          this.ctx.fillText('Click to unlock!', centerX, cardY + 170);
+          this.ctx.fillText('Click to unlock!', cardCenterX, scaledCardY + 170 * scale);
         }
       }
+
+      this.ctx.restore();
+    }
+
+    // Level indicator dots
+    this.ctx.textAlign = 'center';
+    const dotsY = cardY + cardHeight + 30;
+    for (let i = 0; i < TOTAL_LEVELS; i++) {
+      const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
+      this.ctx.beginPath();
+      this.ctx.arc(dotX, dotsY, i === this.selectedLevelIndex ? 6 : 4, 0, Math.PI * 2);
+      this.ctx.fillStyle = i === this.selectedLevelIndex ? levelColors[i] : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.fill();
     }
 
     // Level features hint
-    this.ctx.textAlign = 'center';
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Each level introduces new challenges and unique music!', GAME_WIDTH / 2, 420);
+    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 440);
     this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 445);
+    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 465);
 
     this.ctx.restore();
   }
