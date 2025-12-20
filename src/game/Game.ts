@@ -345,26 +345,70 @@ export class Game {
       return;
     }
 
-    // Level cards (must match renderLevelSelect dimensions)
+    // Level cards - carousel style (must match renderLevelSelect dimensions)
     const cardWidth = 130;
     const cardHeight = 190;
-    const cardGap = 18;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
+    const cardGap = 25;
     const cardY = 180;
+    const centerX = GAME_WIDTH / 2;
 
+    // Left navigation arrow
+    if (x >= 20 && x <= 80 && y >= cardY && y <= cardY + cardHeight) {
+      if (this.selectedLevelIndex > 0) {
+        this.selectedLevelIndex--;
+        this.audio.playSelect();
+      }
+      return;
+    }
+
+    // Right navigation arrow
+    if (x >= GAME_WIDTH - 80 && x <= GAME_WIDTH - 20 && y >= cardY && y <= cardY + cardHeight) {
+      if (this.selectedLevelIndex < TOTAL_LEVELS - 1) {
+        this.selectedLevelIndex++;
+        this.audio.playSelect();
+      }
+      return;
+    }
+
+    // Check clicks on level cards
     for (let i = 0; i < TOTAL_LEVELS; i++) {
-      const cardX = startX + i * (cardWidth + cardGap);
+      const offsetFromSelected = i - this.selectedLevelIndex;
+      const cardX = centerX - cardWidth / 2 + offsetFromSelected * (cardWidth + cardGap);
+
+      // Skip if card is off screen
+      if (cardX < -cardWidth || cardX > GAME_WIDTH + cardWidth) continue;
+
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
-        const levelId = i + 1;
-        if (this.save.isLevelUnlocked(levelId)) {
-          this.audio.playSelect();
-          this.startLevel(levelId, shiftKey); // Practice mode if shift is held
-        } else if (this.save.canUnlockLevel(levelId)) {
-          if (this.save.unlockLevel(levelId)) {
-            this.audio.playUnlock();
+        if (i === this.selectedLevelIndex) {
+          // Clicked on the center/selected card - play or unlock
+          const levelId = i + 1;
+          if (this.save.isLevelUnlocked(levelId)) {
+            this.audio.playSelect();
+            this.startLevel(levelId, shiftKey); // Practice mode if shift is held
+          } else if (this.save.canUnlockLevel(levelId)) {
+            if (this.save.unlockLevel(levelId)) {
+              this.audio.playUnlock();
+            }
           }
+        } else {
+          // Clicked on a non-selected card - navigate to it
+          this.selectedLevelIndex = i;
+          this.audio.playSelect();
         }
         return;
+      }
+    }
+
+    // Level indicator dots - allow clicking on them to navigate
+    const dotsY = cardY + cardHeight + 30;
+    if (y >= dotsY - 10 && y <= dotsY + 10) {
+      for (let i = 0; i < TOTAL_LEVELS; i++) {
+        const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
+        if (x >= dotX - 10 && x <= dotX + 10) {
+          this.selectedLevelIndex = i;
+          this.audio.playSelect();
+          return;
+        }
       }
     }
   }
@@ -1536,94 +1580,156 @@ export class Game {
     this.ctx.shadowBlur = 0;
     this.ctx.fillText('< Back (ESC)', 20, 45);
 
-    // Level cards (smaller to fit more levels)
+    // Level cards - carousel style with selected level in center
     const cardWidth = 130;
     const cardHeight = 190;
-    const cardGap = 18;
-    const startX = (GAME_WIDTH - (cardWidth * TOTAL_LEVELS + cardGap * (TOTAL_LEVELS - 1))) / 2;
+    const cardGap = 25;
     const cardY = 180;
+    const centerX = GAME_WIDTH / 2;
 
     const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet'];
     const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000'];
     const levelDifficulty = [1, 2, 3, 3, 4, 5, 5]; // 1-5 stars
 
+    // Navigation arrows
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.font = 'bold 40px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+
+    // Left arrow (show if not at first level)
+    if (this.selectedLevelIndex > 0) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText('◀', 50, cardY + cardHeight / 2 + 10);
+    }
+
+    // Right arrow (show if not at last level)
+    if (this.selectedLevelIndex < TOTAL_LEVELS - 1) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText('▶', GAME_WIDTH - 50, cardY + cardHeight / 2 + 10);
+    }
+
+    // Render level cards with the selected one centered
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
-      const cardX = startX + i * (cardWidth + cardGap);
+      const isSelected = i === this.selectedLevelIndex;
+
+      // Calculate position relative to selected level
+      const offsetFromSelected = i - this.selectedLevelIndex;
+      const cardX = centerX - cardWidth / 2 + offsetFromSelected * (cardWidth + cardGap);
+
+      // Skip if card is too far off screen
+      if (cardX < -cardWidth || cardX > GAME_WIDTH + cardWidth) continue;
+
+      // Scale and fade non-selected cards
+      const scale = isSelected ? 1.0 : 0.85;
+      const alpha = isSelected ? 1.0 : 0.6;
+
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
       const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
       const highScore = this.save.getHighScore(levelId);
 
+      this.ctx.save();
+
+      // Apply scale transform around card center
+      const scaledCardWidth = cardWidth * scale;
+      const scaledCardHeight = cardHeight * scale;
+      const scaledCardX = cardX + (cardWidth - scaledCardWidth) / 2;
+      const scaledCardY = cardY + (cardHeight - scaledCardHeight) / 2;
+
+      this.ctx.globalAlpha = alpha;
+
       // Card background
       this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
       this.ctx.strokeStyle = isUnlocked ? levelColors[i] : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
-      this.ctx.lineWidth = 3;
+      this.ctx.lineWidth = isSelected ? 4 : 3;
       this.ctx.beginPath();
-      this.ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 15);
+      this.ctx.roundRect(scaledCardX, scaledCardY, scaledCardWidth, scaledCardHeight, 15 * scale);
       this.ctx.fill();
       this.ctx.stroke();
 
-      this.ctx.textAlign = 'center';
-      const centerX = cardX + cardWidth / 2;
+      // Selected glow effect
+      if (isSelected) {
+        this.ctx.shadowColor = levelColors[i];
+        this.ctx.shadowBlur = 20;
+        this.ctx.stroke();
+        this.ctx.shadowBlur = 0;
+      }
 
-      // Level number (moved up slightly)
-      this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      const cardCenterX = scaledCardX + scaledCardWidth / 2;
+
+      // Level number
+      this.ctx.font = `bold ${Math.round(42 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? levelColors[i] : 'rgba(100, 100, 100, 0.8)';
       this.ctx.shadowColor = levelColors[i];
-      this.ctx.shadowBlur = isUnlocked ? 15 : 0;
-      this.ctx.fillText(`${levelId}`, centerX, cardY + 55);
+      this.ctx.shadowBlur = isUnlocked && isSelected ? 15 : 0;
+      this.ctx.fillText(`${levelId}`, cardCenterX, scaledCardY + 55 * scale);
 
-      // Level name (adjusted position)
-      this.ctx.font = 'bold 15px "Segoe UI", sans-serif';
+      // Level name
+      this.ctx.font = `bold ${Math.round(15 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText(levelNames[i], centerX, cardY + 85);
+      this.ctx.fillText(levelNames[i], cardCenterX, scaledCardY + 85 * scale);
 
       // Difficulty stars
       const difficulty = levelDifficulty[i];
       const starStr = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
-      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.font = `${Math.round(10 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffaa00' : 'rgba(150, 150, 150, 0.6)';
-      this.ctx.fillText(starStr, centerX, cardY + 100);
+      this.ctx.fillText(starStr, cardCenterX, scaledCardY + 100 * scale);
 
       if (isUnlocked) {
-        // High score (more vertical space from name)
-        this.ctx.font = '14px "Segoe UI", sans-serif';
+        // High score
+        this.ctx.font = `${Math.round(14 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = '#ffd700';
-        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', centerX, cardY + 125);
+        this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', cardCenterX, scaledCardY + 125 * scale);
 
-        // Click to play (moved up from card edge)
-        this.ctx.font = '12px "Segoe UI", sans-serif';
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        this.ctx.fillText('Click to play', centerX, cardY + 160);
+        // Click to play (only show on selected)
+        if (isSelected) {
+          this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 160 * scale);
+        }
       } else {
-        // Lock icon (more space from level name, smaller size)
-        this.ctx.font = '20px "Segoe UI", sans-serif';
+        // Lock icon
+        this.ctx.font = `${Math.round(20 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText('🔒', centerX, cardY + 125);
+        this.ctx.fillText('🔒', cardCenterX, scaledCardY + 125 * scale);
 
-        // Cost (adjusted spacing)
-        this.ctx.font = '13px "Segoe UI", sans-serif';
+        // Cost
+        this.ctx.font = `${Math.round(13 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText(`${cost} pts to unlock`, centerX, cardY + 150);
+        this.ctx.fillText(`${cost} pts to unlock`, cardCenterX, scaledCardY + 150 * scale);
 
-        if (canUnlock) {
-          // Click to unlock (moved up from card edge)
-          this.ctx.font = '12px "Segoe UI", sans-serif';
+        if (canUnlock && isSelected) {
+          // Click to unlock
+          this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
           this.ctx.fillStyle = '#ffd700';
-          this.ctx.fillText('Click to unlock!', centerX, cardY + 170);
+          this.ctx.fillText('Click to unlock!', cardCenterX, scaledCardY + 170 * scale);
         }
       }
+
+      this.ctx.restore();
+    }
+
+    // Level indicator dots
+    this.ctx.textAlign = 'center';
+    const dotsY = cardY + cardHeight + 30;
+    for (let i = 0; i < TOTAL_LEVELS; i++) {
+      const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
+      this.ctx.beginPath();
+      this.ctx.arc(dotX, dotsY, i === this.selectedLevelIndex ? 6 : 4, 0, Math.PI * 2);
+      this.ctx.fillStyle = i === this.selectedLevelIndex ? levelColors[i] : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.fill();
     }
 
     // Level features hint
-    this.ctx.textAlign = 'center';
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Each level introduces new challenges and unique music!', GAME_WIDTH / 2, 420);
+    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 440);
     this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 445);
+    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 465);
 
     this.ctx.restore();
   }
