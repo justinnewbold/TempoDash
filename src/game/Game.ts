@@ -2363,6 +2363,9 @@ export class Game {
     this.canvas.style.height = `${editorHeight}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.setupCrispRendering();
+
+    // Initialize touch handling and layout for the editor
+    this.editor.initTouch(this.canvas);
   }
 
   private closeEditor(): void {
@@ -2394,9 +2397,11 @@ export class Game {
     if (!this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
-    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
-    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+    // Use editor dimensions for logical coordinates (editor canvas is larger than game)
+    const editorWidth = GAME_WIDTH + 200;
+    const editorHeight = GAME_HEIGHT + 60;
+    const x = (e.clientX - rect.left) * (editorWidth / rect.width);
+    const y = (e.clientY - rect.top) * (editorHeight / rect.height);
 
     // Check toolbar area
     if (y < this.editor.getToolbarHeight()) {
@@ -2737,6 +2742,9 @@ export class Game {
       this.editor = new LevelEditor(this.editingLevel);
       this.state.gameStatus = 'editor';
       this.audio.stop();
+
+      // Initialize touch handling and layout for the editor
+      this.editor.initTouch(this.canvas);
     }
   }
 
@@ -2744,9 +2752,11 @@ export class Game {
     if (this.state.gameStatus !== 'editor' || !this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
-    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
-    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+    // Use editor dimensions for logical coordinates (editor canvas is larger than game)
+    const editorWidth = GAME_WIDTH + 200;
+    const editorHeight = GAME_HEIGHT + 60;
+    const x = (e.clientX - rect.left) * (editorWidth / rect.width);
+    const y = (e.clientY - rect.top) * (editorHeight / rect.height);
 
     this.editor.handleMouseMove(x, y);
   }
@@ -2761,16 +2771,18 @@ export class Game {
     if (this.state.gameStatus !== 'editor' || !this.editor) return;
 
     const rect = this.canvas.getBoundingClientRect();
-    // Use GAME_WIDTH/HEIGHT for logical coordinates (high-DPI support)
-    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
-    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+    // Use editor dimensions for logical coordinates (editor canvas is larger than game)
+    const editorWidth = GAME_WIDTH + 200;
+    const editorHeight = GAME_HEIGHT + 60;
+    const x = (e.clientX - rect.left) * (editorWidth / rect.width);
+    const y = (e.clientY - rect.top) * (editorHeight / rect.height);
 
     // Check toolbar area
     if (y < this.editor.getToolbarHeight()) {
       this.editor.handleToolbarClick(x, y);
 
-      // Check for save/test/exit buttons
-      const rightX = GAME_WIDTH - 20;
+      // Check for save/test/exit buttons (positioned relative to editor width)
+      const rightX = editorWidth - 20;
       if (y >= 15 && y <= 45) {
         if (x >= rightX - 230 && x <= rightX - 160) {
           this.saveCurrentLevel();
