@@ -1,4 +1,5 @@
 import { CoinConfig, Rectangle } from '../types';
+import { GAME_WIDTH } from '../constants';
 
 export class Coin {
   x: number;
@@ -53,8 +54,8 @@ export class Coin {
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const screenX = this.x - cameraX;
 
-    // Skip if off screen
-    if (screenX < -50 || screenX > ctx.canvas.width + 50) return;
+    // Skip if off screen (use logical game width, not canvas pixel width for high-DPI support)
+    if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
     // Collection animation
     if (this.collected) {
