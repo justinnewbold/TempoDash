@@ -1398,52 +1398,6 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
-    // Dash cooldown indicator (bottom-left)
-    const dashX = 30;
-    const dashY = GAME_HEIGHT - 30;
-    const dashRadius = 15;
-    const cooldownProgress = this.player.getDashCooldownProgress();
-    const canDash = this.player.canDash();
-
-    // Background circle
-    this.ctx.beginPath();
-    this.ctx.arc(dashX, dashY, dashRadius, 0, Math.PI * 2);
-    this.ctx.fillStyle = canDash ? 'rgba(255, 200, 50, 0.3)' : 'rgba(100, 100, 100, 0.3)';
-    this.ctx.fill();
-
-    // Cooldown arc (fills clockwise as cooldown recharges)
-    if (cooldownProgress > 0) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(dashX, dashY);
-      const startAngle = -Math.PI / 2;
-      const endAngle = startAngle + (1 - cooldownProgress) * Math.PI * 2;
-      this.ctx.arc(dashX, dashY, dashRadius, startAngle, endAngle);
-      this.ctx.closePath();
-      this.ctx.fillStyle = 'rgba(255, 200, 50, 0.6)';
-      this.ctx.fill();
-    }
-
-    // Border
-    this.ctx.beginPath();
-    this.ctx.arc(dashX, dashY, dashRadius, 0, Math.PI * 2);
-    this.ctx.strokeStyle = canDash ? '#ffcc00' : 'rgba(150, 150, 150, 0.5)';
-    this.ctx.lineWidth = canDash ? 2 : 1;
-    this.ctx.stroke();
-
-    // Dash icon (lightning bolt or "D")
-    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillStyle = canDash ? '#ffcc00' : 'rgba(150, 150, 150, 0.8)';
-    this.ctx.shadowBlur = canDash ? 5 : 0;
-    this.ctx.shadowColor = '#ffcc00';
-    this.ctx.fillText('⚡', dashX, dashY + 5);
-    this.ctx.shadowBlur = 0;
-
-    // "SHIFT" label below
-    this.ctx.font = '9px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('SHIFT', dashX, dashY + 28);
-
     this.ctx.restore();
   }
 
