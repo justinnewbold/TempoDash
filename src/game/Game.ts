@@ -151,6 +151,13 @@ export class Game {
         return;
       }
 
+      // Dismiss tutorial on any tap (must check before gameStatus since tutorial shows during 'playing')
+      if (this.showingTutorial) {
+        e.preventDefault();
+        this.dismissTutorial();
+        return;
+      }
+
       // Only handle single-touch taps for menu navigation
       if (e.changedTouches.length === 1 && this.state.gameStatus !== 'playing') {
         e.preventDefault();
