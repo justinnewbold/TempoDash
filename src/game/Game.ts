@@ -2311,6 +2311,8 @@ export class Game {
       this.editingLevel = this.customLevelManager.createNewLevel();
     }
     this.editor = new LevelEditor(this.editingLevel);
+    this.editor.setOnSave(() => this.saveCurrentLevel());
+    this.editor.setOnPlay(() => this.testLevel());
     this.state.gameStatus = 'editor';
 
     // Resize canvas for editor (needs more space for UI) with high-DPI support
@@ -2694,6 +2696,8 @@ export class Game {
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.setupCrispRendering();
       this.editor = new LevelEditor(this.editingLevel);
+      this.editor.setOnSave(() => this.saveCurrentLevel());
+      this.editor.setOnPlay(() => this.testLevel());
       this.state.gameStatus = 'editor';
       this.audio.stop();
     }

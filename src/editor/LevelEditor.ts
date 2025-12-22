@@ -81,6 +81,10 @@ export class LevelEditor {
   // Canvas reference for touch handling
   private canvas: HTMLCanvasElement | null = null;
 
+  // Callbacks for external actions
+  private onSaveCallback: (() => void) | null = null;
+  private onPlayCallback: (() => void) | null = null;
+
   constructor(level: CustomLevel) {
     this.level = level;
     this.background = new Background(level.background);
@@ -757,6 +761,16 @@ export class LevelEditor {
   // Get current level
   getLevel(): CustomLevel {
     return this.level;
+  }
+
+  // Set callback for save action
+  setOnSave(callback: () => void): void {
+    this.onSaveCallback = callback;
+  }
+
+  // Set callback for play/test action
+  setOnPlay(callback: () => void): void {
+    this.onPlayCallback = callback;
   }
 
   // Update level name
@@ -1748,6 +1762,25 @@ export class LevelEditor {
       buttonX += 80;
     }
 
+    // Play and Save buttons (center area)
+    buttonX += 20; // Add gap after tools
+
+    // Play button
+    ctx.fillStyle = '#2d7d46';
+    ctx.fillRect(buttonX, 10, 60, 40);
+    ctx.fillStyle = '#66ff88';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('PLAY', buttonX + 12, 35);
+
+    buttonX += 70;
+
+    // Save button
+    ctx.fillStyle = '#4a6fa5';
+    ctx.fillRect(buttonX, 10, 60, 40);
+    ctx.fillStyle = '#88bbff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('SAVE', buttonX + 12, 35);
+
     // Undo/Redo buttons
     buttonX = GAME_WIDTH + this.sidebarWidth - 170;
 
@@ -1771,59 +1804,48 @@ export class LevelEditor {
     ctx.fillRect(0, this.toolbarHeight, this.sidebarWidth, GAME_HEIGHT);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 12px sans-serif';
 
     // Platform types section
-    ctx.fillText('Platform Types', 15, this.toolbarHeight + 25);
+    ctx.fillText('Platform Types', 15, this.toolbarHeight + 20);
 
-    let y = this.toolbarHeight + 45;
+    let y = this.toolbarHeight + 32;
     for (const type of PLATFORM_TYPES) {
       const isSelected = this.state.selectedPlatformType === type;
 
       ctx.fillStyle = isSelected ? PLATFORM_COLORS[type] : '#3a3a4e';
-      ctx.fillRect(10, y, this.sidebarWidth - 20, 28);
+      ctx.fillRect(10, y, this.sidebarWidth - 20, 22);
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = '12px sans-serif';
-      ctx.fillText(type.toUpperCase(), 20, y + 18);
+      ctx.font = '10px sans-serif';
+      ctx.fillText(type.toUpperCase(), 20, y + 15);
 
       // Color indicator
       ctx.fillStyle = PLATFORM_COLORS[type];
-      ctx.fillRect(this.sidebarWidth - 35, y + 6, 16, 16);
+      ctx.fillRect(this.sidebarWidth - 30, y + 4, 14, 14);
 
-      y += 32;
+      y += 24;
     }
 
     // Background section
-    y += 20;
+    y += 10;
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 12px sans-serif';
     ctx.fillText('Background', 15, y);
 
-    y += 20;
+    y += 16;
     for (const bgType of BACKGROUND_TYPES) {
       const isSelected = this.level.background.type === bgType;
 
       ctx.fillStyle = isSelected ? '#4a9eff' : '#3a3a4e';
-      ctx.fillRect(10, y, this.sidebarWidth - 20, 24);
+      ctx.fillRect(10, y, this.sidebarWidth - 20, 20);
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = '11px sans-serif';
-      ctx.fillText(bgType.toUpperCase(), 20, y + 16);
+      ctx.font = '10px sans-serif';
+      ctx.fillText(bgType.toUpperCase(), 20, y + 14);
 
-      y += 28;
+      y += 22;
     }
-
-    // Controls help
-    y = GAME_HEIGHT + this.toolbarHeight - 120;
-    ctx.fillStyle = '#666666';
-    ctx.font = '10px sans-serif';
-    ctx.fillText('Controls:', 15, y);
-    ctx.fillText('Click: Place/Select', 15, y + 15);
-    ctx.fillText('Drag: Move element', 15, y + 30);
-    ctx.fillText('Del: Delete selected', 15, y + 45);
-    ctx.fillText('G: Toggle grid', 15, y + 60);
-    ctx.fillText('Arrow keys: Pan', 15, y + 75);
   }
 
   // Get toolbar/sidebar dimensions for click detection
@@ -1838,25 +1860,25 @@ export class LevelEditor {
   // Handle sidebar clicks
   handleSidebarClick(x: number, y: number): void {
     // Platform type buttons
-    let buttonY = this.toolbarHeight + 45;
+    let buttonY = this.toolbarHeight + 32;
     for (const type of PLATFORM_TYPES) {
       if (x >= 10 && x <= this.sidebarWidth - 10 &&
-          y >= buttonY && y <= buttonY + 28) {
+          y >= buttonY && y <= buttonY + 22) {
         this.setPlatformType(type);
         return;
       }
-      buttonY += 32;
+      buttonY += 24;
     }
 
-    // Background buttons
-    buttonY += 40;
+    // Background buttons (10px gap + 16px for label)
+    buttonY += 26;
     for (const bgType of BACKGROUND_TYPES) {
       if (x >= 10 && x <= this.sidebarWidth - 10 &&
-          y >= buttonY && y <= buttonY + 24) {
+          y >= buttonY && y <= buttonY + 20) {
         this.setBackgroundType(bgType);
         return;
       }
-      buttonY += 28;
+      buttonY += 22;
     }
   }
 
@@ -1871,6 +1893,24 @@ export class LevelEditor {
         return;
       }
       buttonX += 80;
+    }
+
+    // Play button (after tools + 20px gap)
+    buttonX += 20;
+    if (x >= buttonX && x <= buttonX + 60 && y >= 10 && y <= 50) {
+      if (this.onPlayCallback) {
+        this.onPlayCallback();
+      }
+      return;
+    }
+
+    // Save button
+    buttonX += 70;
+    if (x >= buttonX && x <= buttonX + 60 && y >= 10 && y <= 50) {
+      if (this.onSaveCallback) {
+        this.onSaveCallback();
+      }
+      return;
     }
 
     // Undo button
