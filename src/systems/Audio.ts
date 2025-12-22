@@ -1,16 +1,30 @@
-// Procedural EDM/Dubstep music system using Web Audio API
-// Generates heavy electronic beats with wobble bass, drops, and synths
+// Procedural EDM music system using Web Audio API
+// Based on the Neon Pulse Engine with multiple music styles
 
-export type MusicStyle = 'energetic' | 'dark' | 'epic';
+export type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic';
 
-interface MusicPatterns {
-  bass: string[];
-  melody: string[];
-  arp: string[];
-  bpm: number;
-  wobbleRate: number; // LFO rate for wobble bass
-  dropBeat: number;   // Beat where "drop" happens
+interface MusicPreset {
+  tempo: number;
+  bassFreqs: number[];
+  leadFreqs: number[];
+  bassWave: OscillatorType;
+  leadWave: OscillatorType;
+  arpPattern: number[];
+  useDelay: boolean;
+  filterQ: number;
+  drumStyle: 'soft' | 'standard' | 'distorted' | 'bit';
 }
+
+// Map levels to music styles
+export const LEVEL_MUSIC: Record<number, MusicStyle> = {
+  1: 'noir',      // Level 1: Neon Noir - smooth intro
+  2: 'funk',      // Level 2: Cyber Funk - upbeat
+  3: 'crystal',   // Level 3: Crystalline - dreamy
+  4: 'focus',     // Level 4: Deep Focus - steady
+  5: 'sludge',    // Level 5: Sludge Factory - heavy
+  6: 'hazard',    // Level 6: Biohazard - aggressive
+  7: 'energetic', // Level 7: Festival EDM - finale
+};
 
 export class AudioManager {
   private audioContext: AudioContext | null = null;
@@ -18,64 +32,111 @@ export class AudioManager {
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private isPlaying = false;
-  private bpm = 140; // EDM tempo
-  private beatInterval: number | null = null;
-  private currentBeat = 0;
   private isMuted = false;
-  private beatCallback: ((beat: number) => void) | null = null;
-  private currentStyle: MusicStyle = 'energetic';
-  private barCount = 0;
   private musicVolume = 0.3;
   private sfxVolume = 0.5;
 
-  // Musical notes (frequencies in Hz)
-  private notes: Record<string, number> = {
-    C2: 65.41, D2: 73.42, E2: 82.41, F2: 87.31, G2: 98.00, A2: 110.00, B2: 123.47,
-    C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
-    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
-    C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00, B5: 987.77,
-    C6: 1046.50, D6: 1174.66, E6: 1318.51,
-  };
+  // Scheduler variables
+  private nextNoteTime = 0.0;
+  private noteIndex = 0;
+  private readonly lookahead = 25.0; // ms
+  private readonly scheduleAheadTime = 0.1; // seconds
+  private timerID: number | null = null;
 
-  // EDM/Dubstep music styles for different levels
-  private musicStyles: Record<MusicStyle, MusicPatterns> = {
-    // Level 1: Festival EDM (F major, energetic)
+  private currentPreset: MusicPreset;
+  private currentStyle: MusicStyle = 'noir';
+  private beatCallback: ((beat: number) => void) | null = null;
+
+  // Music presets from Neon Pulse Engine
+  private presets: Record<MusicStyle, MusicPreset> = {
+    // Neon Noir (90 BPM) - D Minor Blues: smooth, jazzy
+    noir: {
+      tempo: 90,
+      bassFreqs: [73.42, 87.31, 98.00, 103.83],
+      leadFreqs: [293.66, 349.23, 392.00, 415.30, 440.00],
+      bassWave: 'triangle',
+      leadWave: 'square',
+      arpPattern: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+      useDelay: true,
+      filterQ: 2,
+      drumStyle: 'soft',
+    },
+    // Cyber Funk (112 BPM) - Dorian mode: funky and bright
+    funk: {
+      tempo: 112,
+      bassFreqs: [73.42, 73.42, 110.00, 87.31],
+      leadFreqs: [440.00, 523.25, 587.33, 659.25, 783.99],
+      bassWave: 'sawtooth',
+      leadWave: 'sawtooth',
+      arpPattern: [0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1],
+      useDelay: false,
+      filterQ: 15,
+      drumStyle: 'standard',
+    },
+    // Sludge Factory (85 BPM) - Phrygian Dominant: dark, heavy
+    sludge: {
+      tempo: 85,
+      bassFreqs: [36.71, 38.89, 46.25, 36.71],
+      leadFreqs: [146.83, 155.56, 185.00, 220.00],
+      bassWave: 'sawtooth',
+      leadWave: 'square',
+      arpPattern: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+      useDelay: true,
+      filterQ: 1,
+      drumStyle: 'distorted',
+    },
+    // Deep Focus (120 BPM) - Pentatonic: steady, clean
+    focus: {
+      tempo: 120,
+      bassFreqs: [55.00, 55.00, 65.41, 48.99],
+      leadFreqs: [440.00, 523.25, 659.25, 880.00],
+      bassWave: 'square',
+      leadWave: 'sine',
+      arpPattern: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+      useDelay: true,
+      filterQ: 0,
+      drumStyle: 'bit',
+    },
+    // Crystalline (95 BPM) - Lydian mode: dreamy, sci-fi
+    crystal: {
+      tempo: 95,
+      bassFreqs: [73.42, 82.41, 110.00, 123.47],
+      leadFreqs: [587.33, 739.99, 880.00, 1108.73],
+      bassWave: 'sine',
+      leadWave: 'triangle',
+      arpPattern: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+      useDelay: true,
+      filterQ: 0,
+      drumStyle: 'soft',
+    },
+    // Biohazard (108 BPM) - Chromatic/Dissonant: aggressive
+    hazard: {
+      tempo: 108,
+      bassFreqs: [55, 58.27, 55, 61.74],
+      leadFreqs: [440, 466.16, 311.13, 622.25],
+      bassWave: 'sawtooth',
+      leadWave: 'sawtooth',
+      arpPattern: [1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0],
+      useDelay: false,
+      filterQ: 25,
+      drumStyle: 'distorted',
+    },
+    // Festival EDM (128 BPM) - F Major: energetic finale
     energetic: {
-      bass: ['F2', 'F2', 'F2', 'F2', 'C3', 'C3', 'D3', 'D3'],
-      melody: ['F4', 'A4', 'C5', 'F5', 'C5', 'A4', 'F4', 'C4'],
-      arp: ['F5', 'A5', 'C6', 'F5', 'A5', 'C6', 'F5', 'A5'],
-      bpm: 128,
-      wobbleRate: 4,
-      dropBeat: 0,
-    },
-    // Level 2: Dark Dubstep (D minor, heavy wobble)
-    dark: {
-      bass: ['D2', 'D2', 'A2', 'A2', 'F2', 'F2', 'G2', 'G2'],
-      melody: ['D4', 'F4', 'A4', 'D5', 'A4', 'F4', 'E4', 'D4'],
-      arp: ['D5', 'F5', 'A5', 'D5', 'F5', 'A5', 'D5', 'F5'],
-      bpm: 140,
-      wobbleRate: 8,
-      dropBeat: 4,
-    },
-    // Level 3: Epic Drumstep (E minor, fast and intense)
-    epic: {
-      bass: ['E2', 'E2', 'B2', 'B2', 'G2', 'G2', 'A2', 'A2'],
-      melody: ['E5', 'G5', 'B5', 'E6', 'B5', 'G5', 'E5', 'D5'],
-      arp: ['E5', 'G5', 'B5', 'E5', 'G5', 'B5', 'E5', 'G5'],
-      bpm: 150,
-      wobbleRate: 16,
-      dropBeat: 0,
+      tempo: 128,
+      bassFreqs: [87.31, 87.31, 130.81, 110.00],
+      leadFreqs: [349.23, 440.00, 523.25, 698.46, 880.00],
+      bassWave: 'sawtooth',
+      leadWave: 'sawtooth',
+      arpPattern: [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1],
+      useDelay: true,
+      filterQ: 8,
+      drumStyle: 'standard',
     },
   };
-
-  // Current patterns (set by style)
-  private bassPattern: string[] = this.musicStyles.energetic.bass;
-  private melodyPattern: string[] = this.musicStyles.energetic.melody;
-  private arpPattern: string[] = this.musicStyles.energetic.arp;
-  private wobbleRate: number = 4;
 
   constructor() {
-    // Audio context will be created on first user interaction
+    this.currentPreset = this.presets.noir;
   }
 
   private initAudioContext(): void {
@@ -88,12 +149,10 @@ export class AudioManager {
       this.masterGain.gain.value = 1.0;
       this.masterGain.connect(this.audioContext.destination);
 
-      // Separate gain for music
       this.musicGain = this.audioContext.createGain();
       this.musicGain.gain.value = this.musicVolume;
       this.musicGain.connect(this.masterGain);
 
-      // Separate gain for sound effects
       this.sfxGain = this.audioContext.createGain();
       this.sfxGain.gain.value = this.sfxVolume;
       this.sfxGain.connect(this.masterGain);
@@ -130,30 +189,23 @@ export class AudioManager {
     this.initAudioContext();
     if (!this.audioContext || !this.masterGain) return;
 
-    // Resume audio context if suspended (browser autoplay policy)
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
 
     this.isPlaying = true;
-    this.currentBeat = 0;
-
-    const beatDuration = 60000 / this.bpm / 2; // Eighth notes
-
-    // Start the beat loop
-    this.playBeat();
-    this.beatInterval = window.setInterval(() => {
-      this.playBeat();
-    }, beatDuration);
+    this.noteIndex = 0;
+    this.nextNoteTime = this.audioContext.currentTime + 0.1;
+    this.scheduler();
   }
 
   stop(): void {
     if (!this.isPlaying) return;
 
     this.isPlaying = false;
-    if (this.beatInterval !== null) {
-      clearInterval(this.beatInterval);
-      this.beatInterval = null;
+    if (this.timerID !== null) {
+      clearTimeout(this.timerID);
+      this.timerID = null;
     }
   }
 
@@ -174,7 +226,7 @@ export class AudioManager {
   }
 
   getBPM(): number {
-    return this.bpm;
+    return this.currentPreset.tempo;
   }
 
   setStyle(style: MusicStyle): void {
@@ -184,318 +236,246 @@ export class AudioManager {
     }
 
     this.currentStyle = style;
-    const patterns = this.musicStyles[style];
-    this.bassPattern = patterns.bass;
-    this.melodyPattern = patterns.melody;
-    this.arpPattern = patterns.arp;
-    this.bpm = patterns.bpm;
-    this.wobbleRate = patterns.wobbleRate;
-    this.barCount = 0;
+    this.currentPreset = this.presets[style];
 
     if (wasPlaying) {
       this.start();
     }
   }
 
+  setStyleForLevel(levelId: number): void {
+    const style = LEVEL_MUSIC[levelId] || 'noir';
+    this.setStyle(style);
+  }
+
   getStyle(): MusicStyle {
     return this.currentStyle;
   }
 
-  private playBeat(): void {
-    if (!this.audioContext || !this.musicGain || this.isMuted) return;
+  getStyleName(): string {
+    const names: Record<MusicStyle, string> = {
+      noir: 'Neon Noir',
+      funk: 'Cyber Funk',
+      sludge: 'Sludge Factory',
+      focus: 'Deep Focus',
+      crystal: 'Crystalline',
+      hazard: 'Biohazard',
+      energetic: 'Festival EDM',
+    };
+    return names[this.currentStyle];
+  }
 
-    const time = this.audioContext.currentTime;
-    const beatIndex = this.currentBeat % 8;
+  // --- SCHEDULER (from Neon Pulse Engine) ---
 
-    // Track bar for build-up/drop dynamics
-    if (beatIndex === 0) {
-      this.barCount++;
+  private scheduler(): void {
+    if (!this.audioContext) return;
+
+    while (this.nextNoteTime < this.audioContext.currentTime + this.scheduleAheadTime) {
+      this.scheduleNote(this.noteIndex, this.nextNoteTime);
+      this.nextNote();
     }
+    this.timerID = window.setTimeout(() => this.scheduler(), this.lookahead);
+  }
 
-    // Wobble bass - the signature dubstep sound
-    this.playWobbleBass(this.bassPattern[beatIndex], time);
-
-    // Heavy kick drum on beats 0, 2, 4, 6
-    if (beatIndex % 2 === 0) {
-      this.playKick(time, beatIndex === 0);
+  private nextNote(): void {
+    const secondsPerBeat = 60.0 / this.currentPreset.tempo;
+    this.nextNoteTime += 0.25 * secondsPerBeat;
+    this.noteIndex++;
+    if (this.noteIndex === 16) {
+      this.noteIndex = 0;
     }
+  }
 
-    // Punchy hi-hat pattern
-    this.playHiHat(time, beatIndex % 2 === 1);
+  private scheduleNote(beatNumber: number, time: number): void {
+    if (this.isMuted) return;
 
-    // Snare on beats 2 and 6 (the backbeat)
-    if (beatIndex === 2 || beatIndex === 6) {
-      this.playSnare(time);
-    }
-
-    // EDM supersaw lead melody
-    if (beatIndex % 2 === 0) {
-      this.playSupersaw(this.melodyPattern[Math.floor(beatIndex / 2) % this.melodyPattern.length], time);
-    }
-
-    // Bright pluck arp
-    this.playPluckArp(this.arpPattern[beatIndex], time);
-
-    // Add sub bass for extra low end
-    if (beatIndex % 4 === 0) {
-      this.playSubBass(this.bassPattern[beatIndex], time);
-    }
+    const p = this.currentPreset;
 
     // Fire beat callback for visual sync
     if (this.beatCallback) {
-      this.beatCallback(this.currentBeat);
+      this.beatCallback(beatNumber);
     }
 
-    this.currentBeat++;
+    // --- KICK ---
+    let playKick = false;
+    if (p.drumStyle === 'distorted') {
+      if (beatNumber === 0 || beatNumber === 10) playKick = true;
+    } else if (p.drumStyle === 'soft') {
+      if (beatNumber === 0 || beatNumber === 8) playKick = true;
+    } else {
+      if (beatNumber % 4 === 0) playKick = true;
+    }
+
+    if (playKick) {
+      this.playKick(time, p.drumStyle === 'distorted' ? 1.2 : 0.8);
+    }
+
+    // --- SNARE ---
+    if (beatNumber % 8 === 4) {
+      this.playSnare(time);
+    }
+
+    // --- HATS ---
+    if (p.drumStyle !== 'soft') {
+      if (beatNumber % 2 === 0) this.playHiHat(time, 0.05);
+      else this.playHiHat(time, 0.02);
+    } else {
+      if (beatNumber % 4 === 2) this.playHiHat(time, 0.1);
+    }
+
+    // --- BASS ---
+    if (p.drumStyle === 'distorted') {
+      if (beatNumber === 0 || beatNumber === 10) {
+        const freq = p.bassFreqs[Math.floor(Math.random() * p.bassFreqs.length)];
+        this.playBass(time, freq, 0.8);
+      }
+    } else {
+      if (beatNumber % 4 !== 0 || p.tempo > 110) {
+        const freq = p.bassFreqs[Math.floor(Math.random() * p.bassFreqs.length)];
+        this.playBass(time, freq, 0.25);
+      }
+    }
+
+    // --- LEAD ---
+    if (p.arpPattern[beatNumber]) {
+      const note = p.leadFreqs[Math.floor(Math.random() * p.leadFreqs.length)];
+      this.playLead(time, note);
+    }
   }
 
-  // Dubstep wobble bass with LFO modulation
-  private playWobbleBass(note: string, time: number): void {
+  // --- SYNTHESIZERS ---
+
+  private playKick(time: number, vol: number): void {
     if (!this.audioContext || !this.musicGain) return;
 
-    const freq = this.notes[note] || 65.41;
-    const duration = 0.25;
-
-    // Main oscillator (sawtooth for that gritty sound)
-    const osc = this.audioContext.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = freq;
-
-    // Second oscillator slightly detuned
-    const osc2 = this.audioContext.createOscillator();
-    osc2.type = 'square';
-    osc2.frequency.value = freq * 1.005;
-
-    // LFO for the wobble effect
-    const lfo = this.audioContext.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = this.wobbleRate;
-
-    // Filter for the wub-wub sound
-    const filter = this.audioContext.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 400;
-    filter.Q.value = 8;
-
-    // LFO controls filter cutoff
-    const lfoGain = this.audioContext.createGain();
-    lfoGain.gain.value = 600;
-    lfo.connect(lfoGain);
-    lfoGain.connect(filter.frequency);
-
-    // Output gain
-    const gain = this.audioContext.createGain();
-    gain.gain.setValueAtTime(0.2, time);
-    gain.gain.exponentialDecayTo(0.01, time + duration);
-
-    // Connect everything
-    osc.connect(filter);
-    osc2.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-
-    osc.start(time);
-    osc2.start(time);
-    lfo.start(time);
-    osc.stop(time + duration);
-    osc2.stop(time + duration);
-    lfo.stop(time + duration);
-  }
-
-  // Deep sub bass for that chest-thumping low end
-  private playSubBass(note: string, time: number): void {
-    if (!this.audioContext || !this.musicGain) return;
-
-    const freq = this.notes[note] || 65.41;
     const osc = this.audioContext.createOscillator();
     const gain = this.audioContext.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.value = freq / 2; // One octave lower
-
-    gain.gain.setValueAtTime(0.25, time);
-    gain.gain.exponentialDecayTo(0.01, time + 0.3);
-
+    osc.frequency.setValueAtTime(150, time);
+    osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+    gain.gain.setValueAtTime(vol * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
     osc.connect(gain);
     gain.connect(this.musicGain);
-
     osc.start(time);
-    osc.stop(time + 0.35);
+    osc.stop(time + 0.5);
   }
 
-  // EDM supersaw lead sound
-  private playSupersaw(note: string, time: number): void {
-    if (!this.audioContext || !this.musicGain) return;
-
-    const freq = this.notes[note] || 261.63;
-    const detune = [0, -10, 10, -20, 20, -7, 7]; // Multiple detuned oscillators
-    const gain = this.audioContext.createGain();
-    gain.gain.setValueAtTime(0.06, time);
-    gain.gain.exponentialDecayTo(0.001, time + 0.2);
-
-    detune.forEach(d => {
-      const osc = this.audioContext!.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.value = freq;
-      osc.detune.value = d;
-      osc.connect(gain);
-      osc.start(time);
-      osc.stop(time + 0.25);
-    });
-
-    gain.connect(this.musicGain);
-  }
-
-  // Bright pluck arp for that festival feel
-  private playPluckArp(note: string, time: number): void {
-    if (!this.audioContext || !this.musicGain) return;
-
-    const freq = this.notes[note] || 523.25;
-
-    const osc = this.audioContext.createOscillator();
-    const osc2 = this.audioContext.createOscillator();
-
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    osc2.type = 'triangle';
-    osc2.frequency.value = freq * 2;
-
-    const filter = this.audioContext.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(4000, time);
-    filter.frequency.exponentialRampToValueAtTime(500, time + 0.1);
-
-    const gain = this.audioContext.createGain();
-    gain.gain.setValueAtTime(0.08, time);
-    gain.gain.exponentialDecayTo(0.001, time + 0.1);
-
-    osc.connect(filter);
-    osc2.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-
-    osc.start(time);
-    osc2.start(time);
-    osc.stop(time + 0.15);
-    osc2.stop(time + 0.15);
-  }
-
-  // Heavy EDM kick drum
-  private playKick(time: number, isDownbeat: boolean = false): void {
-    if (!this.audioContext || !this.musicGain) return;
-
-    // Main kick body
-    const osc = this.audioContext.createOscillator();
-    const gain = this.audioContext.createGain();
-
-    osc.type = 'sine';
-    const kickVolume = isDownbeat ? 0.6 : 0.45;
-    osc.frequency.setValueAtTime(isDownbeat ? 180 : 160, time);
-    osc.frequency.exponentialRampToValueAtTime(35, time + 0.12);
-
-    gain.gain.setValueAtTime(kickVolume, time);
-    gain.gain.exponentialDecayTo(0.01, time + 0.18);
-
-    osc.connect(gain);
-    gain.connect(this.musicGain);
-
-    osc.start(time);
-    osc.stop(time + 0.25);
-
-    // Add punch/click transient
-    const click = this.audioContext.createOscillator();
-    const clickGain = this.audioContext.createGain();
-    click.type = 'square';
-    click.frequency.value = 1500;
-    clickGain.gain.setValueAtTime(0.1, time);
-    clickGain.gain.exponentialDecayTo(0.001, time + 0.02);
-    click.connect(clickGain);
-    clickGain.connect(this.musicGain);
-    click.start(time);
-    click.stop(time + 0.03);
-  }
-
-  // Punchy EDM snare with layered noise
   private playSnare(time: number): void {
     if (!this.audioContext || !this.musicGain) return;
 
-    // Noise layer
-    const bufferSize = this.audioContext.sampleRate * 0.15;
+    const bufferSize = this.audioContext.sampleRate * 0.1;
     const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
     const data = buffer.getChannelData(0);
-
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
 
     const noise = this.audioContext.createBufferSource();
     noise.buffer = buffer;
-
-    const noiseGain = this.audioContext.createGain();
-    noiseGain.gain.setValueAtTime(0.2, time);
-    noiseGain.gain.exponentialDecayTo(0.01, time + 0.12);
 
     const filter = this.audioContext.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 2000;
-
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.musicGain);
-
-    noise.start(time);
-    noise.stop(time + 0.15);
-
-    // Tonal body
-    const osc = this.audioContext.createOscillator();
-    const oscGain = this.audioContext.createGain();
-
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(250, time);
-    osc.frequency.exponentialRampToValueAtTime(120, time + 0.06);
-
-    oscGain.gain.setValueAtTime(0.15, time);
-    oscGain.gain.exponentialDecayTo(0.01, time + 0.06);
-
-    osc.connect(oscGain);
-    oscGain.connect(this.musicGain);
-
-    osc.start(time);
-    osc.stop(time + 0.1);
-  }
-
-  // Crisp hi-hat
-  private playHiHat(time: number, open: boolean): void {
-    if (!this.audioContext || !this.musicGain) return;
-
-    const bufferSize = this.audioContext.sampleRate * (open ? 0.12 : 0.04);
-    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-    const data = buffer.getChannelData(0);
-
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+    if (this.currentPreset.drumStyle === 'bit') {
+      filter.type = 'lowpass';
+      filter.frequency.value = 3000;
+    } else {
+      filter.type = 'highpass';
+      filter.frequency.value = 1000;
     }
-
-    const noise = this.audioContext.createBufferSource();
-    noise.buffer = buffer;
 
     const gain = this.audioContext.createGain();
-    gain.gain.setValueAtTime(open ? 0.08 : 0.1, time);
-    gain.gain.exponentialDecayTo(0.001, time + (open ? 0.12 : 0.04));
-
-    const filter = this.audioContext.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 9000;
+    gain.gain.setValueAtTime(0.5 * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(this.musicGain);
-
     noise.start(time);
-    noise.stop(time + (open ? 0.12 : 0.04));
   }
 
-  // Play a death sound effect
+  private playHiHat(time: number, duration: number): void {
+    if (!this.audioContext || !this.musicGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    osc.type = this.currentPreset.drumStyle === 'bit' ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(800, time);
+
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 7000;
+
+    gain.gain.setValueAtTime(0.1 * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    osc.start(time);
+    osc.stop(time + duration);
+  }
+
+  private playBass(time: number, freq: number, duration: number): void {
+    if (!this.audioContext || !this.musicGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    const filter = this.audioContext.createBiquadFilter();
+
+    osc.type = this.currentPreset.bassWave;
+    osc.frequency.setValueAtTime(freq, time);
+
+    filter.type = 'lowpass';
+    filter.Q.value = this.currentPreset.filterQ;
+    filter.frequency.setValueAtTime(freq * 3, time);
+    filter.frequency.exponentialRampToValueAtTime(freq, time + duration);
+
+    gain.gain.setValueAtTime(0.4 * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    osc.start(time);
+    osc.stop(time + duration);
+  }
+
+  private playLead(time: number, freq: number): void {
+    if (!this.audioContext || !this.musicGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    osc.type = this.currentPreset.leadWave;
+    osc.frequency.setValueAtTime(freq, time);
+
+    gain.gain.setValueAtTime(0.1 * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
+
+    if (this.currentPreset.useDelay) {
+      const osc2 = this.audioContext.createOscillator();
+      osc2.type = this.currentPreset.leadWave;
+      osc2.frequency.setValueAtTime(freq + 3, time);
+
+      const delay = this.audioContext.createDelay();
+      delay.delayTime.value = 0.30;
+      const delayGain = this.audioContext.createGain();
+      delayGain.gain.value = 0.3;
+
+      osc.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.musicGain);
+      gain.connect(delay);
+      delay.connect(delayGain);
+      delayGain.connect(this.musicGain);
+      osc2.start(time);
+      osc2.stop(time + 0.2);
+    } else {
+      osc.connect(gain);
+      gain.connect(this.musicGain);
+    }
+    osc.start(time);
+    osc.stop(time + 0.2);
+  }
+
+  // --- SOUND EFFECTS ---
+
   playDeath(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
@@ -510,7 +490,7 @@ export class AudioManager {
     osc.frequency.exponentialRampToValueAtTime(50, time + 0.3);
 
     gain.gain.setValueAtTime(0.3, time);
-    gain.gain.exponentialDecayTo(0.001, time + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
 
     osc.connect(gain);
     gain.connect(this.sfxGain);
@@ -519,7 +499,6 @@ export class AudioManager {
     osc.stop(time + 0.35);
   }
 
-  // Play a jump sound effect
   playJump(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
@@ -534,7 +513,7 @@ export class AudioManager {
     osc.frequency.exponentialRampToValueAtTime(700, time + 0.08);
 
     gain.gain.setValueAtTime(0.15, time);
-    gain.gain.exponentialDecayTo(0.001, time + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
 
     osc.connect(gain);
     gain.connect(this.sfxGain);
@@ -543,13 +522,12 @@ export class AudioManager {
     osc.stop(time + 0.12);
   }
 
-  // Play level complete sound - triumphant arpeggio
   playLevelComplete(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
 
     const time = this.audioContext.currentTime;
-    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]; // C5, E5, G5, C6, E6
+    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
 
     notes.forEach((freq, i) => {
       const osc = this.audioContext!.createOscillator();
@@ -563,7 +541,7 @@ export class AudioManager {
 
       gain.gain.setValueAtTime(0, time + i * 0.12);
       gain.gain.linearRampToValueAtTime(0.2, time + i * 0.12 + 0.03);
-      gain.gain.exponentialDecayTo(0.001, time + i * 0.12 + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + i * 0.12 + 0.5);
 
       osc.connect(gain);
       osc2.connect(gain);
@@ -576,7 +554,6 @@ export class AudioManager {
     });
   }
 
-  // Play menu select sound
   playSelect(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
@@ -590,7 +567,7 @@ export class AudioManager {
     osc.frequency.exponentialRampToValueAtTime(800, time + 0.05);
 
     gain.gain.setValueAtTime(0.15, time);
-    gain.gain.exponentialDecayTo(0.001, time + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
 
     osc.connect(gain);
     gain.connect(this.sfxGain);
@@ -599,13 +576,12 @@ export class AudioManager {
     osc.stop(time + 0.1);
   }
 
-  // Play unlock sound
   playUnlock(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
 
     const time = this.audioContext.currentTime;
-    const notes = [523.25, 783.99, 1046.50]; // C5, G5, C6
+    const notes = [523.25, 783.99, 1046.50];
 
     notes.forEach((freq, i) => {
       const osc = this.audioContext!.createOscillator();
@@ -615,7 +591,7 @@ export class AudioManager {
       osc.frequency.value = freq;
 
       gain.gain.setValueAtTime(0.2, time + i * 0.08);
-      gain.gain.exponentialDecayTo(0.001, time + i * 0.08 + 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + i * 0.08 + 0.2);
 
       osc.connect(gain);
       gain.connect(this.sfxGain!);
@@ -625,15 +601,3 @@ export class AudioManager {
     });
   }
 }
-
-// Polyfill for exponentialDecayTo (custom helper)
-declare global {
-  interface AudioParam {
-    exponentialDecayTo(value: number, endTime: number): void;
-  }
-}
-
-AudioParam.prototype.exponentialDecayTo = function(value: number, endTime: number) {
-  // Can't use 0 with exponentialRampToValueAtTime
-  this.exponentialRampToValueAtTime(Math.max(value, 0.0001), endTime);
-};
