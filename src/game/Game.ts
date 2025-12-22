@@ -1,7 +1,7 @@
 import { GameState, CustomLevel, Achievement } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
-import { AudioManager, MusicStyle } from '../systems/Audio';
+import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
 import { CustomLevelManager } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
@@ -187,16 +187,8 @@ export class Game {
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
 
-    const musicStyles: Record<number, MusicStyle> = {
-      1: 'energetic',
-      2: 'dark',
-      3: 'epic',
-      4: 'dark',
-      5: 'epic',
-      6: 'energetic',
-      7: 'epic',
-    };
-    this.audio.setStyle(musicStyles[levelId] || 'energetic');
+    // Set music style for this level
+    this.audio.setStyleForLevel(levelId);
   }
 
   private handleClick(e: MouseEvent): void {
