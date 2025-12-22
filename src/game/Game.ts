@@ -298,39 +298,39 @@ export class Game {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Endless button (y=310)
+    // Endless button (y=318)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 285 && y <= 335) {
+        y >= 293 && y <= 343) {
       this.audio.playSelect();
       this.startEndlessMode();
     }
-    // Editor button (left side, y=362)
+    // Editor button (left side, y=378)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 342 && y <= 382) {
+        y >= 358 && y <= 398) {
       this.audio.playSelect();
       this.openEditor();
     }
-    // Custom Levels button (right side, y=362)
+    // Custom Levels button (right side, y=378)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 342 && y <= 382) {
+        y >= 358 && y <= 398) {
       this.audio.playSelect();
       this.state.gameStatus = 'customLevels';
     }
-    // Skins button (left side, y=415)
+    // Skins button (left side, y=438)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 395 && y <= 435) {
+        y >= 418 && y <= 458) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
     }
-    // Achievements button (right side, y=415)
+    // Achievements button (right side, y=438)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 395 && y <= 435) {
+        y >= 418 && y <= 458) {
       this.audio.playSelect();
       this.state.gameStatus = 'achievements';
     }
-    // Settings button (y=468)
+    // Settings button (y=498)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 443 && y <= 493) {
+        y >= 473 && y <= 523) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -1442,24 +1442,24 @@ export class Game {
 
     // Buttons (repositioned to fit 7 buttons)
     this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
-    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 310, false);
+    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 318, false);
 
     // Editor and Custom Levels side by side
-    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 362, '#ff00ff');
-    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 362, '#00ff88');
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 378, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 378, '#00ff88');
 
     // Skins and Achievements side by side
     const achieveProgress = this.save.getAchievementProgress();
-    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 415, '#ffd700');
-    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 415, '#ff6600');
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 438, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 438, '#ff6600');
 
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 468, false);
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 498, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('SPACE/tap: jump | SHIFT: dash | M: mute', GAME_WIDTH / 2, 515);
+    this.ctx.fillText('SPACE/tap: jump | SHIFT: dash | M: mute', GAME_WIDTH / 2, 540);
 
     this.ctx.restore();
   }
@@ -2311,6 +2311,8 @@ export class Game {
       this.editingLevel = this.customLevelManager.createNewLevel();
     }
     this.editor = new LevelEditor(this.editingLevel);
+    this.editor.setOnSave(() => this.saveCurrentLevel());
+    this.editor.setOnPlay(() => this.testLevel());
     this.state.gameStatus = 'editor';
 
     // Resize canvas for editor (needs more space for UI) with high-DPI support
@@ -2699,6 +2701,8 @@ export class Game {
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.setupCrispRendering();
       this.editor = new LevelEditor(this.editingLevel);
+      this.editor.setOnSave(() => this.saveCurrentLevel());
+      this.editor.setOnPlay(() => this.testLevel());
       this.state.gameStatus = 'editor';
       this.audio.stop();
 
