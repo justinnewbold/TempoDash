@@ -39,7 +39,7 @@ export class Player {
   // Dash ability (triggered on triple jump)
   isDashing = false;
   private dashTimer = 0;
-  private static readonly DASH_DURATION = 150; // ms
+  private static readonly DASH_DURATION = 225; // ms
   private static readonly DASH_SPEED_MULT = 2.5;
 
   // Current skin
@@ -96,7 +96,7 @@ export class Player {
       this.airJumpsRemaining = 2; // Reset air jumps on ground jump
     } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0) {
       // Air jumps (double/triple) - each successive jump is weaker
-      const jumpMultiplier = this.airJumpsRemaining === 2 ? 0.85 : 0.7;
+      const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
       this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
 
       // Triple jump (last air jump) triggers dash
