@@ -850,6 +850,12 @@ export class Game {
       return;
     }
 
+    // Don't update gameplay while tutorial is showing
+    if (this.showingTutorial) {
+      this.level.update(deltaTime); // Keep background animations running
+      return;
+    }
+
     const inputState = this.input.update();
     this.level.update(deltaTime);
 
