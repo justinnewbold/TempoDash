@@ -1,4 +1,4 @@
-import { GameState, CustomLevel, Achievement } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
@@ -58,6 +58,7 @@ export class Game {
   private checkpointX = 0;
   private checkpointY = 0;
   private lastCheckpointProgress = 0;
+  private checkpointFeedbackTimer = 0; // Visual feedback for checkpoint
 
   // Endless mode
   private isEndlessMode = false;
@@ -895,7 +896,8 @@ export class Game {
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
     if (coinsCollected > 0) {
-      this.audio.playSelect(); // Use select sound for coins for now
+      this.audio.playCoinCollect();
+      this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
       // Update combo
       this.comboCount += coinsCollected;
@@ -944,9 +946,15 @@ export class Game {
       this.audio.playDeath();
       this.triggerShake(12, 350); // Strong shake on death
       this.deathFlashOpacity = 0.6; // Trigger death flash
+      this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
       // Track death for achievements
       this.save.recordDeath();
       this.tryUnlockAchievement('first_death');
+    }
+
+    // Decay checkpoint feedback timer
+    if (this.checkpointFeedbackTimer > 0) {
+      this.checkpointFeedbackTimer -= deltaTime;
     }
 
     const targetCameraX = this.player.x - 150;
@@ -962,7 +970,10 @@ export class Game {
         this.checkpointX = this.player.x;
         this.checkpointY = this.player.y;
         this.lastCheckpointProgress = currentCheckpoint;
-        // Visual/audio feedback for checkpoint could be added here
+        // Audio and visual feedback for checkpoint
+        this.audio.playCheckpoint();
+        this.input.triggerHaptic('medium');
+        this.checkpointFeedbackTimer = 500; // Show visual feedback for 500ms
       }
     }
 
@@ -1036,8 +1047,9 @@ export class Game {
       }
 
       this.state.gameStatus = 'levelComplete';
-      this.audio.stop();
+      this.audio.fadeOut(300); // Smooth fade out
       this.audio.playLevelComplete();
+      this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
     }
   }
 
@@ -1700,45 +1712,177 @@ export class Game {
 
     // Title
     this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
     this.ctx.shadowColor = '#ff00ff';
     this.ctx.shadowBlur = 20;
-    this.ctx.fillText('SETTINGS', GAME_WIDTH / 2, 100);
+    this.ctx.fillText('SETTINGS', GAME_WIDTH / 2, 60);
 
     // Back button
     this.ctx.textAlign = 'left';
-    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('< Back (ESC)', 20, 45);
+    this.ctx.fillText('< Back (ESC)', 20, 35);
 
-    const sliderWidth = 250;
-    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
+    // Layout: Two columns
+    const leftColX = GAME_WIDTH / 4;
+    const rightColX = (GAME_WIDTH * 3) / 4;
+    const sliderWidth = 180;
+
+    // === LEFT COLUMN: Audio ===
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('AUDIO', leftColX, 100);
 
     // Music volume
-    this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Music Volume', GAME_WIDTH / 2, 180);
-    this.renderSlider(sliderX, 200, sliderWidth, this.audio.getMusicVolume());
+    this.ctx.fillText('Music Volume', leftColX, 130);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 145, sliderWidth, this.audio.getMusicVolume());
 
     // SFX volume
-    this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 270);
-    this.renderSlider(sliderX, 290, sliderWidth, this.audio.getSfxVolume());
-
-    // Screen shake toggle
-    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Screen Shake', GAME_WIDTH / 2, 360);
-    this.renderToggle(GAME_WIDTH / 2, 385, this.save.getSettings().screenShake);
+    this.ctx.fillText('SFX Volume', leftColX, 195);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 210, sliderWidth, this.audio.getSfxVolume());
 
     // Mute indicator
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 440);
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Press M to mute', leftColX, 260);
+
+    // === RIGHT COLUMN: Display ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('DISPLAY', rightColX, 100);
+
+    // Screen shake toggle
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Screen Shake', rightColX, 135);
+    this.renderToggle(rightColX, 160, this.save.getSettings().screenShake);
+
+    // Reduced motion toggle
+    this.ctx.fillText('Reduced Motion', rightColX, 210);
+    this.renderToggle(rightColX, 235, this.save.isReducedMotionEnabled());
+
+    // === ACCESSIBILITY SECTION ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('ACCESSIBILITY', leftColX, 305);
+
+    // Colorblind mode
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Colorblind Mode', leftColX, 335);
+    this.renderColorblindSelector(leftColX, 365);
+
+    // Haptic feedback toggle (mobile only indicator)
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Haptic Feedback', leftColX, 420);
+    this.renderToggle(leftColX, 445, this.save.isHapticFeedbackEnabled());
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    this.ctx.fillText('(mobile only)', leftColX, 485);
+
+    // === DATA SECTION ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('DATA', rightColX, 305);
+
+    // Storage usage
+    const storage = this.save.getStorageUsage();
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Storage Used', rightColX, 335);
+
+    // Storage bar
+    const barWidth = 150;
+    const barHeight = 12;
+    const barX = rightColX - barWidth / 2;
+    const barY = 350;
+
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    const usageColor = storage.percentage > 80 ? '#ff4444' : storage.percentage > 50 ? '#ffaa00' : '#00ffaa';
+    this.ctx.fillStyle = usageColor;
+    this.ctx.fillRect(barX, barY, barWidth * (storage.percentage / 100), barHeight);
+
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText(`${this.save.formatBytes(storage.used)} / ${this.save.formatBytes(storage.available)}`, rightColX, 380);
+
+    // Export/Import buttons
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.renderSettingsButton('Export Data', rightColX - 55, 410, '#00ffaa');
+    this.renderSettingsButton('Import Data', rightColX + 55, 410, '#00aaff');
+
+    // Reset button
+    this.ctx.fillStyle = '#ff4444';
+    this.renderSettingsButton('Reset All', rightColX, 460, '#ff4444');
 
     this.ctx.restore();
+  }
+
+  private renderColorblindSelector(x: number, y: number): void {
+    const modes: Array<{ id: GameSettings['colorblindMode']; label: string }> = [
+      { id: 'normal', label: 'Normal' },
+      { id: 'deuteranopia', label: 'Deutan' },
+      { id: 'protanopia', label: 'Protan' },
+      { id: 'tritanopia', label: 'Tritan' },
+    ];
+
+    const currentMode = this.save.getColorblindMode();
+    const buttonWidth = 50;
+    const gap = 8;
+    const totalWidth = modes.length * buttonWidth + (modes.length - 1) * gap;
+    const startX = x - totalWidth / 2;
+
+    modes.forEach((mode, i) => {
+      const btnX = startX + i * (buttonWidth + gap);
+      const isSelected = mode.id === currentMode;
+
+      this.ctx.fillStyle = isSelected ? 'rgba(0, 255, 170, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+      this.ctx.strokeStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, y, buttonWidth, 25, 5);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.7)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(mode.label, btnX + buttonWidth / 2, y + 16);
+    });
+  }
+
+  private renderSettingsButton(text: string, x: number, y: number, color: string): void {
+    const width = 90;
+    const height = 28;
+
+    this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    if (color.startsWith('#')) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+    }
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+
+    this.ctx.beginPath();
+    this.ctx.roundRect(x - width / 2, y - height / 2, width, height, 5);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = color;
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(text, x, y + 4);
   }
 
   private renderSkins(): void {

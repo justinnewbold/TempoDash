@@ -601,4 +601,107 @@ export class AudioManager {
       osc.stop(time + i * 0.08 + 0.25);
     });
   }
+
+  // Coin collection sound - quick melodic "ding"
+  playCoinCollect(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Main bell tone
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, time);
+    osc.frequency.exponentialRampToValueAtTime(1800, time + 0.05);
+
+    gain.gain.setValueAtTime(0.2, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc.stop(time + 0.2);
+
+    // Harmonic overtone for richness
+    const osc2 = this.audioContext.createOscillator();
+    const gain2 = this.audioContext.createGain();
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(2400, time);
+
+    gain2.gain.setValueAtTime(0.08, time);
+    gain2.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+
+    osc2.connect(gain2);
+    gain2.connect(this.sfxGain);
+
+    osc2.start(time);
+    osc2.stop(time + 0.12);
+  }
+
+  // Checkpoint reached sound
+  playCheckpoint(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+    const notes = [440, 554.37, 659.25]; // A4, C#5, E5 - A major chord arpeggio
+
+    notes.forEach((freq, i) => {
+      const osc = this.audioContext!.createOscillator();
+      const gain = this.audioContext!.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+
+      const startTime = time + i * 0.06;
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.15, startTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.3);
+    });
+  }
+
+  // Fade out music smoothly over specified duration (ms)
+  fadeOut(duration: number = 500): void {
+    if (!this.musicGain || !this.audioContext) return;
+
+    const currentTime = this.audioContext.currentTime;
+    const currentVolume = this.musicGain.gain.value;
+
+    this.musicGain.gain.setValueAtTime(currentVolume, currentTime);
+    this.musicGain.gain.linearRampToValueAtTime(0, currentTime + duration / 1000);
+
+    // Stop after fade completes
+    setTimeout(() => {
+      this.stop();
+      // Reset volume for next play
+      if (this.musicGain) {
+        this.musicGain.gain.value = this.isMuted ? 0 : this.musicVolume;
+      }
+    }, duration);
+  }
+
+  // Fade in music smoothly
+  fadeIn(duration: number = 500): void {
+    if (!this.musicGain || !this.audioContext) return;
+
+    this.musicGain.gain.value = 0;
+    this.start();
+
+    const currentTime = this.audioContext.currentTime;
+    const targetVolume = this.isMuted ? 0 : this.musicVolume;
+
+    this.musicGain.gain.setValueAtTime(0, currentTime);
+    this.musicGain.gain.linearRampToValueAtTime(targetVolume, currentTime + duration / 1000);
+  }
 }
