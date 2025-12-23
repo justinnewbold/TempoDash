@@ -651,9 +651,9 @@ export class Game {
   private nextLevel(): void {
     if (this.state.currentLevel < TOTAL_LEVELS) {
       this.state.currentLevel++;
-      // Auto-unlock next level if not already
+      // Auto-unlock next level if not already (without spending points)
       if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
-        this.save.unlockLevel(this.state.currentLevel);
+        this.save.grantLevel(this.state.currentLevel);
       }
       this.loadLevel(this.state.currentLevel);
       this.attempts = 1;
@@ -1546,9 +1546,9 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000'];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5]; // 1-5 stars
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000', '#e94560'];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5]; // 1-5 stars
 
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';

@@ -12,6 +12,7 @@ export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
   5: 5000,   // Level 5 costs 5000 points
   6: 7500,   // Level 6 costs 7500 points
   7: 10000,  // Level 7 costs 10000 points
+  8: 15000,  // Level 8 costs 15000 points
 };
 
 // Available player skins
@@ -190,6 +191,17 @@ export class SaveManager {
       return true;
     }
     return false;
+  }
+
+  // Unlock a level without spending points (used for auto-unlock after completing previous level)
+  grantLevel(levelId: number): boolean {
+    if (levelId > TOTAL_LEVELS) return false;
+    if (this.data.unlockedLevels.includes(levelId)) return false;
+
+    this.data.unlockedLevels.push(levelId);
+    this.data.unlockedLevels.sort((a, b) => a - b);
+    this.save();
+    return true;
   }
 
   getHighScore(levelId: number): number {

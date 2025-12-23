@@ -23,7 +23,8 @@ export const LEVEL_MUSIC: Record<number, MusicStyle> = {
   4: 'focus',     // Level 4: Deep Focus - steady
   5: 'sludge',    // Level 5: Sludge Factory - heavy
   6: 'hazard',    // Level 6: Biohazard - aggressive
-  7: 'energetic', // Level 7: Festival EDM - finale
+  7: 'energetic', // Level 7: Festival EDM - high energy
+  8: 'crystal',   // Level 8: Sky Temple - serene but challenging
 };
 
 export class AudioManager {
