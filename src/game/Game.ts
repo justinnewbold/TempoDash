@@ -10,6 +10,10 @@ import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { PlatformType } from '../types';
 import { LevelEditor } from '../editor/LevelEditor';
+import { ParticleEffects } from '../systems/ParticleEffects';
+import { ScreenTransition } from '../systems/ScreenTransition';
+import { DebugOverlay } from '../systems/DebugOverlay';
+import { StatisticsManager } from '../systems/Statistics';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -97,6 +101,20 @@ export class Game {
   private orientationMessageTimer = 0;
   private showOrientationHint = false;
 
+  // New systems
+  private particles: ParticleEffects;
+  private transition: ScreenTransition;
+  private debug: DebugOverlay;
+  private statistics: StatisticsManager;
+
+  // Quick restart key tracking
+  private quickRestartHeld = false;
+  private quickRestartTimer = 0;
+  private static readonly QUICK_RESTART_HOLD_TIME = 300; // Hold R for 300ms to restart
+
+  // Statistics dashboard visibility
+  private showStatsDashboard = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -129,6 +147,21 @@ export class Game {
     this.save = new SaveManager();
     this.customLevelManager = new CustomLevelManager();
 
+    // Initialize new systems
+    this.particles = new ParticleEffects();
+    this.transition = new ScreenTransition();
+    this.debug = new DebugOverlay();
+    this.statistics = new StatisticsManager();
+
+    // Setup tab visibility change detection for auto-pause
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.handleTabHidden();
+      } else {
+        this.handleTabVisible();
+      }
+    });
+
     // Apply saved settings
     const settings = this.save.getSettings();
     this.audio.setMusicVolume(settings.musicVolume);
@@ -138,6 +171,7 @@ export class Game {
 
     // Setup keyboard
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
     // Setup click/touch for menus
     canvas.addEventListener('click', (e) => this.handleClick(e));
@@ -595,6 +629,14 @@ export class Game {
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
+        } else if (e.code === 'KeyR') {
+          // Quick restart (hold R key)
+          this.quickRestartHeld = true;
+          this.quickRestartTimer = 0;
+        } else if (e.code === 'Tab') {
+          // Toggle statistics dashboard
+          e.preventDefault();
+          this.showStatsDashboard = !this.showStatsDashboard;
         }
         break;
 
@@ -629,6 +671,62 @@ export class Game {
         }
         break;
     }
+  }
+
+  private handleKeyUp(e: KeyboardEvent): void {
+    // Handle quick restart key release
+    if (e.code === 'KeyR') {
+      this.quickRestartHeld = false;
+      this.quickRestartTimer = 0;
+    }
+  }
+
+  // Auto-pause when tab becomes hidden
+  private handleTabHidden(): void {
+    const isPlaying = this.state.gameStatus === 'playing' ||
+                      this.state.gameStatus === 'practice' ||
+                      this.state.gameStatus === 'endless';
+
+    if (isPlaying) {
+      this.state.gameStatus = 'paused';
+      this.audio.stop();
+    }
+  }
+
+  // Resume when tab becomes visible
+  private handleTabVisible(): void {
+    // Don't auto-resume - let user press a key to continue
+    // This prevents unexpected deaths when returning
+  }
+
+  // Quick restart the current level
+  private quickRestart(): void {
+    if (this.isEndlessMode) {
+      // Restart endless mode
+      this.endlessDistance = 0;
+      this.endlessPlatforms = [];
+      this.nextPlatformX = 0;
+      this.cameraX = 0;
+      this.loadLevel(1);
+      this.player.setSkin(this.save.getSelectedSkin());
+      this.generateEndlessPlatforms(1500);
+      this.attempts = 1;
+      this.speedMultiplier = 1.0;
+      this.jumpCount = 0;
+    } else {
+      // Restart current level
+      this.loadLevel(this.state.currentLevel);
+      this.attempts = 1;
+      this.levelScoreThisRun = 0;
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
+    }
+    // Clear particles and reset effects
+    this.particles.clear();
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.audio.start();
   }
 
   private startLevel(levelId: number, practiceMode = false): void {
@@ -808,6 +906,23 @@ export class Game {
   };
 
   private update(deltaTime: number): void {
+    // Update debug frame timing
+    this.debug.beginUpdate();
+
+    // Update new systems
+    this.particles.update(deltaTime);
+    this.transition.update(deltaTime);
+
+    // Handle quick restart (hold R key)
+    if (this.quickRestartHeld) {
+      this.quickRestartTimer += deltaTime;
+      if (this.quickRestartTimer >= Game.QUICK_RESTART_HOLD_TIME) {
+        this.quickRestart();
+        this.quickRestartHeld = false;
+        this.quickRestartTimer = 0;
+      }
+    }
+
     // Update menu animation
     this.menuAnimation += deltaTime / 1000;
 
@@ -947,7 +1062,14 @@ export class Game {
       this.triggerShake(12, 350); // Strong shake on death
       this.deathFlashOpacity = 0.6; // Trigger death flash
       this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
-      // Track death for achievements
+
+      // Spawn death particle explosion
+      const playerCenterX = this.player.x + this.player.width / 2;
+      const playerCenterY = this.player.y + this.player.height / 2;
+      this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+
+      // Track death for statistics and achievements
+      this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
       this.save.recordDeath();
       this.tryUnlockAchievement('first_death');
     }
@@ -1051,6 +1173,9 @@ export class Game {
       this.audio.playLevelComplete();
       this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
     }
+
+    // End debug update timing
+    this.debug.endUpdate();
   }
 
   private setupCrispRendering(): void {
@@ -1137,11 +1262,13 @@ export class Game {
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
       this.level.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderPlayingUI();
       this.renderEditorTestUI();
     } else {
@@ -1149,6 +1276,7 @@ export class Game {
 
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
         this.player.render(this.ctx, this.cameraX);
+        this.particles.render(this.ctx, this.cameraX);
         this.renderPlayingUI();
       }
     }
@@ -1200,10 +1328,58 @@ export class Game {
     // Achievement notification (always on top)
     this.renderAchievementNotification();
 
+    // Quick restart progress indicator
+    if (this.quickRestartHeld && this.quickRestartTimer > 0) {
+      this.renderQuickRestartIndicator();
+    }
+
+    // Statistics dashboard overlay
+    if (this.showStatsDashboard) {
+      this.statistics.renderDashboard(this.ctx, this.save.getData());
+    }
+
+    // Debug overlay (F3 to toggle)
+    this.debug.render(this.ctx, this.cameraX);
+
+    // Screen transition effect (always on top)
+    this.transition.render(this.ctx);
+
     // Portrait mode orientation hint (on top of everything)
     if (this.showOrientationHint && this.isPortrait) {
       this.renderOrientationHint();
     }
+  }
+
+  private renderQuickRestartIndicator(): void {
+    const progress = this.quickRestartTimer / Game.QUICK_RESTART_HOLD_TIME;
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+    const radius = 40;
+
+    // Background circle
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, radius + 10, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Progress arc
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 6;
+    this.ctx.lineCap = 'round';
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    this.ctx.stroke();
+
+    // R key text
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 24px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('R', centerX, centerY);
+
+    // Label
+    this.ctx.font = '14px Arial';
+    this.ctx.fillText('RESTART', centerX, centerY + radius + 25);
   }
 
   private renderOrientationHint(): void {

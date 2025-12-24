@@ -155,6 +155,11 @@ export class SaveManager {
     }
   }
 
+  // Get a copy of all save data (for statistics display)
+  getData(): SaveData {
+    return { ...this.data };
+  }
+
   getTotalPoints(): number {
     return this.data.totalPoints;
   }
