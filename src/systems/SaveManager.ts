@@ -12,6 +12,7 @@ export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
   5: 5000,   // Level 5 costs 5000 points
   6: 7500,   // Level 6 costs 7500 points
   7: 10000,  // Level 7 costs 10000 points
+  8: 15000,  // Level 8 costs 15000 points
 };
 
 // Available player skins
@@ -84,6 +85,10 @@ const DEFAULT_SETTINGS: GameSettings = {
   screenShake: true,
   selectedSkin: 'default',
   tutorialShown: false,
+  // Accessibility options
+  colorblindMode: 'normal',
+  reducedMotion: false,
+  hapticFeedback: true,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -150,6 +155,11 @@ export class SaveManager {
     }
   }
 
+  // Get a copy of all save data (for statistics display)
+  getData(): SaveData {
+    return { ...this.data };
+  }
+
   getTotalPoints(): number {
     return this.data.totalPoints;
   }
@@ -190,6 +200,17 @@ export class SaveManager {
       return true;
     }
     return false;
+  }
+
+  // Unlock a level without spending points (used for auto-unlock after completing previous level)
+  grantLevel(levelId: number): boolean {
+    if (levelId > TOTAL_LEVELS) return false;
+    if (this.data.unlockedLevels.includes(levelId)) return false;
+
+    this.data.unlockedLevels.push(levelId);
+    this.data.unlockedLevels.sort((a, b) => a - b);
+    this.save();
+    return true;
   }
 
   getHighScore(levelId: number): number {
@@ -388,5 +409,147 @@ export class SaveManager {
 
   getAllLevelCoins(): Record<number, number> {
     return { ...this.data.levelCoins };
+  }
+
+  // --- ACCESSIBILITY SETTINGS ---
+
+  getColorblindMode(): GameSettings['colorblindMode'] {
+    return this.data.settings.colorblindMode;
+  }
+
+  setColorblindMode(mode: GameSettings['colorblindMode']): void {
+    this.data.settings.colorblindMode = mode;
+    this.save();
+  }
+
+  isReducedMotionEnabled(): boolean {
+    return this.data.settings.reducedMotion;
+  }
+
+  setReducedMotion(enabled: boolean): void {
+    this.data.settings.reducedMotion = enabled;
+    this.save();
+  }
+
+  isHapticFeedbackEnabled(): boolean {
+    return this.data.settings.hapticFeedback;
+  }
+
+  setHapticFeedback(enabled: boolean): void {
+    this.data.settings.hapticFeedback = enabled;
+    this.save();
+  }
+
+  // --- EXPORT / IMPORT ---
+
+  exportData(): string {
+    return JSON.stringify({
+      version: 1,
+      exportDate: new Date().toISOString(),
+      data: this.data,
+    }, null, 2);
+  }
+
+  importData(jsonString: string): { success: boolean; error?: string } {
+    try {
+      const parsed = JSON.parse(jsonString);
+
+      // Validate structure
+      if (!parsed || typeof parsed !== 'object') {
+        return { success: false, error: 'Invalid JSON format' };
+      }
+
+      // Check for version (allows for future migrations)
+      if (parsed.version && parsed.data) {
+        // Versioned export format
+        const importedData = parsed.data as Partial<SaveData>;
+        if (!this.validateSaveData(importedData)) {
+          return { success: false, error: 'Invalid save data structure' };
+        }
+        this.data = this.mergeSaveData(importedData);
+      } else {
+        // Legacy format (direct save data)
+        if (!this.validateSaveData(parsed)) {
+          return { success: false, error: 'Invalid save data structure' };
+        }
+        this.data = this.mergeSaveData(parsed);
+      }
+
+      this.save();
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Failed to parse JSON' };
+    }
+  }
+
+  private validateSaveData(data: unknown): data is Partial<SaveData> {
+    if (!data || typeof data !== 'object') return false;
+    const d = data as Record<string, unknown>;
+
+    // Check for critical fields (if present, they must be valid types)
+    if ('totalPoints' in d && typeof d.totalPoints !== 'number') return false;
+    if ('unlockedLevels' in d && !Array.isArray(d.unlockedLevels)) return false;
+    if ('unlockedSkins' in d && !Array.isArray(d.unlockedSkins)) return false;
+    if ('highScores' in d && typeof d.highScores !== 'object') return false;
+    if ('settings' in d && typeof d.settings !== 'object') return false;
+    if ('achievements' in d && !Array.isArray(d.achievements)) return false;
+
+    return true;
+  }
+
+  private mergeSaveData(imported: Partial<SaveData>): SaveData {
+    return {
+      totalPoints: imported.totalPoints ?? DEFAULT_SAVE.totalPoints,
+      unlockedLevels: imported.unlockedLevels ?? [...DEFAULT_SAVE.unlockedLevels],
+      unlockedSkins: imported.unlockedSkins ?? [...DEFAULT_SAVE.unlockedSkins],
+      highScores: imported.highScores ?? {},
+      endlessHighScore: imported.endlessHighScore ?? 0,
+      settings: { ...DEFAULT_SETTINGS, ...imported.settings },
+      achievements: imported.achievements ?? [],
+      levelCoins: imported.levelCoins ?? {},
+      totalDeaths: imported.totalDeaths ?? 0,
+      totalCoinsCollected: imported.totalCoinsCollected ?? 0,
+      totalLevelsCompleted: imported.totalLevelsCompleted ?? 0,
+      totalPlayTime: imported.totalPlayTime ?? 0,
+      longestCombo: imported.longestCombo ?? 0,
+    };
+  }
+
+  // Reset all save data
+  resetAllData(): void {
+    this.data = {
+      ...DEFAULT_SAVE,
+      unlockedLevels: [...DEFAULT_SAVE.unlockedLevels],
+      unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
+      settings: { ...DEFAULT_SETTINGS },
+      achievements: [],
+      levelCoins: {},
+      highScores: {},
+    };
+    this.save();
+  }
+
+  // --- STORAGE USAGE ---
+
+  getStorageUsage(): { used: number; available: number; percentage: number } {
+    try {
+      const saveData = localStorage.getItem(SAVE_KEY) ?? '';
+      const customLevels = localStorage.getItem('tempodash_custom_levels') ?? '';
+      const used = new Blob([saveData + customLevels]).size;
+
+      // LocalStorage limit is typically 5MB per origin
+      const available = 5 * 1024 * 1024; // 5 MB
+      const percentage = (used / available) * 100;
+
+      return { used, available, percentage };
+    } catch {
+      return { used: 0, available: 5 * 1024 * 1024, percentage: 0 };
+    }
+  }
+
+  formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }
 }

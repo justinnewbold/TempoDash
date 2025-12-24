@@ -161,12 +161,18 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'dedicated', name: 'Dedicated', description: 'Play for 1 hour total', icon: '⏰', secret: true },
 ];
 
+export type ColorblindMode = 'normal' | 'deuteranopia' | 'protanopia' | 'tritanopia';
+
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
   screenShake: boolean;
   selectedSkin: string;
   tutorialShown: boolean;
+  // Accessibility options
+  colorblindMode: ColorblindMode;
+  reducedMotion: boolean;
+  hapticFeedback: boolean;
 }
 
 export interface PlayerSkin {

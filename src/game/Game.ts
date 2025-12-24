@@ -1,4 +1,4 @@
-import { GameState, CustomLevel, Achievement } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
@@ -10,6 +10,10 @@ import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { PlatformType } from '../types';
 import { LevelEditor } from '../editor/LevelEditor';
+import { ParticleEffects } from '../systems/ParticleEffects';
+import { ScreenTransition } from '../systems/ScreenTransition';
+import { DebugOverlay } from '../systems/DebugOverlay';
+import { StatisticsManager } from '../systems/Statistics';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -58,6 +62,7 @@ export class Game {
   private checkpointX = 0;
   private checkpointY = 0;
   private lastCheckpointProgress = 0;
+  private checkpointFeedbackTimer = 0; // Visual feedback for checkpoint
 
   // Endless mode
   private isEndlessMode = false;
@@ -96,6 +101,20 @@ export class Game {
   private orientationMessageTimer = 0;
   private showOrientationHint = false;
 
+  // New systems
+  private particles: ParticleEffects;
+  private transition: ScreenTransition;
+  private debug: DebugOverlay;
+  private statistics: StatisticsManager;
+
+  // Quick restart key tracking
+  private quickRestartHeld = false;
+  private quickRestartTimer = 0;
+  private static readonly QUICK_RESTART_HOLD_TIME = 300; // Hold R for 300ms to restart
+
+  // Statistics dashboard visibility
+  private showStatsDashboard = false;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -128,6 +147,21 @@ export class Game {
     this.save = new SaveManager();
     this.customLevelManager = new CustomLevelManager();
 
+    // Initialize new systems
+    this.particles = new ParticleEffects();
+    this.transition = new ScreenTransition();
+    this.debug = new DebugOverlay();
+    this.statistics = new StatisticsManager();
+
+    // Setup tab visibility change detection for auto-pause
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.handleTabHidden();
+      } else {
+        this.handleTabVisible();
+      }
+    });
+
     // Apply saved settings
     const settings = this.save.getSettings();
     this.audio.setMusicVolume(settings.musicVolume);
@@ -137,6 +171,7 @@ export class Game {
 
     // Setup keyboard
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
     // Setup click/touch for menus
     canvas.addEventListener('click', (e) => this.handleClick(e));
@@ -594,6 +629,14 @@ export class Game {
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
+        } else if (e.code === 'KeyR') {
+          // Quick restart (hold R key)
+          this.quickRestartHeld = true;
+          this.quickRestartTimer = 0;
+        } else if (e.code === 'Tab') {
+          // Toggle statistics dashboard
+          e.preventDefault();
+          this.showStatsDashboard = !this.showStatsDashboard;
         }
         break;
 
@@ -630,6 +673,62 @@ export class Game {
     }
   }
 
+  private handleKeyUp(e: KeyboardEvent): void {
+    // Handle quick restart key release
+    if (e.code === 'KeyR') {
+      this.quickRestartHeld = false;
+      this.quickRestartTimer = 0;
+    }
+  }
+
+  // Auto-pause when tab becomes hidden
+  private handleTabHidden(): void {
+    const isPlaying = this.state.gameStatus === 'playing' ||
+                      this.state.gameStatus === 'practice' ||
+                      this.state.gameStatus === 'endless';
+
+    if (isPlaying) {
+      this.state.gameStatus = 'paused';
+      this.audio.stop();
+    }
+  }
+
+  // Resume when tab becomes visible
+  private handleTabVisible(): void {
+    // Don't auto-resume - let user press a key to continue
+    // This prevents unexpected deaths when returning
+  }
+
+  // Quick restart the current level
+  private quickRestart(): void {
+    if (this.isEndlessMode) {
+      // Restart endless mode
+      this.endlessDistance = 0;
+      this.endlessPlatforms = [];
+      this.nextPlatformX = 0;
+      this.cameraX = 0;
+      this.loadLevel(1);
+      this.player.setSkin(this.save.getSelectedSkin());
+      this.generateEndlessPlatforms(1500);
+      this.attempts = 1;
+      this.speedMultiplier = 1.0;
+      this.jumpCount = 0;
+    } else {
+      // Restart current level
+      this.loadLevel(this.state.currentLevel);
+      this.attempts = 1;
+      this.levelScoreThisRun = 0;
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
+    }
+    // Clear particles and reset effects
+    this.particles.clear();
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.audio.start();
+  }
+
   private startLevel(levelId: number, practiceMode = false): void {
     this.loadLevel(levelId);
     this.attempts = 1;
@@ -651,9 +750,9 @@ export class Game {
   private nextLevel(): void {
     if (this.state.currentLevel < TOTAL_LEVELS) {
       this.state.currentLevel++;
-      // Auto-unlock next level if not already
+      // Auto-unlock next level if not already (without spending points)
       if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
-        this.save.unlockLevel(this.state.currentLevel);
+        this.save.grantLevel(this.state.currentLevel);
       }
       this.loadLevel(this.state.currentLevel);
       this.attempts = 1;
@@ -807,6 +906,23 @@ export class Game {
   };
 
   private update(deltaTime: number): void {
+    // Update debug frame timing
+    this.debug.beginUpdate();
+
+    // Update new systems
+    this.particles.update(deltaTime);
+    this.transition.update(deltaTime);
+
+    // Handle quick restart (hold R key)
+    if (this.quickRestartHeld) {
+      this.quickRestartTimer += deltaTime;
+      if (this.quickRestartTimer >= Game.QUICK_RESTART_HOLD_TIME) {
+        this.quickRestart();
+        this.quickRestartHeld = false;
+        this.quickRestartTimer = 0;
+      }
+    }
+
     // Update menu animation
     this.menuAnimation += deltaTime / 1000;
 
@@ -895,7 +1011,8 @@ export class Game {
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
     if (coinsCollected > 0) {
-      this.audio.playSelect(); // Use select sound for coins for now
+      this.audio.playCoinCollect();
+      this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
       // Update combo
       this.comboCount += coinsCollected;
@@ -944,9 +1061,22 @@ export class Game {
       this.audio.playDeath();
       this.triggerShake(12, 350); // Strong shake on death
       this.deathFlashOpacity = 0.6; // Trigger death flash
-      // Track death for achievements
+      this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
+
+      // Spawn death particle explosion
+      const playerCenterX = this.player.x + this.player.width / 2;
+      const playerCenterY = this.player.y + this.player.height / 2;
+      this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+
+      // Track death for statistics and achievements
+      this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
       this.save.recordDeath();
       this.tryUnlockAchievement('first_death');
+    }
+
+    // Decay checkpoint feedback timer
+    if (this.checkpointFeedbackTimer > 0) {
+      this.checkpointFeedbackTimer -= deltaTime;
     }
 
     const targetCameraX = this.player.x - 150;
@@ -962,7 +1092,10 @@ export class Game {
         this.checkpointX = this.player.x;
         this.checkpointY = this.player.y;
         this.lastCheckpointProgress = currentCheckpoint;
-        // Visual/audio feedback for checkpoint could be added here
+        // Audio and visual feedback for checkpoint
+        this.audio.playCheckpoint();
+        this.input.triggerHaptic('medium');
+        this.checkpointFeedbackTimer = 500; // Show visual feedback for 500ms
       }
     }
 
@@ -1036,9 +1169,13 @@ export class Game {
       }
 
       this.state.gameStatus = 'levelComplete';
-      this.audio.stop();
+      this.audio.fadeOut(300); // Smooth fade out
       this.audio.playLevelComplete();
+      this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
     }
+
+    // End debug update timing
+    this.debug.endUpdate();
   }
 
   private setupCrispRendering(): void {
@@ -1125,11 +1262,13 @@ export class Game {
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
       this.level.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderPlayingUI();
       this.renderEditorTestUI();
     } else {
@@ -1137,6 +1276,7 @@ export class Game {
 
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
         this.player.render(this.ctx, this.cameraX);
+        this.particles.render(this.ctx, this.cameraX);
         this.renderPlayingUI();
       }
     }
@@ -1188,10 +1328,58 @@ export class Game {
     // Achievement notification (always on top)
     this.renderAchievementNotification();
 
+    // Quick restart progress indicator
+    if (this.quickRestartHeld && this.quickRestartTimer > 0) {
+      this.renderQuickRestartIndicator();
+    }
+
+    // Statistics dashboard overlay
+    if (this.showStatsDashboard) {
+      this.statistics.renderDashboard(this.ctx, this.save.getData());
+    }
+
+    // Debug overlay (F3 to toggle)
+    this.debug.render(this.ctx, this.cameraX);
+
+    // Screen transition effect (always on top)
+    this.transition.render(this.ctx);
+
     // Portrait mode orientation hint (on top of everything)
     if (this.showOrientationHint && this.isPortrait) {
       this.renderOrientationHint();
     }
+  }
+
+  private renderQuickRestartIndicator(): void {
+    const progress = this.quickRestartTimer / Game.QUICK_RESTART_HOLD_TIME;
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+    const radius = 40;
+
+    // Background circle
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, radius + 10, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Progress arc
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 6;
+    this.ctx.lineCap = 'round';
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    this.ctx.stroke();
+
+    // R key text
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 24px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('R', centerX, centerY);
+
+    // Label
+    this.ctx.font = '14px Arial';
+    this.ctx.fillText('RESTART', centerX, centerY + radius + 25);
   }
 
   private renderOrientationHint(): void {
@@ -1546,9 +1734,9 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000'];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5]; // 1-5 stars
+    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple'];
+    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000', '#e94560'];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5]; // 1-5 stars
 
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -1700,45 +1888,177 @@ export class Game {
 
     // Title
     this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
     this.ctx.shadowColor = '#ff00ff';
     this.ctx.shadowBlur = 20;
-    this.ctx.fillText('SETTINGS', GAME_WIDTH / 2, 100);
+    this.ctx.fillText('SETTINGS', GAME_WIDTH / 2, 60);
 
     // Back button
     this.ctx.textAlign = 'left';
-    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText('< Back (ESC)', 20, 45);
+    this.ctx.fillText('< Back (ESC)', 20, 35);
 
-    const sliderWidth = 250;
-    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
+    // Layout: Two columns
+    const leftColX = GAME_WIDTH / 4;
+    const rightColX = (GAME_WIDTH * 3) / 4;
+    const sliderWidth = 180;
+
+    // === LEFT COLUMN: Audio ===
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('AUDIO', leftColX, 100);
 
     // Music volume
-    this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Music Volume', GAME_WIDTH / 2, 180);
-    this.renderSlider(sliderX, 200, sliderWidth, this.audio.getMusicVolume());
+    this.ctx.fillText('Music Volume', leftColX, 130);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 145, sliderWidth, this.audio.getMusicVolume());
 
     // SFX volume
-    this.ctx.fillText('SFX Volume', GAME_WIDTH / 2, 270);
-    this.renderSlider(sliderX, 290, sliderWidth, this.audio.getSfxVolume());
-
-    // Screen shake toggle
-    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Screen Shake', GAME_WIDTH / 2, 360);
-    this.renderToggle(GAME_WIDTH / 2, 385, this.save.getSettings().screenShake);
+    this.ctx.fillText('SFX Volume', leftColX, 195);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 210, sliderWidth, this.audio.getSfxVolume());
 
     // Mute indicator
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    this.ctx.fillText('Press M to toggle music mute', GAME_WIDTH / 2, 440);
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Press M to mute', leftColX, 260);
+
+    // === RIGHT COLUMN: Display ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('DISPLAY', rightColX, 100);
+
+    // Screen shake toggle
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Screen Shake', rightColX, 135);
+    this.renderToggle(rightColX, 160, this.save.getSettings().screenShake);
+
+    // Reduced motion toggle
+    this.ctx.fillText('Reduced Motion', rightColX, 210);
+    this.renderToggle(rightColX, 235, this.save.isReducedMotionEnabled());
+
+    // === ACCESSIBILITY SECTION ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('ACCESSIBILITY', leftColX, 305);
+
+    // Colorblind mode
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Colorblind Mode', leftColX, 335);
+    this.renderColorblindSelector(leftColX, 365);
+
+    // Haptic feedback toggle (mobile only indicator)
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Haptic Feedback', leftColX, 420);
+    this.renderToggle(leftColX, 445, this.save.isHapticFeedbackEnabled());
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    this.ctx.fillText('(mobile only)', leftColX, 485);
+
+    // === DATA SECTION ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('DATA', rightColX, 305);
+
+    // Storage usage
+    const storage = this.save.getStorageUsage();
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Storage Used', rightColX, 335);
+
+    // Storage bar
+    const barWidth = 150;
+    const barHeight = 12;
+    const barX = rightColX - barWidth / 2;
+    const barY = 350;
+
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    const usageColor = storage.percentage > 80 ? '#ff4444' : storage.percentage > 50 ? '#ffaa00' : '#00ffaa';
+    this.ctx.fillStyle = usageColor;
+    this.ctx.fillRect(barX, barY, barWidth * (storage.percentage / 100), barHeight);
+
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText(`${this.save.formatBytes(storage.used)} / ${this.save.formatBytes(storage.available)}`, rightColX, 380);
+
+    // Export/Import buttons
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.renderSettingsButton('Export Data', rightColX - 55, 410, '#00ffaa');
+    this.renderSettingsButton('Import Data', rightColX + 55, 410, '#00aaff');
+
+    // Reset button
+    this.ctx.fillStyle = '#ff4444';
+    this.renderSettingsButton('Reset All', rightColX, 460, '#ff4444');
 
     this.ctx.restore();
+  }
+
+  private renderColorblindSelector(x: number, y: number): void {
+    const modes: Array<{ id: GameSettings['colorblindMode']; label: string }> = [
+      { id: 'normal', label: 'Normal' },
+      { id: 'deuteranopia', label: 'Deutan' },
+      { id: 'protanopia', label: 'Protan' },
+      { id: 'tritanopia', label: 'Tritan' },
+    ];
+
+    const currentMode = this.save.getColorblindMode();
+    const buttonWidth = 50;
+    const gap = 8;
+    const totalWidth = modes.length * buttonWidth + (modes.length - 1) * gap;
+    const startX = x - totalWidth / 2;
+
+    modes.forEach((mode, i) => {
+      const btnX = startX + i * (buttonWidth + gap);
+      const isSelected = mode.id === currentMode;
+
+      this.ctx.fillStyle = isSelected ? 'rgba(0, 255, 170, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+      this.ctx.strokeStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, y, buttonWidth, 25, 5);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = '10px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.7)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(mode.label, btnX + buttonWidth / 2, y + 16);
+    });
+  }
+
+  private renderSettingsButton(text: string, x: number, y: number, color: string): void {
+    const width = 90;
+    const height = 28;
+
+    this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
+    if (color.startsWith('#')) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+    }
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+
+    this.ctx.beginPath();
+    this.ctx.roundRect(x - width / 2, y - height / 2, width, height, 5);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = color;
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(text, x, y + 4);
   }
 
   private renderSkins(): void {

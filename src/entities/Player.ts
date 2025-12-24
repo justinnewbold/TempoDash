@@ -7,6 +7,7 @@ interface TrailPoint {
   y: number;
   alpha: number;
   rotation: number;
+  active: boolean; // For ring buffer
 }
 
 // Default skin for fallback
@@ -21,6 +22,9 @@ const DEFAULT_SKIN: PlayerSkin = {
   cost: 0,
 };
 
+// Ring buffer size for trail points (pre-allocated for performance)
+const TRAIL_BUFFER_SIZE = 20;
+
 export class Player {
   x: number;
   y: number;
@@ -32,7 +36,12 @@ export class Player {
   isDead = false;
   private rotation = 0; // Current rotation in degrees
   private targetRotation = 0; // Target rotation (snaps to 90 degree increments)
-  private trail: TrailPoint[] = [];
+
+  // Ring buffer for trail points (pre-allocated for performance)
+  private trailBuffer: TrailPoint[] = [];
+  private trailHead = 0; // Index of next position to write
+  private trailCount = 0; // Number of active trail points
+
   private animationTime = 0;
   private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
 
@@ -48,6 +57,11 @@ export class Player {
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
+
+    // Pre-allocate trail buffer
+    for (let i = 0; i < TRAIL_BUFFER_SIZE; i++) {
+      this.trailBuffer.push({ x: 0, y: 0, alpha: 0, rotation: 0, active: false });
+    }
   }
 
   setSkin(skin: PlayerSkin): void {
@@ -62,7 +76,12 @@ export class Player {
     this.isDead = false;
     this.rotation = 0;
     this.targetRotation = 0;
-    this.trail = [];
+    // Reset trail buffer without reallocation
+    for (let i = 0; i < TRAIL_BUFFER_SIZE; i++) {
+      this.trailBuffer[i].active = false;
+    }
+    this.trailHead = 0;
+    this.trailCount = 0;
     this.airJumpsRemaining = 2;
     this.isDashing = false;
     this.dashTimer = 0;
@@ -266,25 +285,29 @@ export class Player {
   }
 
   private updateTrail(deltaTime: number): void {
-    // Add new trail point
-    this.trail.push({
-      x: this.x + this.width / 2,
-      y: this.y + this.height / 2,
-      alpha: 0.6,
-      rotation: this.rotation,
-    });
+    // Add new trail point to ring buffer (no allocation)
+    const point = this.trailBuffer[this.trailHead];
+    point.x = this.x + this.width / 2;
+    point.y = this.y + this.height / 2;
+    point.alpha = 0.6;
+    point.rotation = this.rotation;
+    point.active = true;
 
-    // Update and remove old trail points
-    for (let i = this.trail.length - 1; i >= 0; i--) {
-      this.trail[i].alpha -= deltaTime / 100;
-      if (this.trail[i].alpha <= 0) {
-        this.trail.splice(i, 1);
-      }
+    // Advance head pointer (wrap around)
+    this.trailHead = (this.trailHead + 1) % TRAIL_BUFFER_SIZE;
+    if (this.trailCount < TRAIL_BUFFER_SIZE) {
+      this.trailCount++;
     }
 
-    // Limit trail length
-    while (this.trail.length > 15) {
-      this.trail.shift();
+    // Update alpha for all active points
+    const fadeRate = deltaTime / 100;
+    for (let i = 0; i < TRAIL_BUFFER_SIZE; i++) {
+      if (this.trailBuffer[i].active) {
+        this.trailBuffer[i].alpha -= fadeRate;
+        if (this.trailBuffer[i].alpha <= 0) {
+          this.trailBuffer[i].active = false;
+        }
+      }
     }
   }
 
@@ -313,8 +336,11 @@ export class Player {
       glowColor = `hsl(${hue}, 100%, 70%)`;
     }
 
-    // Draw trail
-    for (const point of this.trail) {
+    // Draw trail from ring buffer
+    for (let i = 0; i < TRAIL_BUFFER_SIZE; i++) {
+      const point = this.trailBuffer[i];
+      if (!point.active) continue;
+
       const trailScreenX = point.x - cameraX;
       ctx.save();
       ctx.translate(trailScreenX, point.y);
