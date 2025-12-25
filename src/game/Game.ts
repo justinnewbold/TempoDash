@@ -15,6 +15,7 @@ import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
 import { PowerUpManager } from '../systems/PowerUps';
+import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -108,6 +109,10 @@ export class Game {
   private debug: DebugOverlay;
   private statistics: StatisticsManager;
   private powerUps: PowerUpManager;
+  private modifiers: ModifierManager;
+
+  // Modifier UI state
+  private showModifierPanel = false;
 
   // Quick restart key tracking
   private quickRestartHeld = false;
@@ -155,6 +160,7 @@ export class Game {
     this.debug = new DebugOverlay();
     this.statistics = new StatisticsManager();
     this.powerUps = new PowerUpManager();
+    this.modifiers = new ModifierManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -381,10 +387,59 @@ export class Game {
   }
 
   private handleLevelSelectClick(x: number, y: number, shiftKey = false): void {
+    // Handle modifier panel clicks first if panel is open
+    if (this.showModifierPanel) {
+      const panelX = 80;
+      const panelY = 100;
+      const panelW = GAME_WIDTH - 160;
+      const panelH = 300;
+
+      // Check if click is inside the panel
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        // Check modifier button clicks
+        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+        const btnW = 180;
+        const btnH = 50;
+        const btnGapX = 20;
+        const btnGapY = 12;
+        const startX = GAME_WIDTH / 2 - btnW - btnGapX / 2;
+        const startY = panelY + 75;
+
+        for (let i = 0; i < modIds.length; i++) {
+          const col = i % 2;
+          const row = Math.floor(i / 2);
+          const btnX = startX + col * (btnW + btnGapX);
+          const btnY = startY + row * (btnH + btnGapY);
+
+          if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            this.modifiers.toggleModifier(modIds[i]);
+            this.audio.playSelect();
+            return;
+          }
+        }
+        return; // Click inside panel but not on a button
+      } else {
+        // Click outside panel - close it
+        this.showModifierPanel = false;
+        return;
+      }
+    }
+
     // Back button
     if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
       this.audio.playSelect();
       this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Modifiers button
+    const modBtnX = GAME_WIDTH / 2 - 80;
+    const modBtnY = 418;
+    const modBtnW = 160;
+    const modBtnH = 32;
+    if (x >= modBtnX && x <= modBtnX + modBtnW && y >= modBtnY && y <= modBtnY + modBtnH) {
+      this.showModifierPanel = !this.showModifierPanel;
+      this.audio.playSelect();
       return;
     }
 
@@ -748,6 +803,9 @@ export class Game {
     this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
 
+    // Reset modifier timers for new level
+    this.modifiers.resetForLevel();
+
     // Show tutorial on first play
     if (!this.save.hasTutorialBeenShown()) {
       this.showingTutorial = true;
@@ -1009,12 +1067,25 @@ export class Game {
     const prevVelocityY = this.player.velocityY;
     const wasDashing = this.player.isDashing;
 
-    // Apply slowmo effect from power-ups
-    const effectiveSpeedMultiplier = this.speedMultiplier * this.powerUps.getSlowMoMultiplier();
+    // Update modifiers (for time attack countdown)
+    this.modifiers.update(deltaTime);
+
+    // Check for time attack expiration
+    if (this.modifiers.isTimeExpired() && !this.player.isDead) {
+      this.player.isDead = true; // Time's up!
+    }
+
+    // Apply slowmo effect from power-ups and speed demon modifier
+    const effectiveSpeedMultiplier = this.speedMultiplier *
+      this.powerUps.getSlowMoMultiplier() *
+      this.modifiers.getSpeedMultiplier();
+
+    // Check if air jumps are allowed (disabled by "Grounded" modifier)
+    const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
 
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
-      this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier);
+      this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier, allowAirJumps);
 
       // Update distance
       this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
@@ -1025,7 +1096,7 @@ export class Game {
       // Clean up platforms behind camera
       this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
     } else {
-      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier);
+      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
     }
 
     // Trigger dash shake
@@ -1106,8 +1177,8 @@ export class Game {
     }
 
     if (wasAliveBefore && this.player.isDead) {
-      // Check if shield can save the player
-      if (this.powerUps.consumeShield()) {
+      // Check if shield can save the player (disabled by fragile modifier)
+      if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
         // Shield consumed! Revive the player
         this.player.revive();
         this.audio.playCoinCollect(); // Play a positive sound
@@ -1198,7 +1269,11 @@ export class Game {
         const baseScore = 1000;
         const attemptPenalty = (this.attempts - 1) * 50;
         const coinBonus = this.level.coinsCollected * 100;
-        this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+
+        // Apply modifier score multiplier (higher score for harder modifiers)
+        const modifierMultiplier = this.modifiers.getScoreMultiplier();
+        this.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
 
         // Add to total points
         this.save.addPoints(this.levelScoreThisRun);
@@ -1653,6 +1728,43 @@ export class Game {
       this.ctx.shadowBlur = 4;
     }
 
+    // Time Attack countdown (center-top, prominent when active)
+    if (this.modifiers.isActive('timeAttack')) {
+      const timeRemaining = this.modifiers.getTimeRemaining();
+      const seconds = Math.ceil(timeRemaining / 1000);
+      const isLow = seconds <= 10;
+
+      this.ctx.textAlign = 'center';
+      this.ctx.font = `bold ${isLow ? 28 : 24}px "Segoe UI", sans-serif`;
+      this.ctx.fillStyle = isLow ? '#ff4444' : '#ffff00';
+      this.ctx.shadowColor = this.ctx.fillStyle;
+      this.ctx.shadowBlur = isLow ? 20 : 10;
+
+      // Pulse when low
+      const scale = isLow ? 1 + Math.sin(Date.now() / 100) * 0.1 : 1;
+      this.ctx.save();
+      this.ctx.translate(GAME_WIDTH / 2, 58);
+      this.ctx.scale(scale, scale);
+      this.ctx.fillText(`⏱️ ${seconds}s`, 0, 0);
+      this.ctx.restore();
+      this.ctx.shadowBlur = 4;
+    }
+
+    // Active modifiers display (bottom-left)
+    const activeModifiers = this.modifiers.getActiveModifierDetails();
+    if (activeModifiers.length > 0) {
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+
+      let modY = GAME_HEIGHT - 60;
+      for (const mod of activeModifiers) {
+        this.ctx.fillStyle = mod.color;
+        this.ctx.fillText(`${mod.icon} ${mod.name}`, 15, modY);
+        modY -= 16;
+      }
+    }
+
     // Beat indicator
     if (this.beatPulse > 0) {
       const size = 15 + this.beatPulse * 10;
@@ -1951,14 +2063,123 @@ export class Game {
       this.ctx.fill();
     }
 
+    // Modifiers button
+    const modBtnX = GAME_WIDTH / 2 - 80;
+    const modBtnY = 418;
+    const modBtnW = 160;
+    const modBtnH = 32;
+
+    this.ctx.fillStyle = this.showModifierPanel ? '#ff6600' : 'rgba(255, 102, 0, 0.7)';
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(modBtnX, modBtnY, modBtnW, modBtnH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'center';
+    const activeCount = this.modifiers.getActiveCount();
+    const modifierText = activeCount > 0 ? `MODIFIERS (${activeCount})` : 'MODIFIERS';
+    this.ctx.fillText(modifierText, GAME_WIDTH / 2, modBtnY + 21);
+
+    // Show score multiplier if modifiers are active
+    if (activeCount > 0) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`${this.modifiers.getScoreMultiplier().toFixed(2)}x Score`, GAME_WIDTH / 2, modBtnY + 50);
+    }
+
+    // Render modifier panel if open
+    if (this.showModifierPanel) {
+      this.renderModifierPanel();
+    }
+
     // Level features hint
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 440);
-    this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 465);
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 480);
 
     this.ctx.restore();
+  }
+
+  private renderModifierPanel(): void {
+    const panelX = 80;
+    const panelY = 100;
+    const panelW = GAME_WIDTH - 160;
+    const panelH = 300;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.fillText('DIFFICULTY MODIFIERS', GAME_WIDTH / 2, panelY + 35);
+
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.fillText('Enable modifiers for bonus score multipliers', GAME_WIDTH / 2, panelY + 55);
+
+    // Modifier buttons - 2 columns, 3 rows
+    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+    const btnW = 180;
+    const btnH = 50;
+    const btnGapX = 20;
+    const btnGapY = 12;
+    const startX = GAME_WIDTH / 2 - btnW - btnGapX / 2;
+    const startY = panelY + 75;
+
+    for (let i = 0; i < modIds.length; i++) {
+      const modId = modIds[i];
+      const mod = MODIFIERS[modId];
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+
+      const btnX = startX + col * (btnW + btnGapX);
+      const btnY = startY + row * (btnH + btnGapY);
+      const isActive = this.modifiers.isActive(modId);
+
+      // Button background
+      this.ctx.fillStyle = isActive ? mod.color : 'rgba(60, 60, 60, 0.8)';
+      this.ctx.strokeStyle = mod.color;
+      this.ctx.lineWidth = isActive ? 3 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, btnY, btnW, btnH, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Icon and name
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isActive ? '#000000' : '#ffffff';
+      this.ctx.fillText(`${mod.icon} ${mod.name}`, btnX + 10, btnY + 22);
+
+      // Description and multiplier
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isActive ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText(mod.description, btnX + 10, btnY + 38);
+
+      this.ctx.textAlign = 'right';
+      this.ctx.fillStyle = isActive ? '#000000' : '#ffd700';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillText(`${mod.scoreMultiplier}x`, btnX + btnW - 10, btnY + 22);
+    }
+
+    // Close hint
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click modifiers to toggle | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 15);
   }
 
   private renderSettings(): void {

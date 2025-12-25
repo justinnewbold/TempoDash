@@ -94,7 +94,7 @@ export class Player {
     this.velocityY = -PLAYER.JUMP_FORCE * 0.5;
   }
 
-  update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0): void {
+  update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0, allowAirJumps: boolean = true): void {
     if (this.isDead) return;
 
     this.animationTime += deltaTime;
@@ -120,8 +120,9 @@ export class Player {
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
       this.airJumpsRemaining = 2; // Reset air jumps on ground jump
-    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0) {
+    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
       // Air jumps (double/triple) - each successive jump is weaker
+      // Disabled when "Grounded" modifier is active
       const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
       this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
 
