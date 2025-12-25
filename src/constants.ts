@@ -33,6 +33,10 @@ export const COLORS = {
     lava: '#f56565',
     phase: '#b794f4',
     spike: '#ffffff',
+    conveyor: '#48bb78',   // Green - industrial feel
+    gravity: '#ed64a6',    // Pink - magical/gravity
+    sticky: '#ecc94b',     // Yellow - sticky/honey
+    glass: '#e2e8f0',      // Light gray - transparent glass
   },
 
   // Level 1 - City Night

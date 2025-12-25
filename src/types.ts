@@ -20,6 +20,7 @@ export interface PlatformConfig {
   phaseOffset?: number;
   phaseGroup?: number;
   color?: string;
+  conveyorSpeed?: number;  // Speed for conveyor (-1 to 1, negative = left)
 }
 
 export type PlatformType =
@@ -30,7 +31,11 @@ export type PlatformType =
   | 'ice'        // Slippery platform
   | 'lava'       // Deadly platform
   | 'phase'      // Phases in and out
-  | 'spike';     // Deadly spike obstacle
+  | 'spike'      // Deadly spike obstacle
+  | 'conveyor'   // Moves player horizontally while standing
+  | 'gravity'    // Flips player gravity on contact
+  | 'sticky'     // Player sticks until jump pressed
+  | 'glass';     // Breaks after 2nd landing
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';

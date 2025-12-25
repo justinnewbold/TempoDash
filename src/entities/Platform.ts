@@ -20,6 +20,12 @@ export class Platform {
   isPhased = false;
   isDestroyed = false;
 
+  // New platform type properties
+  conveyorSpeed = 1;           // -1 to 1, negative = left
+  private glassHits = 0;       // Breaks after 2 hits
+  private glassBreaking = false;
+  private conveyorAnimTime = 0;
+
   constructor(config: PlatformConfig) {
     this.x = config.x;
     this.y = config.y;
@@ -34,6 +40,11 @@ export class Platform {
 
     if (config.movePattern?.startOffset) {
       this.moveTime = config.movePattern.startOffset;
+    }
+
+    // Conveyor default speed
+    if (config.conveyorSpeed !== undefined) {
+      this.conveyorSpeed = config.conveyorSpeed;
     }
   }
 
@@ -66,6 +77,20 @@ export class Platform {
       const cyclePosition = this.phaseTimer % cycleTime;
       this.isPhased = cyclePosition > PLATFORM.PHASE_ON_TIME;
     }
+
+    // Handle conveyor animation
+    if (this.type === 'conveyor') {
+      this.conveyorAnimTime += deltaTime * 0.005 * this.conveyorSpeed;
+    }
+
+    // Handle glass breaking animation
+    if (this.type === 'glass' && this.glassBreaking) {
+      this.crumbleTimer += deltaTime;
+      this.crumbleProgress = Math.min(1, this.crumbleTimer / 300);
+      if (this.crumbleProgress >= 1) {
+        this.isDestroyed = true;
+      }
+    }
   }
 
   private updateMovement(deltaTime: number): void {
@@ -91,6 +116,23 @@ export class Platform {
     if (this.type === 'crumble' && !this.isCrumbling) {
       this.isCrumbling = true;
     }
+  }
+
+  // Handle glass platform landing - returns true if glass breaks
+  onGlassLanding(): boolean {
+    if (this.type !== 'glass' || this.glassBreaking) return false;
+
+    this.glassHits++;
+    if (this.glassHits >= 2) {
+      this.glassBreaking = true;
+      return true;
+    }
+    return false;
+  }
+
+  // Get glass crack state (0 = pristine, 1 = cracked, 2+ = breaking)
+  getGlassState(): number {
+    return this.glassHits;
   }
 
   getBounds(): Rectangle {
@@ -270,6 +312,125 @@ export class Platform {
           ctx.arc(px, py, 2, 0, Math.PI * 2);
           ctx.fill();
         }
+        break;
+
+      case 'conveyor':
+        // Industrial green conveyor belt
+        gradient.addColorStop(0, '#38a169');
+        gradient.addColorStop(1, '#276749');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Animated conveyor lines
+        ctx.strokeStyle = '#2d3748';
+        ctx.lineWidth = 3;
+        const lineSpacing = 20;
+        const offset = (this.conveyorAnimTime * 50) % lineSpacing;
+        for (let lx = -lineSpacing + offset; lx < this.width + lineSpacing; lx += lineSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(screenX + lx, this.y);
+          ctx.lineTo(screenX + lx + 10, this.y + this.height);
+          ctx.stroke();
+        }
+        // Direction arrows
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        const arrowDir = this.conveyorSpeed > 0 ? 1 : -1;
+        for (let i = 0; i < 3; i++) {
+          const ax = screenX + (this.width / 4) * (i + 1);
+          ctx.beginPath();
+          ctx.moveTo(ax - 5 * arrowDir, this.y + this.height / 2 - 3);
+          ctx.lineTo(ax + 5 * arrowDir, this.y + this.height / 2);
+          ctx.lineTo(ax - 5 * arrowDir, this.y + this.height / 2 + 3);
+          ctx.fill();
+        }
+        break;
+
+      case 'gravity':
+        // Magical pink/purple gradient
+        const gravGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y + this.height);
+        gravGradient.addColorStop(0, '#d53f8c');
+        gravGradient.addColorStop(0.5, '#805ad5');
+        gravGradient.addColorStop(1, '#d53f8c');
+        ctx.fillStyle = gravGradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Floating particles effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        const gravTime = Date.now() * 0.003;
+        for (let i = 0; i < 4; i++) {
+          const gx = screenX + (this.width / 5) * (i + 1);
+          const gy = this.y + this.height / 2 + Math.sin(gravTime + i * 0.8) * 8;
+          ctx.beginPath();
+          ctx.arc(gx, gy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Up/down arrows
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        const arrowY = this.y + this.height / 2;
+        ctx.beginPath();
+        ctx.moveTo(screenX + this.width / 2, arrowY - 6);
+        ctx.lineTo(screenX + this.width / 2 - 4, arrowY);
+        ctx.lineTo(screenX + this.width / 2 + 4, arrowY);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(screenX + this.width / 2, arrowY + 6);
+        ctx.lineTo(screenX + this.width / 2 - 4, arrowY);
+        ctx.lineTo(screenX + this.width / 2 + 4, arrowY);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+
+      case 'sticky':
+        // Yellow/amber honey-like platform
+        gradient.addColorStop(0, '#ecc94b');
+        gradient.addColorStop(1, '#d69e2e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Dripping honey effect
+        ctx.fillStyle = '#d69e2e';
+        for (let i = 0; i < 4; i++) {
+          const dx = screenX + (this.width / 5) * (i + 1);
+          const dripHeight = 5 + Math.sin(Date.now() * 0.002 + i) * 3;
+          ctx.beginPath();
+          ctx.ellipse(dx, this.y + this.height + dripHeight / 2, 4, dripHeight, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Shine
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.fillRect(screenX + 5, this.y + 3, this.width * 0.4, 4);
+        break;
+
+      case 'glass':
+        // Transparent glass platform
+        ctx.fillStyle = this.glassHits === 0
+          ? 'rgba(226, 232, 240, 0.6)'
+          : 'rgba(226, 232, 240, 0.4)';
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Reflection shine
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fillRect(screenX + 5, this.y + 2, this.width * 0.6, 3);
+        // Cracks if hit once
+        if (this.glassHits >= 1) {
+          ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
+          ctx.lineWidth = 1;
+          // Draw crack pattern
+          const cx = screenX + this.width / 2;
+          const cy = this.y + this.height / 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx - 15, cy - 8);
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + 12, cy - 6);
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx - 8, cy + 7);
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + 10, cy + 5);
+          ctx.stroke();
+        }
+        // Border
+        ctx.strokeStyle = 'rgba(200, 220, 240, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(screenX, this.y, this.width, this.height);
         break;
 
       default: // solid

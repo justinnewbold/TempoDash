@@ -54,6 +54,11 @@ export class Player {
   // Current skin
   private skin: PlayerSkin = DEFAULT_SKIN;
 
+  // New platform interaction states
+  private onConveyor: Platform | null = null;
+  private isStuck = false;
+  private gravityFlipped = false;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
@@ -85,6 +90,9 @@ export class Player {
     this.airJumpsRemaining = 2;
     this.isDashing = false;
     this.dashTimer = 0;
+    this.onConveyor = null;
+    this.isStuck = false;
+    this.gravityFlipped = false;
   }
 
   // Revive player (used when shield saves from death)
@@ -99,6 +107,9 @@ export class Player {
 
     this.animationTime += deltaTime;
 
+    // Reset conveyor state each frame (will be re-set in collision handling)
+    this.onConveyor = null;
+
     // Update dash timer
     if (this.isDashing) {
       this.dashTimer -= deltaTime;
@@ -111,12 +122,21 @@ export class Player {
     // Update trail
     this.updateTrail(deltaTime);
 
+    // Handle sticky release - jump to escape
+    if (this.isStuck && input.jumpPressed) {
+      this.isStuck = false;
+      this.velocityY = -PLAYER.JUMP_FORCE;
+      this.isGrounded = false;
+    }
+
     // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
+    // Sticky platforms slow/stop forward movement
+    const stickySlow = this.isStuck ? 0.3 : 1;
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
-    this.x += PLAYER.SPEED * speedMult * speedMultiplier * (deltaTime / 1000);
+    this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
 
     // Handle jumping (auto-jump when holding - jump as soon as grounded)
-    if (input.jump && this.isGrounded) {
+    if (input.jump && this.isGrounded && !this.isStuck) {
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
       this.airJumpsRemaining = 2; // Reset air jumps on ground jump
@@ -135,9 +155,10 @@ export class Player {
       this.airJumpsRemaining--;
     }
 
-    // Apply gravity
-    this.velocityY += PLAYER.GRAVITY * (deltaTime / 1000);
-    this.velocityY = Math.min(this.velocityY, PLAYER.MAX_FALL_SPEED);
+    // Apply gravity (flipped if on gravity platform)
+    const gravityDir = this.gravityFlipped ? -1 : 1;
+    this.velocityY += PLAYER.GRAVITY * gravityDir * (deltaTime / 1000);
+    this.velocityY = Math.min(Math.abs(this.velocityY), PLAYER.MAX_FALL_SPEED) * Math.sign(this.velocityY);
 
     // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
@@ -154,8 +175,25 @@ export class Player {
     // Handle collisions
     this.handleCollisions(platforms);
 
-    // Check if fell off screen (death)
-    if (this.y > GAME_HEIGHT + 100) {
+    // Apply conveyor belt movement
+    if (this.onConveyor !== null && this.isGrounded) {
+      const conveyor = this.onConveyor as Platform;
+      const conveyorSpeed = conveyor.conveyorSpeed * 150; // 150 px/s base speed
+      this.x += conveyorSpeed * (deltaTime / 1000);
+    }
+
+    // Reset gravity flip when leaving ground (fall normally after flip)
+    if (!this.isGrounded && this.gravityFlipped) {
+      // Check if player is moving upward (escaped gravity flip)
+      if (this.velocityY < 0) {
+        this.gravityFlipped = false;
+      }
+    }
+
+    // Check if fell off screen (death) - account for gravity flip
+    const deathY = this.gravityFlipped ? -100 : GAME_HEIGHT + 100;
+    const fellOffScreen = this.gravityFlipped ? this.y < deathY : this.y > deathY;
+    if (fellOffScreen) {
       this.isDead = true;
     }
   }
@@ -182,6 +220,33 @@ export class Player {
         case 'bounce':
           if (collision === 'top') {
             this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
+            this.y = bounds.y - this.height;
+          }
+          continue;
+
+        case 'glass':
+          if (collision === 'top') {
+            platform.onGlassLanding();
+          }
+          break;
+
+        case 'conveyor':
+          if (collision === 'top') {
+            this.onConveyor = platform;
+          }
+          break;
+
+        case 'sticky':
+          if (collision === 'top') {
+            this.isStuck = true;
+          }
+          break;
+
+        case 'gravity':
+          if (collision === 'top') {
+            // Gravity flip - give upward boost and flip gravity direction
+            this.gravityFlipped = !this.gravityFlipped;
+            this.velocityY = this.gravityFlipped ? PLAYER.JUMP_FORCE : -PLAYER.JUMP_FORCE;
             this.y = bounds.y - this.height;
           }
           continue;
