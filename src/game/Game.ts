@@ -362,6 +362,9 @@ export class Game {
       case 'challenges':
         this.handleChallengesClick(x, y);
         break;
+      case 'paused':
+        this.handlePausedClick(x, y);
+        break;
       case 'editor':
         this.handleEditorClick(e);
         break;
@@ -380,6 +383,13 @@ export class Game {
     if (this.showingTutorial) {
       this.dismissTutorial();
       return;
+    }
+
+    // Handle mobile control buttons during gameplay
+    if ((this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') && this.input.isMobileDevice()) {
+      if (this.handleMobileControlClick(x, y)) {
+        return;
+      }
     }
 
     switch (this.state.gameStatus) {
@@ -403,6 +413,9 @@ export class Game {
         break;
       case 'challenges':
         this.handleChallengesClick(x, y);
+        break;
+      case 'paused':
+        this.handlePausedClick(x, y);
         break;
       case 'editor':
         // Editor has its own touch handling via TouchHandler
@@ -1180,6 +1193,18 @@ export class Game {
       this.state.gameStatus = 'mainMenu';
       this.audio.stop();
     }
+  }
+
+  private restartLevel(): void {
+    // Restart current level from beginning
+    this.loadLevel(this.state.currentLevel);
+    this.attempts = 1;
+    this.levelScoreThisRun = 0;
+    this.checkpointX = this.level.playerStart.x;
+    this.checkpointY = this.level.playerStart.y;
+    this.lastCheckpointProgress = 0;
+    this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+    this.audio.start();
   }
 
   private startEndlessMode(): void {
@@ -2425,7 +2450,155 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
+    // Mobile controls (pause, home, restart buttons)
+    if (this.input.isMobileDevice()) {
+      this.renderMobileControls();
+    }
+
     this.ctx.restore();
+  }
+
+  private renderMobileControls(): void {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Semi-transparent background for buttons
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.lineWidth = 2;
+
+    // Pause button (top-right area, below coins/best)
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    this.ctx.beginPath();
+    this.ctx.roundRect(pauseX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Pause icon (two vertical bars)
+    this.ctx.fillStyle = '#ffffff';
+    const barWidth = 6;
+    const barHeight = 20;
+    const barGap = 6;
+    const barY = topY + (buttonSize - barHeight) / 2;
+    this.ctx.fillRect(pauseX + buttonSize / 2 - barWidth - barGap / 2, barY, barWidth, barHeight);
+    this.ctx.fillRect(pauseX + buttonSize / 2 + barGap / 2, barY, barWidth, barHeight);
+
+    // Home button (left of pause)
+    const homeX = pauseX - buttonSize - buttonPadding;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(homeX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Home icon (simple house shape)
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('⌂', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
+
+    // Restart button (left of home)
+    const restartX = homeX - buttonSize - buttonPadding;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(restartX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Restart icon (circular arrow)
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillText('↻', restartX + buttonSize / 2, topY + buttonSize / 2 + 7);
+
+    // Touch zone hints at bottom of screen (only show when paused)
+    if (this.state.gameStatus === 'paused') {
+      const hintY = GAME_HEIGHT - 50;
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Left side: Flip gravity  |  Right side: Jump', GAME_WIDTH / 2, hintY);
+    }
+  }
+
+  private handleMobileControlClick(x: number, y: number): boolean {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Pause button
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    if (x >= pauseX && x <= pauseX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      if (this.state.gameStatus === 'paused') {
+        // Resume
+        this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+        this.audio.start();
+      } else {
+        // Pause
+        this.state.gameStatus = 'paused';
+        this.audio.stop();
+      }
+      return true;
+    }
+
+    // Home button
+    const homeX = pauseX - buttonSize - buttonPadding;
+    if (x >= homeX && x <= homeX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      this.audio.stop();
+      this.state.gameStatus = 'mainMenu';
+      this.isPracticeMode = false;
+      return true;
+    }
+
+    // Restart button
+    const restartX = homeX - buttonSize - buttonPadding;
+    if (x >= restartX && x <= restartX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      this.restartLevel();
+      return true;
+    }
+
+    return false;
+  }
+
+  private handlePausedClick(x: number, y: number): void {
+    // Check mobile control buttons first
+    if (this.input.isMobileDevice() && this.handleMobileControlClick(x, y)) {
+      return;
+    }
+
+    // Check pause menu buttons (matching renderPaused layout)
+    const btnWidth = 200;
+    const btnHeight = 44;
+    const btnX = GAME_WIDTH / 2 - btnWidth / 2;
+    const btnStartY = GAME_HEIGHT / 2 + 100;
+    const btnGap = 55;
+
+    // Resume button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY && y <= btnStartY + btnHeight) {
+      this.audio.playSelect();
+      this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+      this.audio.start();
+      return;
+    }
+
+    // Restart button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY + btnGap && y <= btnStartY + btnGap + btnHeight) {
+      this.audio.playSelect();
+      this.restartLevel();
+      return;
+    }
+
+    // Main Menu button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY + btnGap * 2 && y <= btnStartY + btnGap * 2 + btnHeight) {
+      this.audio.playSelect();
+      this.audio.stop();
+      this.state.gameStatus = 'mainMenu';
+      this.isPracticeMode = false;
+      return;
+    }
   }
 
   private renderMainMenu(): void {
@@ -3756,13 +3929,51 @@ export class Game {
       lineY += 22;
     }
 
-    // Resume/Quit instructions
+    // Action buttons (mobile-friendly)
+    const btnWidth = 200;
+    const btnHeight = 44;
+    const btnX = GAME_WIDTH / 2 - btnWidth / 2;
+    const btnStartY = GAME_HEIGHT / 2 + 100;
+    const btnGap = 55;
+
+    // Resume button
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000';
     this.ctx.textAlign = 'center';
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 115);
-    this.ctx.fillStyle = '#ff6666';
-    this.ctx.fillText('Press Q to quit to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140);
+    this.ctx.fillText('▶ RESUME', GAME_WIDTH / 2, btnStartY + 28);
+
+    // Restart button
+    this.ctx.fillStyle = 'rgba(0, 170, 255, 0.8)';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY + btnGap, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillText('↻ RESTART', GAME_WIDTH / 2, btnStartY + btnGap + 28);
+
+    // Main Menu button
+    this.ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
+    this.ctx.strokeStyle = '#ff6666';
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY + btnGap * 2, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillText('⌂ MAIN MENU', GAME_WIDTH / 2, btnStartY + btnGap * 2 + 28);
+
+    // Keyboard hints (only show on desktop)
+    if (!this.input.isMobileDevice()) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.fillText('ESC/ENTER to resume  |  R to restart  |  Q to quit', GAME_WIDTH / 2, GAME_HEIGHT - 30);
+    }
 
     this.ctx.restore();
   }
