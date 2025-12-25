@@ -83,6 +83,8 @@ export class Game {
 
   // Tutorial
   private showingTutorial = false;
+  private tutorialPage = 0;
+  private static readonly TUTORIAL_PAGES = 4;
 
   // Achievement notifications
   private achievementQueue: Achievement[] = [];
@@ -653,9 +655,15 @@ export class Game {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    // Dismiss tutorial on any key
+    // Tutorial navigation
     if (this.showingTutorial) {
-      this.dismissTutorial();
+      if (e.code === 'ArrowRight' || e.code === 'Space' || e.code === 'Enter') {
+        this.dismissTutorial(); // Goes to next page or closes
+      } else if (e.code === 'ArrowLeft') {
+        this.previousTutorialPage();
+      } else if (e.code === 'KeyS' || e.code === 'Escape') {
+        this.skipTutorial();
+      }
       return;
     }
 
@@ -3999,93 +4007,335 @@ export class Game {
 
   private renderTutorial(): void {
     // Semi-transparent overlay
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     this.ctx.save();
     this.ctx.textAlign = 'center';
 
+    // Page indicator dots
+    const dotY = 30;
+    for (let i = 0; i < Game.TUTORIAL_PAGES; i++) {
+      this.ctx.fillStyle = i === this.tutorialPage ? '#00ffff' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH / 2 - 30 + i * 20, dotY, 5, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    // Skip button
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText('SKIP (S)', GAME_WIDTH - 20, 30);
+    this.ctx.textAlign = 'center';
+
+    // Render page content based on current page
+    switch (this.tutorialPage) {
+      case 0:
+        this.renderTutorialBasicControls();
+        break;
+      case 1:
+        this.renderTutorialPlatforms();
+        break;
+      case 2:
+        this.renderTutorialPowerUps();
+        break;
+      case 3:
+        this.renderTutorialTips();
+        break;
+    }
+
+    // Navigation hints
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.shadowBlur = 0;
+
+    if (this.tutorialPage > 0) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText('< BACK (LEFT)', 20, GAME_HEIGHT - 20);
+    }
+
+    this.ctx.textAlign = 'right';
+    const pulse = Math.sin(this.menuAnimation * 4) * 0.3 + 0.7;
+    this.ctx.fillStyle = `rgba(0, 255, 170, ${pulse})`;
+    if (this.tutorialPage < Game.TUTORIAL_PAGES - 1) {
+      this.ctx.fillText('NEXT (RIGHT/TAP) >', GAME_WIDTH - 20, GAME_HEIGHT - 20);
+    } else {
+      this.ctx.fillText('START GAME (TAP) >', GAME_WIDTH - 20, GAME_HEIGHT - 20);
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderTutorialBasicControls(): void {
     // Title
-    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffff';
     this.ctx.shadowColor = '#00ffff';
     this.ctx.shadowBlur = 20;
-    this.ctx.fillText('HOW TO PLAY', GAME_WIDTH / 2, 80);
+    this.ctx.fillText('BASIC CONTROLS', GAME_WIDTH / 2, 80);
 
     // Controls box
-    const boxWidth = 400;
-    const boxHeight = 280;
+    const boxWidth = 500;
+    const boxHeight = 340;
     const boxX = (GAME_WIDTH - boxWidth) / 2;
-    const boxY = 110;
+    const boxY = 100;
 
     this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
     this.ctx.strokeStyle = '#00ffff';
     this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
     this.ctx.beginPath();
     this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Controls content
-    this.ctx.shadowBlur = 0;
     const controls = [
-      { icon: '⬆️', key: 'SPACE / W / TAP', action: 'Jump (tap again in air for double jump!)' },
-      { icon: '⚡', key: 'SHIFT / 2-FINGER', action: 'Dash forward quickly' },
-      { icon: '🎵', key: 'M', action: 'Mute/Unmute music' },
-      { icon: '⏸️', key: 'ESC', action: 'Pause game' },
+      { icon: '⬆️', keys: 'SPACE / W / UP / TAP', desc: 'JUMP', detail: 'Tap again in the air for a double jump!' },
+      { icon: '⚡', keys: 'SHIFT / 2-FINGER TAP', desc: 'DASH', detail: 'Quick burst of speed. Passes through enemies!' },
+      { icon: '⏸️', keys: 'ESC / P', desc: 'PAUSE', detail: 'Pause the game anytime' },
+      { icon: '🎵', keys: 'M', desc: 'MUTE', detail: 'Toggle music on/off' },
+      { icon: '🔄', keys: 'R (hold)', desc: 'RESTART', detail: 'Hold R to quickly restart the level' },
     ];
 
     let y = boxY + 45;
     for (const control of controls) {
-      // Icon
-      this.ctx.font = '24px "Segoe UI", sans-serif';
+      this.ctx.font = '22px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
       this.ctx.fillText(control.icon, boxX + 35, y);
 
-      // Key
+      this.ctx.textAlign = 'left';
       this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffcc00';
-      this.ctx.textAlign = 'left';
-      this.ctx.fillText(control.key, boxX + 70, y - 5);
+      this.ctx.fillText(control.desc, boxX + 70, y - 8);
 
-      // Action
-      this.ctx.font = '13px "Segoe UI", sans-serif';
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      this.ctx.fillText(control.action, boxX + 70, y + 15);
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#888888';
+      this.ctx.fillText(control.keys, boxX + 160, y - 8);
 
-      this.ctx.textAlign = 'center';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(control.detail, boxX + 70, y + 10);
+
       y += 55;
     }
+    this.ctx.textAlign = 'center';
+  }
 
-    // Tips
-    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+  private renderTutorialPlatforms(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
-    this.ctx.fillText('TIPS', GAME_WIDTH / 2, boxY + boxHeight + 40);
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLATFORM TYPES', GAME_WIDTH / 2, 80);
 
+    const boxWidth = 540;
+    const boxHeight = 380;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#ff00ff';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const platforms = [
+      { color: '#4a9eff', name: 'SOLID', desc: 'Regular safe platforms' },
+      { color: '#ff6b9d', name: 'BOUNCE', desc: 'Springs you high into the air!' },
+      { color: '#88ddff', name: 'ICE', desc: 'Slippery! Hard to stop' },
+      { color: '#ff4400', name: 'LAVA', desc: 'Deadly! Avoid at all costs' },
+      { color: '#aa8866', name: 'CRUMBLE', desc: 'Falls apart after you land' },
+      { color: '#9966ff', name: 'MOVING', desc: 'Watch the pattern!' },
+      { color: '#66ffaa', name: 'PHASE', desc: 'Appears and disappears' },
+      { color: '#48bb78', name: 'CONVEYOR', desc: 'Moves you left or right' },
+      { color: '#ed64a6', name: 'GRAVITY', desc: 'Flips your gravity!' },
+      { color: '#ecc94b', name: 'STICKY', desc: 'Slows you down. Jump to escape!' },
+    ];
+
+    const cols = 2;
+    const itemW = boxWidth / cols - 30;
+    let col = 0;
+    let row = 0;
+    const startY = boxY + 40;
+    const rowHeight = 36;
+
+    for (const p of platforms) {
+      const x = boxX + 20 + col * (itemW + 20);
+      const y = startY + row * rowHeight;
+
+      // Color square
+      this.ctx.fillStyle = p.color;
+      this.ctx.fillRect(x, y - 10, 16, 16);
+
+      // Name
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(p.name, x + 22, y + 2);
+
+      // Desc
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText(p.desc, x + 85, y + 2);
+
+      col++;
+      if (col >= cols) {
+        col = 0;
+        row++;
+      }
+    }
+    this.ctx.textAlign = 'center';
+  }
+
+  private renderTutorialPowerUps(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('POWER-UPS', GAME_WIDTH / 2, 80);
+
+    const boxWidth = 480;
+    const boxHeight = 280;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const powerups = [
+      { icon: '🛡️', color: '#00aaff', name: 'SHIELD', desc: 'Survive one hit from any hazard' },
+      { icon: '🧲', color: '#ff00ff', name: 'MAGNET', desc: 'Attracts nearby coins automatically' },
+      { icon: '⏱️', color: '#00ff88', name: 'SLOW-MO', desc: 'Slows down time for better control' },
+      { icon: '✨', color: '#ffcc00', name: '2X POINTS', desc: 'Double points from coins!' },
+    ];
+
+    let y = boxY + 55;
+    for (const p of powerups) {
+      // Icon and box
+      this.ctx.fillStyle = p.color + '33';
+      this.ctx.beginPath();
+      this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
+      this.ctx.fill();
+
+      this.ctx.font = '28px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(p.icon, boxX + 55, y + 5);
+
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = p.color;
+      this.ctx.fillText(p.name, boxX + 95, y - 3);
+
+      this.ctx.font = '13px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText(p.desc, boxX + 95, y + 17);
+
+      y += 60;
+    }
+    this.ctx.textAlign = 'center';
+
+    // Hint
     this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Time your jumps to the beat for better rhythm!', GAME_WIDTH / 2, boxY + boxHeight + 65);
-    this.ctx.fillText('Collect coins for bonus points!', GAME_WIDTH / 2, boxY + boxHeight + 85);
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.fillText('Power-ups appear as glowing orbs throughout levels!', GAME_WIDTH / 2, boxY + boxHeight + 30);
+  }
 
-    // Continue prompt
+  private renderTutorialTips(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.shadowColor = '#00ff88';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PRO TIPS', GAME_WIDTH / 2, 80);
+
+    const boxWidth = 500;
+    const boxHeight = 340;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const tips = [
+      { icon: '🎵', tip: 'Time your jumps to the beat for better rhythm!' },
+      { icon: '💰', tip: 'Collecting coins quickly builds combos for bonus points' },
+      { icon: '⚡', tip: 'Dash through tight gaps and over small hazards' },
+      { icon: '👀', tip: 'Watch for moving platforms - learn their patterns' },
+      { icon: '🏆', tip: 'Practice mode lets you restart from checkpoints' },
+      { icon: '🎮', tip: 'Create and share your own levels in the editor!' },
+      { icon: '📅', tip: 'Complete daily challenges for streak bonuses' },
+      { icon: '⚙️', tip: 'Try difficulty modifiers for extra challenge!' },
+    ];
+
+    let y = boxY + 45;
+    for (const t of tips) {
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(t.icon, boxX + 35, y);
+
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      this.ctx.fillText(t.tip, boxX + 65, y);
+
+      y += 38;
+    }
+    this.ctx.textAlign = 'center';
+
+    // Ready message
     this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffaa';
     this.ctx.shadowColor = '#00ffaa';
-    this.ctx.shadowBlur = 10;
-    const pulse = Math.sin(this.menuAnimation * 4) * 0.3 + 0.7;
-    this.ctx.globalAlpha = pulse;
-    this.ctx.fillText('TAP or PRESS ANY KEY to start!', GAME_WIDTH / 2, GAME_HEIGHT - 40);
-    this.ctx.globalAlpha = 1;
-
-    this.ctx.restore();
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText("You're ready! Good luck!", GAME_WIDTH / 2, boxY + boxHeight + 35);
   }
 
   private dismissTutorial(): void {
     if (this.showingTutorial) {
-      this.showingTutorial = false;
-      this.save.markTutorialShown();
-      this.audio.start();
+      // If not on the last page, go to next page
+      if (this.tutorialPage < Game.TUTORIAL_PAGES - 1) {
+        this.tutorialPage++;
+        this.audio.playSelect();
+      } else {
+        // On last page, close tutorial
+        this.showingTutorial = false;
+        this.tutorialPage = 0;
+        this.save.markTutorialShown();
+        this.audio.start();
+      }
     }
+  }
+
+  private previousTutorialPage(): void {
+    if (this.tutorialPage > 0) {
+      this.tutorialPage--;
+      this.audio.playSelect();
+    }
+  }
+
+  private skipTutorial(): void {
+    this.showingTutorial = false;
+    this.tutorialPage = 0;
+    this.save.markTutorialShown();
+    this.audio.start();
   }
 
   // Achievement system methods
