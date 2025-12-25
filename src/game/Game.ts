@@ -56,6 +56,10 @@ export class Game {
   // Death flash effect
   private deathFlashOpacity = 0;
 
+  // Power-up flash effect
+  private powerUpFlashOpacity = 0;
+  private powerUpFlashColor = '#00ffaa';
+
   // Combo system
   private comboCount = 0;
   private comboTimer = 0;
@@ -1097,6 +1101,11 @@ export class Game {
       this.deathFlashOpacity = Math.max(0, this.deathFlashOpacity - deltaTime / 300);
     }
 
+    // Decay power-up flash
+    if (this.powerUpFlashOpacity > 0) {
+      this.powerUpFlashOpacity = Math.max(0, this.powerUpFlashOpacity - deltaTime / 200);
+    }
+
     // Decay orientation hint timer
     if (this.orientationMessageTimer > 0) {
       this.orientationMessageTimer -= deltaTime;
@@ -1144,6 +1153,16 @@ export class Game {
         collectedPowerUp.x + collectedPowerUp.width / 2,
         collectedPowerUp.y + collectedPowerUp.height / 2
       );
+
+      // Trigger power-up flash with color based on type
+      const powerUpColors: Record<string, string> = {
+        speed: '#00ffff',
+        shield: '#00aaff',
+        magnet: '#ff00ff',
+        doubleJump: '#ffff00'
+      };
+      this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
+      this.powerUpFlashOpacity = 0.25;
     }
 
     const wasGroundedBefore = this.player.isGrounded;
@@ -1187,6 +1206,19 @@ export class Game {
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
     }
+
+    // Update player trail particles
+    const playerColor = this.save.getSelectedSkin().glowColor;
+    // Player auto-moves forward, so always "moving" when alive
+    const isMoving = !this.player.isDead;
+    this.particles.updateTrail(
+      deltaTime,
+      this.player.x + this.player.width / 2,
+      this.player.y + this.player.height / 2,
+      playerColor,
+      isMoving,
+      this.player.isDashing
+    );
 
     // Update chase mode (wall of death)
     if (!this.isEndlessMode) {
@@ -1264,6 +1296,22 @@ export class Game {
       // Increase speed by 0.25% per jump (compound growth)
       this.jumpCount++;
       this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
+
+      // Spawn jump dust particles
+      const jumpX = this.player.x + this.player.width / 2;
+      const jumpY = this.player.y + this.player.height;
+      this.particles.spawnJumpDust(jumpX, jumpY);
+    }
+
+    // Landing dust when player hits ground
+    if (!wasGroundedBefore && this.player.isGrounded && !this.player.isDead) {
+      const landX = this.player.x + this.player.width / 2;
+      const landY = this.player.y + this.player.height;
+      // Scale dust intensity based on fall velocity
+      const velocityScale = Math.min(Math.abs(prevVelocityY) / 800, 2);
+      if (velocityScale > 0.3) {
+        this.particles.spawnLandingDust(landX, landY, velocityScale);
+      }
     }
 
     // Detect bounce (sudden large upward velocity change)
@@ -1563,6 +1611,17 @@ export class Game {
     // Death flash effect
     if (this.deathFlashOpacity > 0) {
       this.ctx.fillStyle = `rgba(255, 0, 0, ${this.deathFlashOpacity})`;
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
+
+    // Power-up flash effect
+    if (this.powerUpFlashOpacity > 0) {
+      // Parse hex color to RGB
+      const hex = this.powerUpFlashColor.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.powerUpFlashOpacity})`;
       this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     }
 

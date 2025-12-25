@@ -1,16 +1,31 @@
 // Particle effects manager using object pooling for performance
-import { ObjectPool, DeathParticle, createDeathParticle, CoinParticle, createCoinParticle, FloatingText, createFloatingText } from './ObjectPool';
+import {
+  ObjectPool,
+  DeathParticle, createDeathParticle,
+  CoinParticle, createCoinParticle,
+  FloatingText, createFloatingText,
+  TrailParticle, createTrailParticle,
+  DustParticle, createDustParticle
+} from './ObjectPool';
 import { GAME_WIDTH } from '../constants';
 
 export class ParticleEffects {
   private deathParticles: ObjectPool<DeathParticle>;
   private coinParticles: ObjectPool<CoinParticle>;
   private floatingTexts: ObjectPool<FloatingText>;
+  private trailParticles: ObjectPool<TrailParticle>;
+  private dustParticles: ObjectPool<DustParticle>;
+
+  // Trail spawn timer
+  private trailSpawnTimer = 0;
+  private static readonly TRAIL_SPAWN_INTERVAL = 30; // ms between trail particles
 
   constructor() {
     this.deathParticles = new ObjectPool(createDeathParticle, 50, 100);
     this.coinParticles = new ObjectPool(createCoinParticle, 20, 50);
     this.floatingTexts = new ObjectPool(createFloatingText, 10, 30);
+    this.trailParticles = new ObjectPool(createTrailParticle, 30, 60);
+    this.dustParticles = new ObjectPool(createDustParticle, 20, 40);
   }
 
   // Spawn death explosion particles
@@ -66,6 +81,83 @@ export class ParticleEffects {
     floatingText.maxLifetime = 1000;
   }
 
+  // Spawn trail particle behind player
+  spawnTrail(x: number, y: number, color: string = '#00ffaa', size: number = 8): void {
+    const particle = this.trailParticles.acquire();
+    if (!particle) return;
+
+    particle.x = x;
+    particle.y = y;
+    particle.color = color;
+    particle.size = size + Math.random() * 4;
+    particle.alpha = 0.5;
+    particle.maxLifetime = 250 + Math.random() * 100;
+  }
+
+  // Spawn landing dust particles
+  spawnLandingDust(x: number, y: number, velocityScale: number = 1): void {
+    const particleCount = 6;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.dustParticles.acquire();
+      if (!particle) break;
+
+      const direction = i < particleCount / 2 ? -1 : 1;
+      particle.x = x + (Math.random() - 0.5) * 20;
+      particle.y = y;
+      particle.vx = direction * (50 + Math.random() * 50) * velocityScale;
+      particle.vy = -20 - Math.random() * 30;
+      particle.size = 3 + Math.random() * 3;
+      particle.alpha = 0.5;
+    }
+  }
+
+  // Spawn jump dust particles
+  spawnJumpDust(x: number, y: number): void {
+    const particleCount = 4;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.dustParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + (Math.random() - 0.5) * 15;
+      particle.y = y;
+      particle.vx = (Math.random() - 0.5) * 40;
+      particle.vy = 20 + Math.random() * 20;
+      particle.size = 2 + Math.random() * 2;
+      particle.alpha = 0.4;
+    }
+  }
+
+  // Spawn dash trail (more intense trail)
+  spawnDashTrail(x: number, y: number, color: string = '#00ffff'): void {
+    for (let i = 0; i < 3; i++) {
+      const particle = this.trailParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + (Math.random() - 0.5) * 10;
+      particle.y = y + (Math.random() - 0.5) * 15;
+      particle.color = color;
+      particle.size = 6 + Math.random() * 8;
+      particle.alpha = 0.7;
+      particle.maxLifetime = 150 + Math.random() * 100;
+    }
+  }
+
+  // Update trail spawning based on player movement
+  updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean): void {
+    if (!isMoving) return;
+
+    this.trailSpawnTimer += deltaTime;
+    if (this.trailSpawnTimer >= ParticleEffects.TRAIL_SPAWN_INTERVAL) {
+      this.trailSpawnTimer = 0;
+
+      if (isDashing) {
+        this.spawnDashTrail(playerX, playerY, playerColor);
+      } else {
+        this.spawnTrail(playerX, playerY, playerColor, 6);
+      }
+    }
+  }
+
   // Update all particles
   update(deltaTime: number): void {
     const dt = deltaTime / 1000;
@@ -111,10 +203,67 @@ export class ParticleEffects {
       text.y += text.vy * dt;
       text.alpha = 1 - (text.lifetime / text.maxLifetime);
     });
+
+    // Update trail particles
+    this.trailParticles.forEach((particle) => {
+      particle.lifetime += deltaTime;
+      if (particle.lifetime >= particle.maxLifetime) {
+        this.trailParticles.release(particle);
+        return;
+      }
+
+      particle.alpha = 0.5 * (1 - particle.lifetime / particle.maxLifetime);
+      particle.size *= 0.97;
+    });
+
+    // Update dust particles
+    this.dustParticles.forEach((particle) => {
+      particle.lifetime += deltaTime;
+      if (particle.lifetime >= 400) {
+        this.dustParticles.release(particle);
+        return;
+      }
+
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vy += 100 * dt; // Light gravity
+      particle.alpha = 0.6 * (1 - particle.lifetime / 400);
+      particle.size *= 0.98;
+    });
   }
 
   // Render all particles
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
+    // Render trail particles (behind everything)
+    this.trailParticles.forEach((particle) => {
+      const screenX = particle.x - cameraX;
+      if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
+
+      ctx.save();
+      ctx.globalAlpha = particle.alpha;
+      ctx.fillStyle = particle.color;
+      ctx.shadowColor = particle.color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(screenX, particle.y, particle.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // Render dust particles
+    this.dustParticles.forEach((particle) => {
+      const screenX = particle.x - cameraX;
+      if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
+
+      ctx.save();
+      ctx.globalAlpha = particle.alpha;
+      ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
+      ctx.beginPath();
+      ctx.arc(screenX, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
     // Render death particles
     this.deathParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
@@ -168,7 +317,9 @@ export class ParticleEffects {
   getActiveCount(): number {
     return this.deathParticles.getActiveCount() +
            this.coinParticles.getActiveCount() +
-           this.floatingTexts.getActiveCount();
+           this.floatingTexts.getActiveCount() +
+           this.trailParticles.getActiveCount() +
+           this.dustParticles.getActiveCount();
   }
 
   // Clear all particles (on level change)
@@ -176,5 +327,7 @@ export class ParticleEffects {
     this.deathParticles.releaseAll();
     this.coinParticles.releaseAll();
     this.floatingTexts.releaseAll();
+    this.trailParticles.releaseAll();
+    this.dustParticles.releaseAll();
   }
 }
