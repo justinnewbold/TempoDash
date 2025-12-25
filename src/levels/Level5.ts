@@ -17,8 +17,14 @@ const BEAT = 436; // pixels per beat at 145 BPM (2x length)
 const level5Config: LevelConfig = {
   id: 5,
   name: 'Volcanic Descent',
+  bpm: 145,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 44, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 11, y: GROUND_Y - 50, name: 'Lava Pits' },
+    { x: BEAT * 22, y: GROUND_Y - 50, name: 'Danger Zone' },
+    { x: BEAT * 33, y: GROUND_Y - 50, name: 'Final Descent' },
+  ],
   background: {
     type: 'volcano',
     primaryColor: '#1a0a00',

@@ -16,8 +16,14 @@ const BEAT = 450; // pixels per beat at 140 BPM (2x length)
 const level2Config: LevelConfig = {
   id: 2,
   name: 'Neon Dreams',
+  bpm: 140,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 40, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 10, y: GROUND_Y - 50, name: 'Vertical Movers' },
+    { x: BEAT * 20, y: GROUND_Y - 50, name: 'Horizontal Movers' },
+    { x: BEAT * 30, y: GROUND_Y - 50, name: 'Synchronized Pair' },
+  ],
   background: {
     type: 'neon',
     primaryColor: '#0d0221',

@@ -59,6 +59,15 @@ export class Player {
   private isStuck = false;
   private gravityFlipped = false;
 
+  // Wall sliding/jumping state
+  private isWallSliding = false;
+  private wallJumpCooldown = 0;
+  private static readonly WALL_SLIDE_SPEED = 100; // Slower falling when sliding
+  private static readonly WALL_JUMP_COOLDOWN = 200; // ms cooldown between wall jumps
+
+  // Slow-mo zone state
+  isInSlowMo = false;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
@@ -93,6 +102,9 @@ export class Player {
     this.onConveyor = null;
     this.isStuck = false;
     this.gravityFlipped = false;
+    this.isWallSliding = false;
+    this.wallJumpCooldown = 0;
+    this.isInSlowMo = false;
   }
 
   // Revive player (used when shield saves from death)
@@ -107,8 +119,15 @@ export class Player {
 
     this.animationTime += deltaTime;
 
-    // Reset conveyor state each frame (will be re-set in collision handling)
+    // Reset conveyor and wall states each frame (will be re-set in collision handling)
     this.onConveyor = null;
+    this.isWallSliding = false;
+    this.isInSlowMo = false;
+
+    // Update wall jump cooldown
+    if (this.wallJumpCooldown > 0) {
+      this.wallJumpCooldown -= deltaTime;
+    }
 
     // Update dash timer
     if (this.isDashing) {
@@ -155,10 +174,24 @@ export class Player {
       this.airJumpsRemaining--;
     }
 
+    // Wall jump - can jump off walls even without air jumps
+    if (input.jumpPressed && this.isWallSliding && this.wallJumpCooldown <= 0) {
+      this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
+      this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
+      this.isWallSliding = false;
+      // Reset air jumps on wall jump
+      this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 1);
+    }
+
     // Apply gravity (flipped if on gravity platform)
+    // Slow-mo zones reduce gravity effect
+    const slowMoMult = this.isInSlowMo ? 0.4 : 1;
     const gravityDir = this.gravityFlipped ? -1 : 1;
-    this.velocityY += PLAYER.GRAVITY * gravityDir * (deltaTime / 1000);
-    this.velocityY = Math.min(Math.abs(this.velocityY), PLAYER.MAX_FALL_SPEED) * Math.sign(this.velocityY);
+    this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
+
+    // Wall sliding reduces fall speed
+    const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
+    this.velocityY = Math.min(Math.abs(this.velocityY), maxFall) * Math.sign(this.velocityY);
 
     // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
@@ -250,6 +283,30 @@ export class Player {
             this.y = bounds.y - this.height;
           }
           continue;
+
+        case 'wall':
+          // Wall platforms allow wall sliding instead of death on side collision
+          if (collision === 'left' || collision === 'right') {
+            this.isWallSliding = true;
+            // Stop horizontal movement into wall but allow sliding down
+            if (collision === 'left') {
+              this.x = bounds.x + bounds.width;
+            } else {
+              this.x = bounds.x - this.width;
+            }
+          }
+          continue;
+
+        case 'slowmo':
+          // Slow-mo zones affect player regardless of collision direction
+          this.isInSlowMo = true;
+          // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'secret':
+          // Secret platforms check reveal distance (handled elsewhere)
+          // Once revealed, they behave like solid platforms
+          break;
       }
 
       // Ledge assist: if hitting side but upper 50% of player is above platform top,
@@ -391,6 +448,14 @@ export class Player {
       width: this.width,
       height: this.height,
     };
+  }
+
+  getRotation(): number {
+    return this.rotation;
+  }
+
+  getIsWallSliding(): boolean {
+    return this.isWallSliding;
   }
 
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {

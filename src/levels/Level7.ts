@@ -16,8 +16,14 @@ const BEAT = 394; // pixels per beat at 160 BPM - FAST! (2x length)
 const level7Config: LevelConfig = {
   id: 7,
   name: 'The Gauntlet',
+  bpm: 160,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 64, y: GROUND_Y - 80, width: 60, height: 80 }, // 64 beats - LONGEST LEVEL
+  checkpoints: [
+    { x: BEAT * 16, y: GROUND_Y - 50, name: 'Phase Gauntlet' },
+    { x: BEAT * 32, y: GROUND_Y - 50, name: 'Moving Madness' },
+    { x: BEAT * 48, y: GROUND_Y - 50, name: 'Final Challenge' },
+  ],
   background: {
     type: 'neon',
     primaryColor: '#0a0000',

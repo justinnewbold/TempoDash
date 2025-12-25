@@ -15,8 +15,14 @@ const BEAT = 444; // pixels per beat at 142 BPM (2x length)
 const level8Config: LevelConfig = {
   id: 8,
   name: 'Sky Temple',
+  bpm: 142,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 56, y: GROUND_Y - 160, width: 60, height: 80 }, // Goal is elevated - reach the temple peak
+  checkpoints: [
+    { x: BEAT * 14, y: GROUND_Y - 50, name: 'Bounce Climb' },
+    { x: BEAT * 28, y: GROUND_Y - 100, name: 'Temple Mid' },
+    { x: BEAT * 42, y: GROUND_Y - 120, name: 'Temple Peak' },
+  ],
   background: {
     type: 'space',
     primaryColor: '#1a0a2e',

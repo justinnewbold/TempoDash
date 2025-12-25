@@ -35,7 +35,10 @@ export type PlatformType =
   | 'conveyor'   // Moves player horizontally while standing
   | 'gravity'    // Flips player gravity on contact
   | 'sticky'     // Player sticks until jump pressed
-  | 'glass';     // Breaks after 2nd landing
+  | 'glass'      // Breaks after 2nd landing
+  | 'slowmo'     // Slows down time while player is in zone
+  | 'wall'       // Vertical wall for wall-jumping
+  | 'secret';    // Hidden platform revealed on proximity
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -64,6 +67,12 @@ export interface ChaseConfig {
   accelerationRate?: number;
 }
 
+export interface CheckpointConfig {
+  x: number;
+  y: number;
+  name?: string;  // Optional section name for practice mode
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
@@ -75,6 +84,9 @@ export interface LevelConfig {
   background: BackgroundConfig;
   music?: string;
   chaseMode?: ChaseConfig;  // Optional chase mode (wall of death)
+  checkpoints?: CheckpointConfig[];  // Mid-level checkpoints
+  totalCoins?: number;  // For star calculation (auto-counted if not set)
+  bpm?: number;  // Beats per minute for beat visualization
 }
 
 export interface BackgroundConfig {
@@ -151,11 +163,23 @@ export interface SaveData {
   // New tracking fields
   achievements: string[];
   levelCoins: Record<number, number>; // levelId -> coins collected (max)
+  levelStars: Record<number, number>; // levelId -> stars earned (1-3)
+  levelDeaths: Record<number, number>; // levelId -> best run death count
+  bestTimes: Record<number, number>; // levelId -> best completion time (ms)
+  ghostRuns: Record<number, GhostFrame[]>; // levelId -> ghost data
   totalDeaths: number;
   totalCoinsCollected: number;
   totalLevelsCompleted: number;
   totalPlayTime: number; // in milliseconds
   longestCombo: number;
+}
+
+// Ghost replay frame
+export interface GhostFrame {
+  x: number;
+  y: number;
+  rotation: number;
+  time: number;
 }
 
 // Achievement definitions

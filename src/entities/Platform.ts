@@ -26,6 +26,13 @@ export class Platform {
   private glassBreaking = false;
   private conveyorAnimTime = 0;
 
+  // Secret platform properties
+  private secretRevealed = false;
+  private secretRevealProgress = 0;
+
+  // Beat visualization (pulse effect)
+  private beatPulse = 0;
+
   constructor(config: PlatformConfig) {
     this.x = config.x;
     this.y = config.y;
@@ -91,6 +98,46 @@ export class Platform {
         this.isDestroyed = true;
       }
     }
+
+    // Handle secret platform reveal animation
+    if (this.type === 'secret' && this.secretRevealed) {
+      this.secretRevealProgress = Math.min(1, this.secretRevealProgress + deltaTime * 0.003);
+    }
+
+    // Decay beat pulse
+    if (this.beatPulse > 0) {
+      this.beatPulse = Math.max(0, this.beatPulse - deltaTime * 0.003);
+    }
+  }
+
+  // Trigger beat pulse for visualization
+  triggerBeatPulse(): void {
+    this.beatPulse = 1;
+  }
+
+  getBeatPulse(): number {
+    return this.beatPulse;
+  }
+
+  // Check if player is near and should reveal secret
+  checkSecretReveal(playerX: number, playerY: number): boolean {
+    if (this.type !== 'secret' || this.secretRevealed) return false;
+
+    const centerX = this.x + this.width / 2;
+    const centerY = this.y + this.height / 2;
+    const distance = Math.sqrt(
+      Math.pow(playerX - centerX, 2) + Math.pow(playerY - centerY, 2)
+    );
+
+    if (distance < 150) {
+      this.secretRevealed = true;
+      return true;
+    }
+    return false;
+  }
+
+  isSecretRevealed(): boolean {
+    return this.type !== 'secret' || this.secretRevealed;
   }
 
   private updateMovement(deltaTime: number): void {
@@ -145,7 +192,10 @@ export class Platform {
   }
 
   isCollidable(): boolean {
-    return !this.isDestroyed && !this.isPhased;
+    if (this.isDestroyed || this.isPhased) return false;
+    // Secret platforms only collidable after revealed (with some progress)
+    if (this.type === 'secret' && this.secretRevealProgress < 0.3) return false;
+    return true;
   }
 
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0, gameWidth: number = 960): void {
@@ -431,6 +481,104 @@ export class Platform {
         ctx.strokeStyle = 'rgba(200, 220, 240, 0.8)';
         ctx.lineWidth = 2;
         ctx.strokeRect(screenX, this.y, this.width, this.height);
+        break;
+
+      case 'slowmo':
+        // Cyan/blue time-warp zone
+        const slowmoGradient = ctx.createRadialGradient(
+          screenX + this.width / 2, this.y + this.height / 2, 0,
+          screenX + this.width / 2, this.y + this.height / 2, Math.max(this.width, this.height)
+        );
+        slowmoGradient.addColorStop(0, 'rgba(0, 200, 255, 0.4)');
+        slowmoGradient.addColorStop(0.5, 'rgba(0, 150, 255, 0.2)');
+        slowmoGradient.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
+        ctx.fillStyle = slowmoGradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Clock/time particles
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        const slowTime = Date.now() * 0.001; // Slow animation
+        const clockX = screenX + this.width / 2;
+        const clockY = this.y + this.height / 2;
+        ctx.beginPath();
+        ctx.arc(clockX, clockY, 15, 0, Math.PI * 2);
+        ctx.stroke();
+        // Clock hands
+        ctx.beginPath();
+        ctx.moveTo(clockX, clockY);
+        ctx.lineTo(clockX + Math.cos(slowTime) * 10, clockY + Math.sin(slowTime) * 10);
+        ctx.stroke();
+        // Dashed border
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = 'rgba(0, 200, 255, 0.6)';
+        ctx.strokeRect(screenX, this.y, this.width, this.height);
+        ctx.setLineDash([]);
+        break;
+
+      case 'wall':
+        // Vertical wall for wall-jumping (dark metallic)
+        const wallGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y);
+        wallGradient.addColorStop(0, '#4a5568');
+        wallGradient.addColorStop(0.5, '#718096');
+        wallGradient.addColorStop(1, '#4a5568');
+        ctx.fillStyle = wallGradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Grip texture lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        for (let wy = this.y + 10; wy < this.y + this.height; wy += 15) {
+          ctx.beginPath();
+          ctx.moveTo(screenX + 3, wy);
+          ctx.lineTo(screenX + this.width - 3, wy);
+          ctx.stroke();
+        }
+        // Wall jump arrows
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        const wallCenterY = this.y + this.height / 2;
+        ctx.beginPath();
+        ctx.moveTo(screenX + this.width + 5, wallCenterY - 10);
+        ctx.lineTo(screenX + this.width + 15, wallCenterY);
+        ctx.lineTo(screenX + this.width + 5, wallCenterY + 10);
+        ctx.fill();
+        break;
+
+      case 'secret':
+        // Hidden platform - only visible when revealed
+        if (!this.secretRevealed) {
+          // Draw faint shimmer hint
+          const shimmerTime = Date.now() * 0.003;
+          ctx.globalAlpha = 0.1 + Math.sin(shimmerTime) * 0.05;
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+          ctx.fillRect(screenX, this.y, this.width, this.height);
+          ctx.globalAlpha = 1;
+        } else {
+          // Fade in golden platform
+          ctx.globalAlpha = this.secretRevealProgress;
+          const secretGradient = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
+          secretGradient.addColorStop(0, '#ffd700');
+          secretGradient.addColorStop(0.5, '#ffec8b');
+          secretGradient.addColorStop(1, '#ffd700');
+          ctx.fillStyle = secretGradient;
+          ctx.fillRect(screenX, this.y, this.width, this.height);
+          // Sparkle effect
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          const sparkleTime = Date.now() * 0.005;
+          for (let i = 0; i < 3; i++) {
+            const sx = screenX + (this.width / 4) * (i + 1);
+            const sy = this.y + this.height / 2 + Math.sin(sparkleTime + i) * 5;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // "SECRET" text
+          if (this.secretRevealProgress > 0.5) {
+            ctx.font = 'bold 10px Arial';
+            ctx.fillStyle = 'rgba(139, 69, 19, 0.8)';
+            ctx.textAlign = 'center';
+            ctx.fillText('SECRET', screenX + this.width / 2, this.y + this.height / 2 + 4);
+          }
+          ctx.globalAlpha = 1;
+        }
         break;
 
       default: // solid

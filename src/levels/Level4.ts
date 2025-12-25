@@ -17,8 +17,14 @@ const BEAT = 456; // pixels per beat at 138 BPM (2x length)
 const level4Config: LevelConfig = {
   id: 4,
   name: 'Frozen Peak',
+  bpm: 138,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 40, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 10, y: GROUND_Y - 50, name: 'Ice Section' },
+    { x: BEAT * 20, y: GROUND_Y - 50, name: 'Crumble Run' },
+    { x: BEAT * 30, y: GROUND_Y - 50, name: 'Final Approach' },
+  ],
   background: {
     type: 'space',
     primaryColor: '#0a1628',

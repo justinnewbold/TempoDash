@@ -17,8 +17,14 @@ const BEAT = 468; // pixels per beat at 135 BPM (2x length)
 const level6Config: LevelConfig = {
   id: 6,
   name: 'Abyssal Depths',
+  bpm: 135,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 48, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 12, y: GROUND_Y - 50, name: 'Crumble Chain' },
+    { x: BEAT * 24, y: GROUND_Y - 50, name: 'Deep Waters' },
+    { x: BEAT * 36, y: GROUND_Y - 50, name: 'Final Sprint' },
+  ],
   background: {
     type: 'ocean',
     primaryColor: '#001a33',

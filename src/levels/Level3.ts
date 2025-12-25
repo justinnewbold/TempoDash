@@ -16,8 +16,14 @@ const BEAT = 420; // pixels per beat at 150 BPM (2x length)
 const level3Config: LevelConfig = {
   id: 3,
   name: 'Phase Shift',
+  bpm: 150,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 48, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 12, y: GROUND_Y - 50, name: 'Alternating Phases' },
+    { x: BEAT * 24, y: GROUND_Y - 50, name: 'Bounce Phase' },
+    { x: BEAT * 36, y: GROUND_Y - 50, name: 'Phase Staircase' },
+  ],
   background: {
     type: 'neon',
     primaryColor: '#0a0a0a',

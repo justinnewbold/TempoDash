@@ -15,8 +15,14 @@ const BEAT = 394; // pixels per beat at 160 BPM (2x length)
 const level9Config: LevelConfig = {
   id: 9,
   name: 'The Chase',
+  bpm: 160,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 64, y: GROUND_Y - 50, width: 80, height: 100 }, // Long level - survive to the end!
+  checkpoints: [
+    { x: BEAT * 16, y: GROUND_Y - 50, name: 'First Escape' },
+    { x: BEAT * 32, y: GROUND_Y - 50, name: 'Halfway Point' },
+    { x: BEAT * 48, y: GROUND_Y - 50, name: 'Final Sprint' },
+  ],
   background: {
     type: 'inferno',
     primaryColor: '#1a0505',
