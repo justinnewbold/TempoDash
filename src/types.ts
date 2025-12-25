@@ -44,11 +44,20 @@ export interface CoinConfig {
   y: number;
 }
 
+export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
+
+export interface PowerUpConfig {
+  type: PowerUpType;
+  x: number;
+  y: number;
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
   platforms: PlatformConfig[];
   coins?: CoinConfig[];
+  powerUps?: PowerUpConfig[];
   playerStart: Vector2;
   goal: Rectangle;
   background: BackgroundConfig;
@@ -206,6 +215,7 @@ export interface CustomLevel {
   goal: Rectangle;
   platforms: PlatformConfig[];
   coins: CoinConfig[];
+  powerUps?: PowerUpConfig[];
 }
 
 export interface EditorState {

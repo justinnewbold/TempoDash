@@ -48,6 +48,20 @@ const level7Config: LevelConfig = {
     { x: BEAT * 54, y: GROUND_Y - 110 },
     { x: BEAT * 59, y: GROUND_Y - 80 },
   ],
+  powerUps: [
+    // Slowmo at the start - helps with the spike storm
+    { type: 'slowmo', x: BEAT * 1.5, y: GROUND_Y - 60 },
+    // Shield before the moving mayhem section
+    { type: 'shield', x: BEAT * 7.5, y: GROUND_Y - 60 },
+    // Slowmo before phase frenzy - crucial timing section
+    { type: 'slowmo', x: BEAT * 13, y: GROUND_Y - 80 },
+    // Magnet for the coin-rich middle section
+    { type: 'magnet', x: BEAT * 28, y: GROUND_Y - 100 },
+    // Shield before vertical nightmare
+    { type: 'shield', x: BEAT * 38, y: GROUND_Y - 60 },
+    // Slowmo for final chaos
+    { type: 'slowmo', x: BEAT * 52.5, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-2): Minimal safe zone - chaos begins immediately =====
     { x: 0, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },

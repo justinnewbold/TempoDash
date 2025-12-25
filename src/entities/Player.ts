@@ -87,6 +87,13 @@ export class Player {
     this.dashTimer = 0;
   }
 
+  // Revive player (used when shield saves from death)
+  revive(): void {
+    this.isDead = false;
+    // Give a small upward boost to escape the hazard
+    this.velocityY = -PLAYER.JUMP_FORCE * 0.5;
+  }
+
   update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0): void {
     if (this.isDead) return;
 

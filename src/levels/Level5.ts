@@ -53,6 +53,14 @@ const level5Config: LevelConfig = {
     // Final coin right before goal
     { x: BEAT * 42, y: GROUND_Y - 80 },
   ],
+  powerUps: [
+    // Shield at the start - protection for the first lava pit
+    { type: 'shield', x: BEAT * 3, y: GROUND_Y - 60 },
+    // Magnet before the stepping stone coin section - helps collect all 3
+    { type: 'magnet', x: BEAT * 15, y: GROUND_Y - 80 },
+    // Double points before the lava river coins - risk vs reward
+    { type: 'doublePoints', x: BEAT * 24, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe volcano entrance =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },

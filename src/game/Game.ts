@@ -14,6 +14,7 @@ import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
+import { PowerUpManager } from '../systems/PowerUps';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -106,6 +107,7 @@ export class Game {
   private transition: ScreenTransition;
   private debug: DebugOverlay;
   private statistics: StatisticsManager;
+  private powerUps: PowerUpManager;
 
   // Quick restart key tracking
   private quickRestartHeld = false;
@@ -152,6 +154,7 @@ export class Game {
     this.transition = new ScreenTransition();
     this.debug = new DebugOverlay();
     this.statistics = new StatisticsManager();
+    this.powerUps = new PowerUpManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -231,6 +234,12 @@ export class Game {
 
     // Set music style for this level
     this.audio.setStyleForLevel(levelId);
+
+    // Spawn power-ups from level config
+    this.powerUps.clear();
+    for (const config of this.level.powerUpConfigs) {
+      this.powerUps.spawn(config.type, config.x, config.y);
+    }
   }
 
   private handleClick(e: MouseEvent): void {
@@ -981,15 +990,31 @@ export class Game {
 
     const inputState = this.input.update();
     this.level.update(deltaTime);
+    this.powerUps.update(deltaTime);
+
+    // Check power-up collection
+    const collectedPowerUp = this.powerUps.checkCollision(this.player.getBounds());
+    if (collectedPowerUp) {
+      this.audio.playCoinCollect(); // Reuse coin sound for now
+      this.input.triggerHaptic('medium');
+      // Spawn collection particles
+      this.particles.spawnCoinCollect(
+        collectedPowerUp.x + collectedPowerUp.width / 2,
+        collectedPowerUp.y + collectedPowerUp.height / 2
+      );
+    }
 
     const wasGroundedBefore = this.player.isGrounded;
     const wasAliveBefore = !this.player.isDead;
     const prevVelocityY = this.player.velocityY;
     const wasDashing = this.player.isDashing;
 
+    // Apply slowmo effect from power-ups
+    const effectiveSpeedMultiplier = this.speedMultiplier * this.powerUps.getSlowMoMultiplier();
+
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
-      this.player.update(deltaTime, inputState, this.endlessPlatforms, this.speedMultiplier);
+      this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier);
 
       // Update distance
       this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
@@ -1000,12 +1025,31 @@ export class Game {
       // Clean up platforms behind camera
       this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
     } else {
-      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), this.speedMultiplier);
+      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier);
     }
 
     // Trigger dash shake
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
+    }
+
+    // Apply magnet effect to attract nearby coins
+    const magnetRange = this.powerUps.getMagnetRange();
+    if (magnetRange > 0) {
+      const playerCenterX = this.player.x + this.player.width / 2;
+      const playerCenterY = this.player.y + this.player.height / 2;
+
+      for (const coin of this.level.coins) {
+        if (coin.collected) continue;
+
+        const dx = playerCenterX - coin.x;
+        const dy = playerCenterY - coin.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < magnetRange) {
+          coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
+        }
+      }
     }
 
     // Check coin collection
@@ -1014,8 +1058,12 @@ export class Game {
       this.audio.playCoinCollect();
       this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
-      // Update combo
-      this.comboCount += coinsCollected;
+      // Apply double points multiplier from power-up
+      const pointsMultiplier = this.powerUps.getPointsMultiplier();
+      const effectiveCoins = coinsCollected * pointsMultiplier;
+
+      // Update combo (with multiplied coins)
+      this.comboCount += effectiveCoins;
       this.comboTimer = this.comboDuration;
       this.comboDisplayTimer = 500; // Show combo text for 500ms
 
@@ -1058,20 +1106,35 @@ export class Game {
     }
 
     if (wasAliveBefore && this.player.isDead) {
-      this.audio.playDeath();
-      this.triggerShake(12, 350); // Strong shake on death
-      this.deathFlashOpacity = 0.6; // Trigger death flash
-      this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
+      // Check if shield can save the player
+      if (this.powerUps.consumeShield()) {
+        // Shield consumed! Revive the player
+        this.player.revive();
+        this.audio.playCoinCollect(); // Play a positive sound
+        this.triggerShake(8, 200); // Medium shake for shield break
+        this.input.triggerHaptic('heavy');
 
-      // Spawn death particle explosion
-      const playerCenterX = this.player.x + this.player.width / 2;
-      const playerCenterY = this.player.y + this.player.height / 2;
-      this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+        // Visual feedback for shield break - use death explosion with shield color
+        const playerCenterX = this.player.x + this.player.width / 2;
+        const playerCenterY = this.player.y + this.player.height / 2;
+        this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, '#00aaff');
+      } else {
+        // No shield - player dies
+        this.audio.playDeath();
+        this.triggerShake(12, 350); // Strong shake on death
+        this.deathFlashOpacity = 0.6; // Trigger death flash
+        this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
 
-      // Track death for statistics and achievements
-      this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
-      this.save.recordDeath();
-      this.tryUnlockAchievement('first_death');
+        // Spawn death particle explosion
+        const playerCenterX = this.player.x + this.player.width / 2;
+        const playerCenterY = this.player.y + this.player.height / 2;
+        this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+
+        // Track death for statistics and achievements
+        this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
+        this.save.recordDeath();
+        this.tryUnlockAchievement('first_death');
+      }
     }
 
     // Decay checkpoint feedback timer
@@ -1275,9 +1338,26 @@ export class Game {
       this.level.render(this.ctx, this.cameraX);
 
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
+        // Render power-ups before player so they appear behind
+        this.powerUps.render(this.ctx, this.cameraX);
+
         this.player.render(this.ctx, this.cameraX);
+
+        // Render shield effect around player if active
+        const playerBounds = this.player.getBounds();
+        this.powerUps.renderShieldEffect(
+          this.ctx,
+          playerBounds.x - this.cameraX,
+          playerBounds.y,
+          playerBounds.width,
+          playerBounds.height
+        );
+
         this.particles.render(this.ctx, this.cameraX);
         this.renderPlayingUI();
+
+        // Render active power-up UI indicators
+        this.powerUps.renderUI(this.ctx);
       }
     }
 

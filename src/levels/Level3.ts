@@ -41,6 +41,12 @@ const level3Config: LevelConfig = {
     { x: BEAT * 40, y: GROUND_Y - 60 },   // On staircase phase
     { x: BEAT * 45, y: GROUND_Y - 100 },  // Final gauntlet coin
   ],
+  powerUps: [
+    // Shield before the first lava section - teaches players about power-ups
+    { type: 'shield', x: BEAT * 11, y: GROUND_Y - 80 },
+    // Double points before the synchronized phase section (coin-rich area)
+    { type: 'doublePoints', x: BEAT * 17, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe zone, observe phase behavior =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
