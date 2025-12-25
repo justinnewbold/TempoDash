@@ -16,6 +16,7 @@ import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
 import { PowerUpManager } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
+import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -110,9 +111,14 @@ export class Game {
   private statistics: StatisticsManager;
   private powerUps: PowerUpManager;
   private modifiers: ModifierManager;
+  private challengeManager: ChallengeManager;
 
   // Modifier UI state
   private showModifierPanel = false;
+
+  // Challenge mode state
+  private currentChallenge: Challenge | null = null;
+  private challengeScore = 0;
 
   // Quick restart key tracking
   private quickRestartHeld = false;
@@ -161,6 +167,7 @@ export class Game {
     this.statistics = new StatisticsManager();
     this.powerUps = new PowerUpManager();
     this.modifiers = new ModifierManager();
+    this.challengeManager = new ChallengeManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -285,6 +292,9 @@ export class Game {
       case 'achievements':
         this.handleAchievementsClick(x, y);
         break;
+      case 'challenges':
+        this.handleChallengesClick(x, y);
+        break;
       case 'editor':
         this.handleEditorClick(e);
         break;
@@ -324,6 +334,9 @@ export class Game {
       case 'achievements':
         this.handleAchievementsClick(x, y);
         break;
+      case 'challenges':
+        this.handleChallengesClick(x, y);
+        break;
       case 'editor':
         // Editor has its own touch handling via TouchHandler
         break;
@@ -348,39 +361,45 @@ export class Game {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Endless button (y=318)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 293 && y <= 343) {
+    // Endless button (left side, y=315)
+    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
+        y >= 295 && y <= 335) {
       this.audio.playSelect();
       this.startEndlessMode();
     }
-    // Editor button (left side, y=378)
+    // Daily Challenges button (right side, y=315)
+    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
+        y >= 295 && y <= 335) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'challenges';
+    }
+    // Editor button (left side, y=370)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 358 && y <= 398) {
+        y >= 350 && y <= 390) {
       this.audio.playSelect();
       this.openEditor();
     }
-    // Custom Levels button (right side, y=378)
+    // Custom Levels button (right side, y=370)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 358 && y <= 398) {
+        y >= 350 && y <= 390) {
       this.audio.playSelect();
       this.state.gameStatus = 'customLevels';
     }
-    // Skins button (left side, y=438)
+    // Skins button (left side, y=425)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 418 && y <= 458) {
+        y >= 405 && y <= 445) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
     }
-    // Achievements button (right side, y=438)
+    // Achievements button (right side, y=425)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 418 && y <= 458) {
+        y >= 405 && y <= 445) {
       this.audio.playSelect();
       this.state.gameStatus = 'achievements';
     }
-    // Settings button (y=498)
+    // Settings button (y=480)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 473 && y <= 523) {
+        y >= 455 && y <= 505) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -677,6 +696,13 @@ export class Game {
         }
         break;
 
+      case 'challenges':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
       case 'editor':
         this.handleEditorKeyDown(e);
         break;
@@ -690,6 +716,7 @@ export class Game {
       case 'playing':
       case 'practice':
       case 'endless':
+      case 'challengePlaying':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
@@ -707,7 +734,9 @@ export class Game {
       case 'paused':
         if (e.code === 'Escape' || e.code === 'Enter') {
           // Resume to the correct mode
-          if (this.isEndlessMode) {
+          if (this.currentChallenge) {
+            this.state.gameStatus = 'challengePlaying';
+          } else if (this.isEndlessMode) {
             this.state.gameStatus = 'endless';
           } else if (this.isPracticeMode) {
             this.state.gameStatus = 'practice';
@@ -718,6 +747,7 @@ export class Game {
         } else if (e.code === 'KeyQ') {
           this.isEndlessMode = false;
           this.isPracticeMode = false;
+          this.currentChallenge = null;
           this.state.gameStatus = 'mainMenu';
         }
         break;
@@ -749,7 +779,8 @@ export class Game {
   private handleTabHidden(): void {
     const isPlaying = this.state.gameStatus === 'playing' ||
                       this.state.gameStatus === 'practice' ||
-                      this.state.gameStatus === 'endless';
+                      this.state.gameStatus === 'endless' ||
+                      this.state.gameStatus === 'challengePlaying';
 
     if (isPlaying) {
       this.state.gameStatus = 'paused';
@@ -997,7 +1028,7 @@ export class Game {
     this.updateAchievementNotifications(deltaTime);
 
     // Track play time
-    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless') {
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless' || this.state.gameStatus === 'challengePlaying') {
       this.lastPlayTimeUpdate += deltaTime;
       if (this.lastPlayTimeUpdate >= 10000) { // Save every 10 seconds
         this.save.addPlayTime(this.lastPlayTimeUpdate);
@@ -1035,7 +1066,7 @@ export class Game {
       return;
     }
 
-    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'editorTest') {
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'challengePlaying' && this.state.gameStatus !== 'editorTest') {
       this.level.update(deltaTime);
       return;
     }
@@ -1238,7 +1269,23 @@ export class Game {
       if (this.deathTimer > 500) {
         this.deathTimer = 0;
 
-        if (this.isEndlessMode) {
+        if (this.currentChallenge) {
+          // Challenge mode death - record attempt and calculate score
+          const score = Math.floor(this.endlessDistance + this.challengeScore);
+          const completed = this.endlessDistance >= 500; // 500m = challenge complete
+          this.challengeManager.recordAttempt(this.currentChallenge.id, score, completed);
+
+          if (completed) {
+            // Challenge completed! Return to challenge menu
+            this.isEndlessMode = false;
+            this.currentChallenge = null;
+            this.state.gameStatus = 'challenges';
+            this.audio.stop();
+          } else {
+            // Try again - respawn with seeded platforms
+            this.restartChallenge();
+          }
+        } else if (this.isEndlessMode) {
           // Game over in endless mode
           this.save.setEndlessHighScore(this.endlessDistance);
 
@@ -1402,6 +1449,13 @@ export class Game {
       this.player.render(this.ctx, this.cameraX);
       this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
+    } else if (this.state.gameStatus === 'challengePlaying') {
+      // Render challenge mode (similar to endless but with challenge UI)
+      this.renderEndlessBackground();
+      this.renderEndlessPlatforms();
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
+      this.renderChallengeUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
       this.level.render(this.ctx, this.cameraX);
@@ -1468,6 +1522,9 @@ export class Game {
         break;
       case 'achievements':
         this.renderAchievements();
+        break;
+      case 'challenges':
+        this.renderChallenges();
         break;
       case 'paused':
         this.renderPaused();
@@ -1820,20 +1877,25 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 7 buttons)
+    // Buttons (repositioned to fit 8 buttons)
     this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
-    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 318, false);
+
+    // Endless and Challenges side by side
+    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - 55, 315, '#00ffaa');
+    const streakInfo = this.challengeManager.getStreakInfo();
+    const streakText = streakInfo.current > 0 ? ` 🔥${streakInfo.current}` : '';
+    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + 55, 315, '#ff6600');
 
     // Editor and Custom Levels side by side
-    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 378, '#ff00ff');
-    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 378, '#00ff88');
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 370, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 370, '#00ff88');
 
     // Skins and Achievements side by side
     const achieveProgress = this.save.getAchievementProgress();
-    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 438, '#ffd700');
-    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 438, '#ff6600');
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 425, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 425, '#ff6600');
 
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 498, false);
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 480, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -2582,6 +2644,241 @@ export class Game {
     this.ctx.restore();
   }
 
+  private renderChallenges(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.shadowColor = '#ff6600';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('DAILY CHALLENGES', GAME_WIDTH / 2, 70);
+
+    // Streak display
+    const streakInfo = this.challengeManager.getStreakInfo();
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = streakInfo.current > 0 ? '#ffd700' : 'rgba(255, 255, 255, 0.5)';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.shadowBlur = 10;
+    if (streakInfo.current > 0) {
+      this.ctx.fillText(`🔥 ${streakInfo.current} Day Streak! (Best: ${streakInfo.longest})`, GAME_WIDTH / 2, 100);
+    } else {
+      this.ctx.fillText('Start a streak by completing today\'s challenge!', GAME_WIDTH / 2, 100);
+    }
+
+    // Total completed
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText(`Total Challenges Completed: ${this.challengeManager.getTotalCompleted()}`, GAME_WIDTH / 2, 122);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Get current challenges
+    const challenges = this.challengeManager.getCurrentChallenges();
+    const cardWidth = 320;
+    const cardHeight = 150;
+    const gap = 30;
+    const startX = (GAME_WIDTH - cardWidth) / 2;
+    const startY = 150;
+
+    for (let i = 0; i < challenges.length; i++) {
+      const challenge = challenges[i];
+      const cardY = startY + i * (cardHeight + gap);
+      const progress = this.challengeManager.getProgress(challenge.id);
+      const isCompleted = progress?.completed || false;
+      const typeInfo = CHALLENGE_TYPES[challenge.type];
+
+      // Card background
+      const cardColor = challenge.isWeekly ? '#9933ff' : '#ff6600';
+      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.15)`;
+      this.ctx.strokeStyle = isCompleted ? '#00ff66' : cardColor;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startX, cardY, cardWidth, cardHeight, 12);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Challenge type label
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = cardColor;
+      this.ctx.fillText(challenge.isWeekly ? 'WEEKLY CHALLENGE' : 'DAILY CHALLENGE', startX + 15, cardY + 22);
+
+      // Icon and name
+      this.ctx.font = '28px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(challenge.icon, startX + 15, cardY + 58);
+
+      this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+      this.ctx.fillText(challenge.name, startX + 55, cardY + 55);
+
+      // Description
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(typeInfo.description, startX + 15, cardY + 80);
+
+      // Time remaining
+      const timeRemaining = this.challengeManager.formatTimeRemaining(challenge);
+      this.ctx.textAlign = 'right';
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = cardColor;
+      this.ctx.fillText(`⏱ ${timeRemaining}`, startX + cardWidth - 15, cardY + 22);
+
+      // Status / Play button
+      this.ctx.textAlign = 'center';
+      const btnX = startX + cardWidth / 2;
+      const btnY = cardY + 115;
+      const btnW = 140;
+      const btnH = 36;
+
+      if (isCompleted) {
+        // Show best score and completed checkmark
+        this.ctx.fillStyle = 'rgba(0, 255, 100, 0.2)';
+        this.ctx.strokeStyle = '#00ff66';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#00ff66';
+        this.ctx.fillText(`✓ Best: ${progress!.bestScore}`, btnX, btnY + 5);
+      } else {
+        // Play button
+        this.ctx.fillStyle = `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.3)`;
+        this.ctx.strokeStyle = cardColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        const attemptText = progress?.attempts ? ` (${progress.attempts} tries)` : '';
+        this.ctx.fillText(`PLAY${attemptText}`, btnX, btnY + 6);
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  private handleChallengesClick(x: number, y: number): void {
+    // Back button
+    if (x >= 10 && x <= 140 && y >= 25 && y <= 55) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Check challenge card clicks
+    const challenges = this.challengeManager.getCurrentChallenges();
+    const cardWidth = 320;
+    const cardHeight = 150;
+    const gap = 30;
+    const startX = (GAME_WIDTH - cardWidth) / 2;
+    const startY = 150;
+
+    for (let i = 0; i < challenges.length; i++) {
+      const challenge = challenges[i];
+      const cardY = startY + i * (cardHeight + gap);
+      const progress = this.challengeManager.getProgress(challenge.id);
+      const isCompleted = progress?.completed || false;
+
+      // Check if click is on play button (bottom center of card)
+      const btnX = startX + cardWidth / 2;
+      const btnY = cardY + 115;
+      const btnW = 140;
+      const btnH = 36;
+
+      if (x >= btnX - btnW / 2 && x <= btnX + btnW / 2 &&
+          y >= btnY - btnH / 2 && y <= btnY + btnH / 2 &&
+          !isCompleted) {
+        this.audio.playSelect();
+        this.startChallenge(challenge);
+        return;
+      }
+    }
+  }
+
+  private startChallenge(challenge: Challenge): void {
+    this.currentChallenge = challenge;
+    this.challengeScore = 0;
+
+    // Start endless mode with the challenge seed
+    this.isEndlessMode = true;
+    this.endlessDistance = 0;
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+
+    // Generate procedural platforms using the challenge seed
+    this.endlessPlatforms = [];
+    const GROUND_Y = GAME_HEIGHT - 40;
+
+    // Starting ground platform
+    this.endlessPlatforms.push(new Platform({ x: 0, y: GROUND_Y, width: 400, height: 40, type: 'solid' }));
+    this.nextPlatformX = 400;
+
+    // Generate initial seeded platforms
+    const seedPlatforms = this.challengeManager.generateChallengePlatforms(challenge.seed, this.nextPlatformX, 20);
+    for (const p of seedPlatforms) {
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+    }
+    if (seedPlatforms.length > 0) {
+      this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
+    }
+
+    // Reset player
+    this.player.reset({ x: 100, y: GROUND_Y - 50 });
+    this.cameraX = 0;
+    this.attempts++;
+
+    // Start music
+    this.audio.start();
+
+    this.state.gameStatus = 'challengePlaying';
+  }
+
+  private restartChallenge(): void {
+    if (!this.currentChallenge) return;
+
+    // Reset with same seed
+    this.endlessDistance = 0;
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+
+    // Regenerate procedural platforms using the same seed
+    this.endlessPlatforms = [];
+    const GROUND_Y = GAME_HEIGHT - 40;
+
+    // Starting ground platform
+    this.endlessPlatforms.push(new Platform({ x: 0, y: GROUND_Y, width: 400, height: 40, type: 'solid' }));
+    this.nextPlatformX = 400;
+
+    // Generate initial seeded platforms
+    const seedPlatforms = this.challengeManager.generateChallengePlatforms(this.currentChallenge.seed, this.nextPlatformX, 20);
+    for (const p of seedPlatforms) {
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+    }
+    if (seedPlatforms.length > 0) {
+      this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
+    }
+
+    // Reset player
+    this.player.reset({ x: 100, y: GROUND_Y - 50 });
+    this.cameraX = 0;
+    this.attempts++;
+  }
+
   private renderToggle(x: number, y: number, enabled: boolean): void {
     const width = 60;
     const height = 30;
@@ -2885,6 +3182,78 @@ export class Game {
       this.ctx.beginPath();
       this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
       this.ctx.fillStyle = `rgba(0, 255, 255, ${this.beatPulse * 0.8})`;
+      this.ctx.fill();
+    }
+
+    this.ctx.beginPath();
+    this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, 15, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    this.ctx.restore();
+  }
+
+  private renderChallengeUI(): void {
+    if (!this.currentChallenge) return;
+
+    this.ctx.save();
+
+    const challengeColor = this.currentChallenge.isWeekly ? '#9933ff' : '#ff6600';
+
+    // Distance counter (main score)
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+
+    // Target distance
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = challengeColor;
+    this.ctx.shadowColor = challengeColor;
+    this.ctx.shadowBlur = 5;
+    const targetText = this.endlessDistance >= 500 ? '✓ COMPLETE!' : 'Target: 500m';
+    this.ctx.fillText(targetText, GAME_WIDTH / 2, 75);
+
+    // Challenge name label
+    this.ctx.textAlign = 'left';
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = challengeColor;
+    this.ctx.shadowColor = challengeColor;
+    this.ctx.fillText(`${this.currentChallenge.icon} ${this.currentChallenge.name}`, 20, 30);
+
+    // Time remaining
+    this.ctx.textAlign = 'right';
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    const timeRemaining = this.challengeManager.formatTimeRemaining(this.currentChallenge);
+    this.ctx.fillText(`⏱ ${timeRemaining}`, GAME_WIDTH - 20, 30);
+
+    // Best score for this challenge
+    const progress = this.challengeManager.getProgress(this.currentChallenge.id);
+    if (progress && progress.bestScore > 0) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`Best: ${progress.bestScore}m`, GAME_WIDTH - 20, 50);
+    }
+
+    // Mute indicator
+    if (this.audio.isMusicMuted()) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 70);
+    }
+
+    // Beat indicator
+    if (this.beatPulse > 0) {
+      const size = 15 + this.beatPulse * 10;
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
+      this.ctx.fillStyle = `rgba(${parseInt(challengeColor.slice(1, 3), 16)}, ${parseInt(challengeColor.slice(3, 5), 16)}, ${parseInt(challengeColor.slice(5, 7), 16)}, ${this.beatPulse * 0.8})`;
       this.ctx.fill();
     }
 
