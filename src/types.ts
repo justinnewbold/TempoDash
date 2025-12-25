@@ -57,6 +57,13 @@ export interface PowerUpConfig {
   y: number;
 }
 
+export interface ChaseConfig {
+  enabled: boolean;
+  initialDelay?: number;
+  baseSpeed?: number;
+  accelerationRate?: number;
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
@@ -67,6 +74,7 @@ export interface LevelConfig {
   goal: Rectangle;
   background: BackgroundConfig;
   music?: string;
+  chaseMode?: ChaseConfig;  // Optional chase mode (wall of death)
 }
 
 export interface BackgroundConfig {
@@ -84,7 +92,8 @@ export type BackgroundType =
   | 'space'      // Level 3 - Space
   | 'forest'     // Level 4 - Mystical forest
   | 'volcano'    // Level 5 - Volcanic cavern
-  | 'ocean';     // Level 6 - Underwater
+  | 'ocean'      // Level 6 - Underwater
+  | 'inferno';   // Level 9 - Chase level (wall of death)
 
 export interface ParticleConfig {
   count: number;

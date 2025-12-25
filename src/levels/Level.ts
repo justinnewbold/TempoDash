@@ -199,4 +199,8 @@ export class Level {
   getActivePlatforms(): Platform[] {
     return this.platforms.filter((p) => p.isCollidable());
   }
+
+  getConfig(): LevelConfig {
+    return this.config;
+  }
 }

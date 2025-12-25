@@ -450,6 +450,9 @@ export class Background {
       case 'ocean':
         this.drawOceanBackground(ctx, cameraX);
         break;
+      case 'inferno':
+        this.drawInfernoBackground(ctx, cameraX);
+        break;
     }
 
     // Draw effects
@@ -976,6 +979,98 @@ export class Background {
     ctx.fill();
 
     ctx.restore();
+  }
+
+  private drawInfernoBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const parallax = cameraX * 0.06;
+
+    // Intense fiery sky gradient - more aggressive than volcano
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+    skyGradient.addColorStop(0, '#0a0000');
+    skyGradient.addColorStop(0.2, '#1a0500');
+    skyGradient.addColorStop(0.4, '#3d0800');
+    skyGradient.addColorStop(0.6, '#5c1000');
+    skyGradient.addColorStop(0.8, '#7d1800');
+    skyGradient.addColorStop(1, '#3d0500');
+    ctx.fillStyle = skyGradient;
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Pulsing danger glow from left (the wall is coming!)
+    const pulse = Math.sin(this.time * 0.003) * 0.3 + 0.5;
+    const dangerGlow = ctx.createLinearGradient(0, 0, GAME_WIDTH * 0.4, 0);
+    dangerGlow.addColorStop(0, `rgba(255, 50, 0, ${pulse * 0.4})`);
+    dangerGlow.addColorStop(0.5, `rgba(255, 100, 0, ${pulse * 0.2})`);
+    dangerGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+    ctx.fillStyle = dangerGlow;
+    ctx.fillRect(0, 0, GAME_WIDTH * 0.4, GAME_HEIGHT);
+
+    // Cracks in the ground with lava glow
+    ctx.strokeStyle = '#ff4400';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#ff6600';
+    ctx.shadowBlur = 15;
+    for (let i = 0; i < 8; i++) {
+      const crackX = ((i * 140 - parallax * 0.3) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      const crackY = GAME_HEIGHT * 0.7 + (i % 3) * 40;
+      ctx.beginPath();
+      ctx.moveTo(crackX, crackY);
+      for (let j = 0; j < 5; j++) {
+        const nextX = crackX + (j + 1) * 20 + Math.sin(this.time * 0.002 + i + j) * 5;
+        const nextY = crackY + Math.sin(j * 2 + i) * 30;
+        ctx.lineTo(nextX, nextY);
+      }
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Ground - charred and cracked
+    const groundGradient = ctx.createLinearGradient(0, GAME_HEIGHT * 0.75, 0, GAME_HEIGHT);
+    groundGradient.addColorStop(0, '#1a0800');
+    groundGradient.addColorStop(0.5, '#2d0a00');
+    groundGradient.addColorStop(1, '#0d0400');
+    ctx.fillStyle = groundGradient;
+    ctx.fillRect(0, GAME_HEIGHT * 0.75, GAME_WIDTH, GAME_HEIGHT * 0.25);
+
+    // Distant fire pillars
+    for (let i = 0; i < 5; i++) {
+      const pillarX = ((i * 200 + 100 - parallax * 0.15) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+      const pillarHeight = 150 + Math.sin(i * 1.5) * 50;
+      const flicker = Math.sin(this.time * 0.005 + i * 2) * 20;
+
+      // Fire pillar glow
+      const fireGlow = ctx.createRadialGradient(
+        pillarX, GAME_HEIGHT * 0.65, 0,
+        pillarX, GAME_HEIGHT * 0.65, 60 + flicker
+      );
+      fireGlow.addColorStop(0, 'rgba(255, 200, 0, 0.4)');
+      fireGlow.addColorStop(0.5, 'rgba(255, 100, 0, 0.2)');
+      fireGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+      ctx.fillStyle = fireGlow;
+      ctx.beginPath();
+      ctx.arc(pillarX, GAME_HEIGHT * 0.65, 60 + flicker, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fire column
+      const fireGradient = ctx.createLinearGradient(pillarX, GAME_HEIGHT * 0.7, pillarX, GAME_HEIGHT * 0.7 - pillarHeight);
+      fireGradient.addColorStop(0, 'rgba(255, 100, 0, 0.6)');
+      fireGradient.addColorStop(0.5, 'rgba(255, 150, 0, 0.4)');
+      fireGradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
+      ctx.fillStyle = fireGradient;
+      ctx.fillRect(pillarX - 15, GAME_HEIGHT * 0.7 - pillarHeight + flicker, 30, pillarHeight);
+    }
+
+    // Smoke clouds drifting right
+    ctx.fillStyle = 'rgba(30, 20, 20, 0.3)';
+    for (let i = 0; i < 6; i++) {
+      const cloudX = ((i * 180 + this.time * 0.03) % (GAME_WIDTH + 200)) - 100;
+      const cloudY = 80 + (i % 3) * 60;
+      const cloudSize = 60 + (i % 2) * 30;
+      ctx.beginPath();
+      ctx.arc(cloudX, cloudY, cloudSize, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize * 0.6, cloudY - 10, cloudSize * 0.7, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize * 1.1, cloudY + 5, cloudSize * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private renderEffects(ctx: CanvasRenderingContext2D, cameraX: number): void {

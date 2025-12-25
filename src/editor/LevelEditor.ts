@@ -838,6 +838,14 @@ export class LevelEditor {
         particles: { count: 40, color: 'rgba(150, 220, 255, 0.5)', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
         effects: ['bubbles'],
       },
+      inferno: {
+        type: 'inferno',
+        primaryColor: '#1a0505',
+        secondaryColor: '#2d0a0a',
+        accentColor: '#ff4400',
+        particles: { count: 80, color: 'rgba(255, 100, 0, 0.6)', minSize: 2, maxSize: 6, speed: 50, direction: 'up' },
+        effects: ['embers', 'pulse'],
+      },
     };
 
     this.level.background = backgrounds[type];

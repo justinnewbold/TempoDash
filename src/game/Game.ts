@@ -17,6 +17,7 @@ import { StatisticsManager } from '../systems/Statistics';
 import { PowerUpManager } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
+import { ChaseModeManager } from '../systems/ChaseMode';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -120,6 +121,9 @@ export class Game {
   private currentChallenge: Challenge | null = null;
   private challengeScore = 0;
 
+  // Chase mode (wall of death)
+  private chaseMode: ChaseModeManager;
+
   // Quick restart key tracking
   private quickRestartHeld = false;
   private quickRestartTimer = 0;
@@ -168,6 +172,7 @@ export class Game {
     this.powerUps = new PowerUpManager();
     this.modifiers = new ModifierManager();
     this.challengeManager = new ChallengeManager();
+    this.chaseMode = new ChaseModeManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -252,6 +257,20 @@ export class Game {
     this.powerUps.clear();
     for (const config of this.level.powerUpConfigs) {
       this.powerUps.spawn(config.type, config.x, config.y);
+    }
+
+    // Configure chase mode based on level config
+    this.chaseMode.reset();
+    const chaseConfig = this.level.getConfig().chaseMode;
+    if (chaseConfig?.enabled) {
+      this.chaseMode = new ChaseModeManager({
+        enabled: true,
+        initialDelay: chaseConfig.initialDelay ?? 2000,
+        baseSpeed: chaseConfig.baseSpeed ?? 0.85,
+        accelerationRate: chaseConfig.accelerationRate ?? 0.0001,
+      });
+    } else {
+      this.chaseMode.setEnabled(false);
     }
   }
 
@@ -1135,6 +1154,18 @@ export class Game {
       this.triggerShake(4, 80); // Light shake on dash start
     }
 
+    // Update chase mode (wall of death)
+    if (!this.isEndlessMode) {
+      const basePlayerSpeed = 350; // Base player speed in px/s
+      this.chaseMode.update(deltaTime, this.player.x, basePlayerSpeed * effectiveSpeedMultiplier);
+
+      // Check if wall caught the player
+      if (this.chaseMode.checkCollision(this.player.x) && !this.player.isDead) {
+        this.player.isDead = true;
+        this.triggerShake(15, 400); // Strong shake for wall death
+      }
+    }
+
     // Apply magnet effect to attract nearby coins
     const magnetRange = this.powerUps.getMagnetRange();
     if (magnetRange > 0) {
@@ -1483,6 +1514,11 @@ export class Game {
         );
 
         this.particles.render(this.ctx, this.cameraX);
+
+        // Render chase mode wall of death
+        this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
+        this.chaseMode.renderWarning(this.ctx, this.player.x, this.cameraX, GAME_WIDTH);
+
         this.renderPlayingUI();
 
         // Render active power-up UI indicators
