@@ -194,3 +194,63 @@ export function createFloatingText(): FloatingText {
     }
   };
 }
+
+// Trail particle (follows player movement)
+export interface TrailParticle extends Poolable {
+  x: number;
+  y: number;
+  size: number;
+  alpha: number;
+  color: string;
+  lifetime: number;
+  maxLifetime: number;
+  active: boolean;
+  reset(): void;
+}
+
+export function createTrailParticle(): TrailParticle {
+  return {
+    x: 0,
+    y: 0,
+    size: 10,
+    alpha: 0.5,
+    color: '#00ffaa',
+    lifetime: 0,
+    maxLifetime: 300,
+    active: false,
+    reset() {
+      this.lifetime = 0;
+      this.alpha = 0.5;
+    }
+  };
+}
+
+// Dust particle (for landings and jumps)
+export interface DustParticle extends Poolable {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  lifetime: number;
+  active: boolean;
+  reset(): void;
+}
+
+export function createDustParticle(): DustParticle {
+  return {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    size: 4,
+    alpha: 0.6,
+    lifetime: 0,
+    active: false,
+    reset() {
+      this.lifetime = 0;
+      this.alpha = 0.6;
+    }
+  };
+}

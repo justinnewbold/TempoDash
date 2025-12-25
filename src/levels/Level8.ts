@@ -10,13 +10,19 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 222; // pixels per beat at 142 BPM (1.5x for longer levels)
+const BEAT = 444; // pixels per beat at 142 BPM (2x length)
 
 const level8Config: LevelConfig = {
   id: 8,
   name: 'Sky Temple',
+  bpm: 142,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 56, y: GROUND_Y - 160, width: 60, height: 80 }, // Goal is elevated - reach the temple peak
+  checkpoints: [
+    { x: BEAT * 14, y: GROUND_Y - 50, name: 'Bounce Climb' },
+    { x: BEAT * 28, y: GROUND_Y - 100, name: 'Temple Mid' },
+    { x: BEAT * 42, y: GROUND_Y - 120, name: 'Temple Peak' },
+  ],
   background: {
     type: 'space',
     primaryColor: '#1a0a2e',
@@ -47,6 +53,23 @@ const level8Config: LevelConfig = {
     { x: BEAT * 44, y: GROUND_Y - 120 },
     { x: BEAT * 48, y: GROUND_Y - 180 },
     { x: BEAT * 52, y: GROUND_Y - 140 },
+  ],
+  powerUps: [
+    // All power-up types for the final challenge!
+    // Shield for the floating gardens section
+    { type: 'shield', x: BEAT * 10, y: GROUND_Y - 60 },
+    // Magnet for the coin-dense bounce chain
+    { type: 'magnet', x: BEAT * 16, y: GROUND_Y - 60 },
+    // Slowmo for the phase temple timing
+    { type: 'slowmo', x: BEAT * 23, y: GROUND_Y - 60 },
+    // Double points for ice bridge coins
+    { type: 'doublePoints', x: BEAT * 29, y: GROUND_Y - 80 },
+    // Shield for the vertical maze
+    { type: 'shield', x: BEAT * 35, y: GROUND_Y - 60 },
+    // Slowmo for the final ascent - crucial timing
+    { type: 'slowmo', x: BEAT * 46, y: GROUND_Y - 60 },
+    // Magnet for collecting the last coins
+    { type: 'magnet', x: BEAT * 51, y: GROUND_Y - 160 },
   ],
   platforms: [
     // ===== INTRO (Beats 0-4): Temple entrance =====

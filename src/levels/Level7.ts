@@ -11,13 +11,19 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 197; // pixels per beat at 160 BPM - FAST! (1.5x for longer levels)
+const BEAT = 394; // pixels per beat at 160 BPM - FAST! (2x length)
 
 const level7Config: LevelConfig = {
   id: 7,
   name: 'The Gauntlet',
+  bpm: 160,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 64, y: GROUND_Y - 80, width: 60, height: 80 }, // 64 beats - LONGEST LEVEL
+  checkpoints: [
+    { x: BEAT * 16, y: GROUND_Y - 50, name: 'Phase Gauntlet' },
+    { x: BEAT * 32, y: GROUND_Y - 50, name: 'Moving Madness' },
+    { x: BEAT * 48, y: GROUND_Y - 50, name: 'Final Challenge' },
+  ],
   background: {
     type: 'neon',
     primaryColor: '#0a0000',
@@ -47,6 +53,20 @@ const level7Config: LevelConfig = {
     { x: BEAT * 49, y: GROUND_Y - 90 },
     { x: BEAT * 54, y: GROUND_Y - 110 },
     { x: BEAT * 59, y: GROUND_Y - 80 },
+  ],
+  powerUps: [
+    // Slowmo at the start - helps with the spike storm
+    { type: 'slowmo', x: BEAT * 1.5, y: GROUND_Y - 60 },
+    // Shield before the moving mayhem section
+    { type: 'shield', x: BEAT * 7.5, y: GROUND_Y - 60 },
+    // Slowmo before phase frenzy - crucial timing section
+    { type: 'slowmo', x: BEAT * 13, y: GROUND_Y - 80 },
+    // Magnet for the coin-rich middle section
+    { type: 'magnet', x: BEAT * 28, y: GROUND_Y - 100 },
+    // Shield before vertical nightmare
+    { type: 'shield', x: BEAT * 38, y: GROUND_Y - 60 },
+    // Slowmo for final chaos
+    { type: 'slowmo', x: BEAT * 52.5, y: GROUND_Y - 60 },
   ],
   platforms: [
     // ===== INTRO (Beats 0-2): Minimal safe zone - chaos begins immediately =====

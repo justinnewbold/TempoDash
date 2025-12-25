@@ -14,6 +14,12 @@ import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
+import { PowerUpManager } from '../systems/PowerUps';
+import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
+import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
+import { ChaseModeManager } from '../systems/ChaseMode';
+import { LevelSharingManager } from '../systems/LevelSharing';
+import { GhostManager } from '../systems/GhostManager';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -51,11 +57,19 @@ export class Game {
   // Death flash effect
   private deathFlashOpacity = 0;
 
-  // Combo system
+  // Power-up flash effect
+  private powerUpFlashOpacity = 0;
+  private powerUpFlashColor = '#00ffaa';
+
+  // Combo system - expanded
   private comboCount = 0;
   private comboTimer = 0;
-  private comboDuration = 1500; // 1.5 seconds to maintain combo
+  private comboDuration = 2000; // 2 seconds to maintain combo (extended)
   private comboDisplayTimer = 0; // For animation
+  private comboMultiplier = 1; // Score multiplier based on combo
+  private nearMissTimer = 0; // For near-miss detection
+  private nearMissCount = 0; // Near misses add to combo
+  private comboMeterPulse = 0; // Visual pulse for combo meter
 
   // Practice mode
   private isPracticeMode = false;
@@ -78,6 +92,8 @@ export class Game {
 
   // Tutorial
   private showingTutorial = false;
+  private tutorialPage = 0;
+  private static readonly TUTORIAL_PAGES = 4;
 
   // Achievement notifications
   private achievementQueue: Achievement[] = [];
@@ -91,10 +107,10 @@ export class Game {
   // High-DPI support
   private dpr = 1;
 
-  // Speed increase system - each jump increases speed by 0.25%
+  // Speed increase system - each jump increases speed by 1%
   private speedMultiplier = 1.0;
   private jumpCount = 0;
-  private static readonly SPEED_INCREASE_PER_JUMP = 0.0025; // 0.25%
+  private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
 
   // Orientation and screen sizing
   private isPortrait = false;
@@ -106,6 +122,36 @@ export class Game {
   private transition: ScreenTransition;
   private debug: DebugOverlay;
   private statistics: StatisticsManager;
+  private powerUps: PowerUpManager;
+  private modifiers: ModifierManager;
+  private challengeManager: ChallengeManager;
+
+  // Modifier UI state
+  private showModifierPanel = false;
+
+  // Section Practice mode
+  private showSectionPractice = false;
+  private selectedSection = 0;
+
+  // Challenge mode state
+  private currentChallenge: Challenge | null = null;
+  private challengeScore = 0;
+
+  // Chase mode (wall of death)
+  private chaseMode: ChaseModeManager;
+
+  // Ghost racing
+  private ghostManager: GhostManager;
+  private showGhost = true;
+
+  // Level timing and stats
+  private levelStartTime = 0;
+  private levelElapsedTime = 0;
+  private levelDeathCount = 0;
+
+  // Beat visualization
+  private beatTimer = 0;
+  private currentBPM = 128;
 
   // Quick restart key tracking
   private quickRestartHeld = false;
@@ -114,6 +160,10 @@ export class Game {
 
   // Statistics dashboard visibility
   private showStatsDashboard = false;
+
+  // Level sharing state
+  private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
+  private pendingImportLevel: import('../types').CustomLevel | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -152,6 +202,11 @@ export class Game {
     this.transition = new ScreenTransition();
     this.debug = new DebugOverlay();
     this.statistics = new StatisticsManager();
+    this.powerUps = new PowerUpManager();
+    this.modifiers = new ModifierManager();
+    this.challengeManager = new ChallengeManager();
+    this.chaseMode = new ChaseModeManager();
+    this.ghostManager = new GhostManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -166,6 +221,7 @@ export class Game {
     const settings = this.save.getSettings();
     this.audio.setMusicVolume(settings.musicVolume);
     this.audio.setSfxVolume(settings.sfxVolume);
+    this.showGhost = this.save.isShowGhostEnabled();
 
     this.loadLevel(1);
 
@@ -217,6 +273,19 @@ export class Game {
         this.beatPulse = 1;
       }
     });
+
+    // Check URL for shared level
+    this.checkUrlForSharedLevel();
+  }
+
+  private checkUrlForSharedLevel(): void {
+    const result = LevelSharingManager.checkUrlForLevel();
+    if (result && result.success && result.level) {
+      // Store the level for import prompt
+      this.pendingImportLevel = result.level;
+      // Clear the URL parameter
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }
 
   private loadLevel(levelId: number): void {
@@ -231,6 +300,26 @@ export class Game {
 
     // Set music style for this level
     this.audio.setStyleForLevel(levelId);
+
+    // Spawn power-ups from level config
+    this.powerUps.clear();
+    for (const config of this.level.powerUpConfigs) {
+      this.powerUps.spawn(config.type, config.x, config.y);
+    }
+
+    // Configure chase mode based on level config
+    this.chaseMode.reset();
+    const chaseConfig = this.level.getConfig().chaseMode;
+    if (chaseConfig?.enabled) {
+      this.chaseMode = new ChaseModeManager({
+        enabled: true,
+        initialDelay: chaseConfig.initialDelay ?? 2000,
+        baseSpeed: chaseConfig.baseSpeed ?? 0.85,
+        accelerationRate: chaseConfig.accelerationRate ?? 0.0001,
+      });
+    } else {
+      this.chaseMode.setEnabled(false);
+    }
   }
 
   private handleClick(e: MouseEvent): void {
@@ -270,6 +359,12 @@ export class Game {
       case 'achievements':
         this.handleAchievementsClick(x, y);
         break;
+      case 'challenges':
+        this.handleChallengesClick(x, y);
+        break;
+      case 'paused':
+        this.handlePausedClick(x, y);
+        break;
       case 'editor':
         this.handleEditorClick(e);
         break;
@@ -290,6 +385,13 @@ export class Game {
       return;
     }
 
+    // Handle mobile control buttons during gameplay
+    if ((this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') && this.input.isMobileDevice()) {
+      if (this.handleMobileControlClick(x, y)) {
+        return;
+      }
+    }
+
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.handleMainMenuClick(x, y);
@@ -308,6 +410,12 @@ export class Game {
         break;
       case 'achievements':
         this.handleAchievementsClick(x, y);
+        break;
+      case 'challenges':
+        this.handleChallengesClick(x, y);
+        break;
+      case 'paused':
+        this.handlePausedClick(x, y);
         break;
       case 'editor':
         // Editor has its own touch handling via TouchHandler
@@ -333,50 +441,187 @@ export class Game {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
     }
-    // Endless button (y=318)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 293 && y <= 343) {
+    // Endless button (left side, y=315)
+    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
+        y >= 295 && y <= 335) {
       this.audio.playSelect();
       this.startEndlessMode();
     }
-    // Editor button (left side, y=378)
+    // Daily Challenges button (right side, y=315)
+    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
+        y >= 295 && y <= 335) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'challenges';
+    }
+    // Editor button (left side, y=370)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 358 && y <= 398) {
+        y >= 350 && y <= 390) {
       this.audio.playSelect();
       this.openEditor();
     }
-    // Custom Levels button (right side, y=378)
+    // Custom Levels button (right side, y=370)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 358 && y <= 398) {
+        y >= 350 && y <= 390) {
       this.audio.playSelect();
       this.state.gameStatus = 'customLevels';
     }
-    // Skins button (left side, y=438)
+    // Skins button (left side, y=425)
     if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 418 && y <= 458) {
+        y >= 405 && y <= 445) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
     }
-    // Achievements button (right side, y=438)
+    // Achievements button (right side, y=425)
     if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 418 && y <= 458) {
+        y >= 405 && y <= 445) {
       this.audio.playSelect();
       this.state.gameStatus = 'achievements';
     }
-    // Settings button (y=498)
+    // Settings button (y=480)
     if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 473 && y <= 523) {
+        y >= 455 && y <= 505) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
   }
 
   private handleLevelSelectClick(x: number, y: number, shiftKey = false): void {
+    // Handle section practice panel clicks first if panel is open
+    if (this.showSectionPractice) {
+      const panelX = 100;
+      const panelY = 120;
+      const panelW = GAME_WIDTH - 200;
+      const panelH = 260;
+
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        const levelId = this.selectedLevelIndex + 1;
+        const checkpoints = this.getCheckpointsForLevel(levelId);
+
+        const btnW = 150;
+        const btnH = 45;
+        const btnGap = 15;
+        const startY = panelY + 55;
+
+        // Check "Start" button (from beginning)
+        const startBtnX = GAME_WIDTH / 2 - btnW / 2;
+        if (x >= startBtnX && x <= startBtnX + btnW && y >= startY && y <= startY + btnH) {
+          this.selectedSection = 0;
+          this.audio.playSelect();
+          return;
+        }
+
+        // Check checkpoint buttons
+        const checkpointsPerRow = 3;
+        const totalWidth = checkpointsPerRow * btnW + (checkpointsPerRow - 1) * btnGap;
+        const rowStartX = (GAME_WIDTH - totalWidth) / 2;
+
+        for (let i = 0; i < checkpoints.length; i++) {
+          const row = Math.floor(i / checkpointsPerRow);
+          const col = i % checkpointsPerRow;
+          const btnX = rowStartX + col * (btnW + btnGap);
+          const btnY = startY + btnH + 15 + row * (btnH + 10);
+
+          if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            this.selectedSection = i + 1;
+            this.audio.playSelect();
+            return;
+          }
+        }
+
+        // Check "Start Practice" button
+        const playBtnX = GAME_WIDTH / 2 - 70;
+        const playBtnY = panelY + panelH - 55;
+        const playBtnW = 140;
+        const playBtnH = 36;
+
+        if (x >= playBtnX && x <= playBtnX + playBtnW && y >= playBtnY && y <= playBtnY + playBtnH) {
+          // Start the level at the selected section
+          this.showSectionPractice = false;
+          this.startLevelAtSection(levelId, this.selectedSection);
+          this.audio.playSelect();
+          return;
+        }
+
+        return; // Click inside panel but not on a button
+      } else {
+        // Click outside panel - close it
+        this.showSectionPractice = false;
+        this.selectedSection = 0;
+        return;
+      }
+    }
+
+    // Handle modifier panel clicks first if panel is open
+    if (this.showModifierPanel) {
+      const panelX = 80;
+      const panelY = 100;
+      const panelW = GAME_WIDTH - 160;
+      const panelH = 300;
+
+      // Check if click is inside the panel
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        // Check modifier button clicks
+        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+        const btnW = 180;
+        const btnH = 50;
+        const btnGapX = 20;
+        const btnGapY = 12;
+        const startX = GAME_WIDTH / 2 - btnW - btnGapX / 2;
+        const startY = panelY + 75;
+
+        for (let i = 0; i < modIds.length; i++) {
+          const col = i % 2;
+          const row = Math.floor(i / 2);
+          const btnX = startX + col * (btnW + btnGapX);
+          const btnY = startY + row * (btnH + btnGapY);
+
+          if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            this.modifiers.toggleModifier(modIds[i]);
+            this.audio.playSelect();
+            return;
+          }
+        }
+        return; // Click inside panel but not on a button
+      } else {
+        // Click outside panel - close it
+        this.showModifierPanel = false;
+        return;
+      }
+    }
+
     // Back button
     if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
       this.audio.playSelect();
       this.state.gameStatus = 'mainMenu';
       return;
+    }
+
+    // Modifiers button
+    const modBtnX = GAME_WIDTH / 2 - 80;
+    const modBtnY = 418;
+    const modBtnW = 160;
+    const modBtnH = 32;
+    if (x >= modBtnX && x <= modBtnX + modBtnW && y >= modBtnY && y <= modBtnY + modBtnH) {
+      this.showModifierPanel = !this.showModifierPanel;
+      this.showSectionPractice = false; // Close section practice if open
+      this.audio.playSelect();
+      return;
+    }
+
+    // Section Practice button (only for unlocked levels)
+    const levelId = this.selectedLevelIndex + 1;
+    if (this.save.isLevelUnlocked(levelId)) {
+      const secBtnX = GAME_WIDTH / 2 - 80;
+      const secBtnY = modBtnY + 45;
+      const secBtnW = 160;
+      const secBtnH = 28;
+      if (x >= secBtnX && x <= secBtnX + secBtnW && y >= secBtnY && y <= secBtnY + secBtnH) {
+        this.showSectionPractice = !this.showSectionPractice;
+        this.showModifierPanel = false; // Close modifiers if open
+        this.selectedSection = 0; // Reset section selection
+        this.audio.playSelect();
+        return;
+      }
     }
 
     // Level cards - carousel style (must match renderLevelSelect dimensions)
@@ -455,31 +700,129 @@ export class Game {
       return;
     }
 
-    const sliderWidth = 250;
-    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
+    const leftColX = GAME_WIDTH / 4;
+    const rightColX = (GAME_WIDTH * 3) / 4;
+    const sliderWidth = 180;
+    const toggleWidth = 60;
 
-    // Music volume slider
-    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 190 && y <= 230) {
-      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
+    // Music volume slider (left column)
+    const musicSliderX = leftColX - sliderWidth / 2 - 15;
+    if (x >= musicSliderX && x <= musicSliderX + sliderWidth && y >= 145 && y <= 175) {
+      const volume = Math.max(0, Math.min(1, (x - musicSliderX) / sliderWidth));
       this.audio.setMusicVolume(volume);
       this.save.updateSettings({ musicVolume: volume });
     }
 
-    // SFX volume slider
-    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 280 && y <= 320) {
-      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
+    // SFX volume slider (left column)
+    if (x >= musicSliderX && x <= musicSliderX + sliderWidth && y >= 210 && y <= 240) {
+      const volume = Math.max(0, Math.min(1, (x - musicSliderX) / sliderWidth));
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
     }
 
-    // Screen shake toggle
-    const toggleWidth = 60;
-    const toggleX = GAME_WIDTH / 2 - toggleWidth / 2;
-    if (x >= toggleX && x <= toggleX + toggleWidth && y >= 385 && y <= 415) {
+    // Screen shake toggle (right column)
+    const rightToggleX = rightColX - toggleWidth / 2;
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
       const currentShake = this.save.getSettings().screenShake;
       this.save.updateSettings({ screenShake: !currentShake });
       this.audio.playSelect();
+    }
+
+    // Reduced motion toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 225 && y <= 260) {
+      this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
+      this.audio.playSelect();
+    }
+
+    // Colorblind mode buttons (left column)
+    const modes: Array<{ id: GameSettings['colorblindMode']; label: string }> = [
+      { id: 'normal', label: 'Normal' },
+      { id: 'deuteranopia', label: 'Deutan' },
+      { id: 'protanopia', label: 'Protan' },
+      { id: 'tritanopia', label: 'Tritan' },
+    ];
+    const cbBtnWidth = 50;
+    const cbGap = 8;
+    const cbTotalWidth = modes.length * cbBtnWidth + (modes.length - 1) * cbGap;
+    const cbStartX = leftColX - cbTotalWidth / 2;
+    if (y >= 365 && y <= 390) {
+      for (let i = 0; i < modes.length; i++) {
+        const btnX = cbStartX + i * (cbBtnWidth + cbGap);
+        if (x >= btnX && x <= btnX + cbBtnWidth) {
+          this.save.setColorblindMode(modes[i].id);
+          this.audio.playSelect();
+          return;
+        }
+      }
+    }
+
+    // Reduce flash toggle (left column)
+    const leftToggleX = leftColX - toggleWidth / 2;
+    if (x >= leftToggleX && x <= leftToggleX + toggleWidth && y >= 425 && y <= 460) {
+      this.save.setReduceFlash(!this.save.isReduceFlashEnabled());
+      this.audio.playSelect();
+    }
+
+    // High contrast toggle (left column)
+    if (x >= leftToggleX && x <= leftToggleX + toggleWidth && y >= 495 && y <= 530) {
+      this.save.setHighContrast(!this.save.isHighContrastEnabled());
+      this.audio.playSelect();
+    }
+
+    // Show ghost toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 350 && y <= 385) {
+      this.save.setShowGhost(!this.save.isShowGhostEnabled());
+      this.showGhost = this.save.isShowGhostEnabled();
+      this.audio.playSelect();
+    }
+
+    // Haptic feedback toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 420 && y <= 455) {
+      this.save.setHapticFeedback(!this.save.isHapticFeedbackEnabled());
+      this.audio.playSelect();
+    }
+
+    // Export data button (right column)
+    if (x >= rightColX - 100 && x <= rightColX && y >= 485 && y <= 515) {
+      // Export save data to clipboard
+      const exportedData = this.save.exportData();
+      navigator.clipboard.writeText(exportedData).then(() => {
+        this.audio.playSelect();
+      }).catch(() => {
+        // Fallback: create download
+        const blob = new Blob([exportedData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tempodash-save.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // Import data button (right column)
+    if (x >= rightColX && x <= rightColX + 100 && y >= 485 && y <= 515) {
+      // Import save data from clipboard
+      navigator.clipboard.readText().then((text) => {
+        const result = this.save.importData(text);
+        if (result.success) {
+          this.audio.playUnlock();
+        } else {
+          console.error('Import failed:', result.error);
+        }
+      }).catch(() => {
+        console.error('Failed to read clipboard');
+      });
+    }
+
+    // Reset all button (right column)
+    if (x >= rightColX - 45 && x <= rightColX + 45 && y >= 530 && y <= 560) {
+      // Confirm before resetting
+      if (confirm('Are you sure you want to reset all data? This cannot be undone.')) {
+        this.save.resetAllData();
+        this.audio.playSelect();
+      }
     }
   }
 
@@ -533,9 +876,15 @@ export class Game {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    // Dismiss tutorial on any key
+    // Tutorial navigation
     if (this.showingTutorial) {
-      this.dismissTutorial();
+      if (e.code === 'ArrowRight' || e.code === 'Space' || e.code === 'Enter') {
+        this.dismissTutorial(); // Goes to next page or closes
+      } else if (e.code === 'ArrowLeft') {
+        this.previousTutorialPage();
+      } else if (e.code === 'KeyS' || e.code === 'Escape') {
+        this.skipTutorial();
+      }
       return;
     }
 
@@ -613,6 +962,13 @@ export class Game {
         }
         break;
 
+      case 'challenges':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
       case 'editor':
         this.handleEditorKeyDown(e);
         break;
@@ -626,6 +982,7 @@ export class Game {
       case 'playing':
       case 'practice':
       case 'endless':
+      case 'challengePlaying':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
@@ -643,7 +1000,9 @@ export class Game {
       case 'paused':
         if (e.code === 'Escape' || e.code === 'Enter') {
           // Resume to the correct mode
-          if (this.isEndlessMode) {
+          if (this.currentChallenge) {
+            this.state.gameStatus = 'challengePlaying';
+          } else if (this.isEndlessMode) {
             this.state.gameStatus = 'endless';
           } else if (this.isPracticeMode) {
             this.state.gameStatus = 'practice';
@@ -654,6 +1013,7 @@ export class Game {
         } else if (e.code === 'KeyQ') {
           this.isEndlessMode = false;
           this.isPracticeMode = false;
+          this.currentChallenge = null;
           this.state.gameStatus = 'mainMenu';
         }
         break;
@@ -685,7 +1045,8 @@ export class Game {
   private handleTabHidden(): void {
     const isPlaying = this.state.gameStatus === 'playing' ||
                       this.state.gameStatus === 'practice' ||
-                      this.state.gameStatus === 'endless';
+                      this.state.gameStatus === 'endless' ||
+                      this.state.gameStatus === 'challengePlaying';
 
     if (isPlaying) {
       this.state.gameStatus = 'paused';
@@ -726,6 +1087,10 @@ export class Game {
     this.particles.clear();
     this.comboCount = 0;
     this.comboTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.nearMissCount = 0;
+    this.comboMeterPulse = 0;
     this.audio.start();
   }
 
@@ -739,12 +1104,73 @@ export class Game {
     this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
 
+    // Reset modifier timers for new level
+    this.modifiers.resetForLevel();
+
+    // Initialize level timing and stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
+
+    // Initialize BPM for beat visualization
+    const config = this.level.getConfig();
+    this.currentBPM = config.bpm || 128;
+    this.beatTimer = 0;
+
+    // Start ghost recording
+    this.ghostManager.startRecording();
+
+    // Load ghost for playback if available
+    const savedGhost = this.save.getGhostRun(levelId);
+    if (savedGhost && this.showGhost) {
+      this.ghostManager.startPlayback(savedGhost);
+    }
+
     // Show tutorial on first play
     if (!this.save.hasTutorialBeenShown()) {
       this.showingTutorial = true;
     } else {
       this.audio.start();
     }
+  }
+
+  private startLevelAtSection(levelId: number, sectionIndex: number): void {
+    // Start level in practice mode
+    this.loadLevel(levelId);
+    this.attempts = 1;
+    this.levelScoreThisRun = 0;
+    this.isPracticeMode = true; // Always practice mode for section practice
+    this.state.gameStatus = 'practice';
+
+    // Get checkpoint position for the selected section
+    const checkpoints = this.getCheckpointsForLevel(levelId);
+    if (sectionIndex > 0 && sectionIndex <= checkpoints.length) {
+      const checkpoint = checkpoints[sectionIndex - 1];
+      // Set player position to checkpoint
+      this.player.x = checkpoint.x;
+      this.player.y = checkpoint.y;
+      this.player.velocityY = 0;
+      this.checkpointX = checkpoint.x;
+      this.checkpointY = checkpoint.y;
+      this.cameraX = Math.max(0, checkpoint.x - GAME_WIDTH / 3);
+      this.lastCheckpointProgress = (sectionIndex / (checkpoints.length + 1)) * 100;
+    } else {
+      // Start from beginning
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
+    }
+
+    // Reset modifier timers
+    this.modifiers.resetForLevel();
+
+    // Initialize BPM for beat visualization
+    const config = this.level.getConfig();
+    this.currentBPM = config.bpm || 128;
+    this.beatTimer = 0;
+
+    // Start audio
+    this.audio.start();
   }
 
   private nextLevel(): void {
@@ -767,6 +1193,18 @@ export class Game {
       this.state.gameStatus = 'mainMenu';
       this.audio.stop();
     }
+  }
+
+  private restartLevel(): void {
+    // Restart current level from beginning
+    this.loadLevel(this.state.currentLevel);
+    this.attempts = 1;
+    this.levelScoreThisRun = 0;
+    this.checkpointX = this.level.playerStart.x;
+    this.checkpointY = this.level.playerStart.y;
+    this.lastCheckpointProgress = 0;
+    this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+    this.audio.start();
   }
 
   private startEndlessMode(): void {
@@ -873,6 +1311,9 @@ export class Game {
     this.comboCount = 0;
     this.comboTimer = 0;
     this.comboDisplayTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.comboMeterPulse = 0;
 
     // Reset speed multiplier on death
     this.speedMultiplier = 1.0;
@@ -930,7 +1371,7 @@ export class Game {
     this.updateAchievementNotifications(deltaTime);
 
     // Track play time
-    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless') {
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless' || this.state.gameStatus === 'challengePlaying') {
       this.lastPlayTimeUpdate += deltaTime;
       if (this.lastPlayTimeUpdate >= 10000) { // Save every 10 seconds
         this.save.addPlayTime(this.lastPlayTimeUpdate);
@@ -954,11 +1395,24 @@ export class Game {
       this.deathFlashOpacity = Math.max(0, this.deathFlashOpacity - deltaTime / 300);
     }
 
+    // Decay power-up flash
+    if (this.powerUpFlashOpacity > 0) {
+      this.powerUpFlashOpacity = Math.max(0, this.powerUpFlashOpacity - deltaTime / 200);
+    }
+
     // Decay orientation hint timer
     if (this.orientationMessageTimer > 0) {
       this.orientationMessageTimer -= deltaTime;
       if (this.orientationMessageTimer <= 0) {
         this.showOrientationHint = false;
+      }
+    }
+
+    // Decay share notification timer
+    if (this.shareNotification && this.shareNotification.timer > 0) {
+      this.shareNotification.timer -= deltaTime;
+      if (this.shareNotification.timer <= 0) {
+        this.shareNotification = null;
       }
     }
 
@@ -968,7 +1422,7 @@ export class Game {
       return;
     }
 
-    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'editorTest') {
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'challengePlaying' && this.state.gameStatus !== 'editorTest') {
       this.level.update(deltaTime);
       return;
     }
@@ -981,15 +1435,57 @@ export class Game {
 
     const inputState = this.input.update();
     this.level.update(deltaTime);
+    this.powerUps.update(deltaTime);
+
+    // Check power-up collection
+    const collectedPowerUp = this.powerUps.checkCollision(this.player.getBounds());
+    if (collectedPowerUp) {
+      this.audio.playCoinCollect(); // Reuse coin sound for now
+      this.input.triggerHaptic('medium');
+      // Spawn collection particles
+      this.particles.spawnCoinCollect(
+        collectedPowerUp.x + collectedPowerUp.width / 2,
+        collectedPowerUp.y + collectedPowerUp.height / 2
+      );
+
+      // Trigger power-up flash with color based on type
+      const powerUpColors: Record<string, string> = {
+        speed: '#00ffff',
+        shield: '#00aaff',
+        magnet: '#ff00ff',
+        doubleJump: '#ffff00'
+      };
+      this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
+      // Trigger power-up flash (reduced or disabled based on settings)
+      if (!this.save.isReduceFlashEnabled()) {
+        this.powerUpFlashOpacity = 0.25;
+      }
+    }
 
     const wasGroundedBefore = this.player.isGrounded;
     const wasAliveBefore = !this.player.isDead;
     const prevVelocityY = this.player.velocityY;
     const wasDashing = this.player.isDashing;
 
+    // Update modifiers (for time attack countdown)
+    this.modifiers.update(deltaTime);
+
+    // Check for time attack expiration
+    if (this.modifiers.isTimeExpired() && !this.player.isDead) {
+      this.player.isDead = true; // Time's up!
+    }
+
+    // Apply slowmo effect from power-ups and speed demon modifier
+    const effectiveSpeedMultiplier = this.speedMultiplier *
+      this.powerUps.getSlowMoMultiplier() *
+      this.modifiers.getSpeedMultiplier();
+
+    // Check if air jumps are allowed (disabled by "Grounded" modifier)
+    const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
+
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
-      this.player.update(deltaTime, inputState, this.endlessPlatforms, this.speedMultiplier);
+      this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier, allowAirJumps);
 
       // Update distance
       this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
@@ -1000,12 +1496,146 @@ export class Game {
       // Clean up platforms behind camera
       this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
     } else {
-      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), this.speedMultiplier);
+      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
     }
 
     // Trigger dash shake
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
+    }
+
+    // Update player trail particles
+    const playerColor = this.save.getSelectedSkin().glowColor;
+    // Player auto-moves forward, so always "moving" when alive
+    const isMoving = !this.player.isDead;
+    this.particles.updateTrail(
+      deltaTime,
+      this.player.x + this.player.width / 2,
+      this.player.y + this.player.height / 2,
+      playerColor,
+      isMoving,
+      this.player.isDashing
+    );
+
+    // Update chase mode (wall of death)
+    if (!this.isEndlessMode) {
+      const basePlayerSpeed = 350; // Base player speed in px/s
+      this.chaseMode.update(deltaTime, this.player.x, basePlayerSpeed * effectiveSpeedMultiplier);
+
+      // Check if wall caught the player
+      if (this.chaseMode.checkCollision(this.player.x) && !this.player.isDead) {
+        this.player.isDead = true;
+        this.triggerShake(15, 400); // Strong shake for wall death
+      }
+    }
+
+    // Update level timing
+    if (!this.player.isDead) {
+      this.levelElapsedTime = performance.now() - this.levelStartTime;
+    }
+
+    // Record ghost frame
+    if (this.ghostManager.getIsRecording() && !this.player.isDead) {
+      this.ghostManager.recordFrame(
+        this.player.x,
+        this.player.y,
+        this.player.getRotation(),
+        deltaTime
+      );
+    }
+
+    // Update ghost playback
+    this.ghostManager.update(deltaTime);
+
+    // Beat visualization - pulse platforms on beat
+    this.beatTimer += deltaTime;
+    const beatInterval = 60000 / this.currentBPM; // ms per beat
+    if (this.beatTimer >= beatInterval) {
+      this.beatTimer -= beatInterval;
+      // Trigger pulse on visible platforms
+      for (const platform of this.level.getActivePlatforms()) {
+        platform.triggerBeatPulse();
+      }
+    }
+
+    // Check secret platform reveals
+    const playerCenterX = this.player.x + this.player.width / 2;
+    const playerCenterY = this.player.y + this.player.height / 2;
+    for (const platform of this.level.getActivePlatforms()) {
+      if (platform.checkSecretReveal(playerCenterX, playerCenterY)) {
+        // Secret platform revealed! Add feedback
+        this.audio.playCoinCollect();
+        this.particles.spawnCoinCollect(playerCenterX, playerCenterY);
+      }
+    }
+
+    // Apply magnet effect to attract nearby coins
+    const magnetRange = this.powerUps.getMagnetRange();
+    if (magnetRange > 0) {
+      const playerCenterX = this.player.x + this.player.width / 2;
+      const playerCenterY = this.player.y + this.player.height / 2;
+
+      for (const coin of this.level.coins) {
+        if (coin.collected) continue;
+
+        const dx = playerCenterX - coin.x;
+        const dy = playerCenterY - coin.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < magnetRange) {
+          coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
+        }
+      }
+    }
+
+    // Calculate combo multiplier based on combo count
+    if (this.comboCount >= 25) {
+      this.comboMultiplier = 4;
+    } else if (this.comboCount >= 20) {
+      this.comboMultiplier = 3;
+    } else if (this.comboCount >= 15) {
+      this.comboMultiplier = 2.5;
+    } else if (this.comboCount >= 10) {
+      this.comboMultiplier = 2;
+    } else if (this.comboCount >= 5) {
+      this.comboMultiplier = 1.5;
+    } else {
+      this.comboMultiplier = 1;
+    }
+
+    // Near-miss detection - check if player is close to spikes/lava without dying
+    const nearMissDistance = 15; // pixels
+    const playerBounds = this.player.getBounds();
+    for (const platform of this.level.getActivePlatforms()) {
+      if (platform.type === 'spike' || platform.type === 'lava') {
+        const platBounds = platform.getBounds();
+        const dx = Math.max(0, Math.max(platBounds.x - (playerBounds.x + playerBounds.width), playerBounds.x - (platBounds.x + platBounds.width)));
+        const dy = Math.max(0, Math.max(platBounds.y - (playerBounds.y + playerBounds.height), playerBounds.y - (platBounds.y + platBounds.height)));
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
+          // Near miss! Add to combo
+          this.nearMissCount++;
+          this.comboCount += 1;
+          this.comboTimer = this.comboDuration;
+          this.comboDisplayTimer = 400;
+          this.nearMissTimer = 500; // Cooldown to prevent spam
+          this.comboMeterPulse = 1;
+
+          // Spawn near-miss particle effect
+          this.particles.spawnFloatingText(
+            this.player.x + this.player.width / 2,
+            this.player.y - 20,
+            'CLOSE!',
+            '#ff6600'
+          );
+        }
+      }
+    }
+
+    // Decay near-miss cooldown
+    if (this.nearMissTimer > 0) {
+      this.nearMissTimer -= deltaTime;
     }
 
     // Check coin collection
@@ -1014,10 +1644,25 @@ export class Game {
       this.audio.playCoinCollect();
       this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
-      // Update combo
-      this.comboCount += coinsCollected;
+      // Apply double points multiplier from power-up AND combo multiplier
+      const pointsMultiplier = this.powerUps.getPointsMultiplier();
+      const effectiveCoins = Math.floor(coinsCollected * pointsMultiplier * this.comboMultiplier);
+
+      // Update combo (with multiplied coins)
+      this.comboCount += coinsCollected; // Raw coins for combo count
       this.comboTimer = this.comboDuration;
       this.comboDisplayTimer = 500; // Show combo text for 500ms
+      this.comboMeterPulse = 1;
+
+      // Show bonus points from multiplier
+      if (this.comboMultiplier > 1) {
+        this.particles.spawnFloatingText(
+          this.player.x + this.player.width / 2,
+          this.player.y - 40,
+          `+${effectiveCoins}`,
+          '#ffd700'
+        );
+      }
 
       // Check combo achievements
       if (this.comboCount >= 5) {
@@ -1036,12 +1681,16 @@ export class Game {
       this.comboTimer -= deltaTime;
       if (this.comboTimer <= 0) {
         this.comboCount = 0;
+        this.comboMultiplier = 1;
       }
     }
 
-    // Decay combo display
+    // Decay combo display and pulse
     if (this.comboDisplayTimer > 0) {
       this.comboDisplayTimer -= deltaTime;
+    }
+    if (this.comboMeterPulse > 0) {
+      this.comboMeterPulse -= deltaTime / 200;
     }
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
@@ -1049,6 +1698,22 @@ export class Game {
       // Increase speed by 0.25% per jump (compound growth)
       this.jumpCount++;
       this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
+
+      // Spawn jump dust particles
+      const jumpX = this.player.x + this.player.width / 2;
+      const jumpY = this.player.y + this.player.height;
+      this.particles.spawnJumpDust(jumpX, jumpY);
+    }
+
+    // Landing dust when player hits ground
+    if (!wasGroundedBefore && this.player.isGrounded && !this.player.isDead) {
+      const landX = this.player.x + this.player.width / 2;
+      const landY = this.player.y + this.player.height;
+      // Scale dust intensity based on fall velocity
+      const velocityScale = Math.min(Math.abs(prevVelocityY) / 800, 2);
+      if (velocityScale > 0.3) {
+        this.particles.spawnLandingDust(landX, landY, velocityScale);
+      }
     }
 
     // Detect bounce (sudden large upward velocity change)
@@ -1058,20 +1723,41 @@ export class Game {
     }
 
     if (wasAliveBefore && this.player.isDead) {
-      this.audio.playDeath();
-      this.triggerShake(12, 350); // Strong shake on death
-      this.deathFlashOpacity = 0.6; // Trigger death flash
-      this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
+      // Check if shield can save the player (disabled by fragile modifier)
+      if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
+        // Shield consumed! Revive the player
+        this.player.revive();
+        this.audio.playCoinCollect(); // Play a positive sound
+        this.triggerShake(8, 200); // Medium shake for shield break
+        this.input.triggerHaptic('heavy');
 
-      // Spawn death particle explosion
-      const playerCenterX = this.player.x + this.player.width / 2;
-      const playerCenterY = this.player.y + this.player.height / 2;
-      this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+        // Visual feedback for shield break - use death explosion with shield color
+        const playerCenterX = this.player.x + this.player.width / 2;
+        const playerCenterY = this.player.y + this.player.height / 2;
+        this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, '#00aaff');
+      } else {
+        // No shield - player dies
+        this.audio.playDeath();
+        this.triggerShake(12, 350); // Strong shake on death
+        // Trigger death flash (reduced or disabled based on settings)
+        if (!this.save.isReduceFlashEnabled()) {
+          this.deathFlashOpacity = 0.6;
+        }
+        this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
 
-      // Track death for statistics and achievements
-      this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
-      this.save.recordDeath();
-      this.tryUnlockAchievement('first_death');
+        // Spawn death particle explosion
+        const playerCenterX = this.player.x + this.player.width / 2;
+        const playerCenterY = this.player.y + this.player.height / 2;
+        this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+
+        // Track death for statistics and achievements
+        this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
+        this.save.recordDeath();
+        this.tryUnlockAchievement('first_death');
+
+        // Increment level death count for star calculation
+        this.levelDeathCount++;
+      }
     }
 
     // Decay checkpoint feedback timer
@@ -1104,7 +1790,23 @@ export class Game {
       if (this.deathTimer > 500) {
         this.deathTimer = 0;
 
-        if (this.isEndlessMode) {
+        if (this.currentChallenge) {
+          // Challenge mode death - record attempt and calculate score
+          const score = Math.floor(this.endlessDistance + this.challengeScore);
+          const completed = this.endlessDistance >= 500; // 500m = challenge complete
+          this.challengeManager.recordAttempt(this.currentChallenge.id, score, completed);
+
+          if (completed) {
+            // Challenge completed! Return to challenge menu
+            this.isEndlessMode = false;
+            this.currentChallenge = null;
+            this.state.gameStatus = 'challenges';
+            this.audio.stop();
+          } else {
+            // Try again - respawn with seeded platforms
+            this.restartChallenge();
+          }
+        } else if (this.isEndlessMode) {
           // Game over in endless mode
           this.save.setEndlessHighScore(this.endlessDistance);
 
@@ -1135,7 +1837,11 @@ export class Game {
         const baseScore = 1000;
         const attemptPenalty = (this.attempts - 1) * 50;
         const coinBonus = this.level.coinsCollected * 100;
-        this.levelScoreThisRun = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+
+        // Apply modifier score multiplier (higher score for harder modifiers)
+        const modifierMultiplier = this.modifiers.getScoreMultiplier();
+        this.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
 
         // Add to total points
         this.save.addPoints(this.levelScoreThisRun);
@@ -1166,6 +1872,27 @@ export class Game {
         this.checkAchievements();
       } else {
         this.levelScoreThisRun = 0; // No points in practice mode
+      }
+
+      // Calculate and save star rating
+      const totalCoinsInLevel = this.level.getConfig().totalCoins || this.level.totalCoins;
+      const stars = this.save.calculateStars(
+        this.level.coinsCollected,
+        totalCoinsInLevel,
+        this.levelDeathCount
+      );
+      this.save.setLevelStars(this.state.currentLevel, stars);
+      this.save.setLevelDeaths(this.state.currentLevel, this.levelDeathCount);
+
+      // Save best time and ghost
+      const completionTime = this.levelElapsedTime;
+      const isNewBest = this.save.setBestTime(this.state.currentLevel, completionTime);
+      if (isNewBest) {
+        // Save ghost run for new best time
+        const ghostFrames = this.ghostManager.stopRecording();
+        this.save.saveGhostRun(this.state.currentLevel, ghostFrames, completionTime);
+      } else {
+        this.ghostManager.stopRecording();
       }
 
       this.state.gameStatus = 'levelComplete';
@@ -1264,6 +1991,13 @@ export class Game {
       this.player.render(this.ctx, this.cameraX);
       this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
+    } else if (this.state.gameStatus === 'challengePlaying') {
+      // Render challenge mode (similar to endless but with challenge UI)
+      this.renderEndlessBackground();
+      this.renderEndlessPlatforms();
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
+      this.renderChallengeUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
       this.level.render(this.ctx, this.cameraX);
@@ -1275,15 +2009,53 @@ export class Game {
       this.level.render(this.ctx, this.cameraX);
 
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
+        // Render power-ups before player so they appear behind
+        this.powerUps.render(this.ctx, this.cameraX);
+
+        // Render ghost before player so player appears on top
+        if (this.showGhost) {
+          this.ghostManager.render(this.ctx, this.cameraX);
+        }
+
         this.player.render(this.ctx, this.cameraX);
+
+        // Render shield effect around player if active
+        const playerBounds = this.player.getBounds();
+        this.powerUps.renderShieldEffect(
+          this.ctx,
+          playerBounds.x - this.cameraX,
+          playerBounds.y,
+          playerBounds.width,
+          playerBounds.height
+        );
+
         this.particles.render(this.ctx, this.cameraX);
+
+        // Render chase mode wall of death
+        this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
+        this.chaseMode.renderWarning(this.ctx, this.player.x, this.cameraX, GAME_WIDTH);
+
         this.renderPlayingUI();
+
+        // Render active power-up UI indicators
+        this.powerUps.renderUI(this.ctx);
       }
     }
 
     // Death flash effect
     if (this.deathFlashOpacity > 0) {
       this.ctx.fillStyle = `rgba(255, 0, 0, ${this.deathFlashOpacity})`;
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
+
+    // Power-up flash effect
+    if (this.powerUpFlashOpacity > 0) {
+      // Parse hex color to RGB
+      const hex = this.powerUpFlashColor.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.powerUpFlashOpacity})`;
       this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     }
 
@@ -1313,6 +2085,9 @@ export class Game {
         break;
       case 'achievements':
         this.renderAchievements();
+        break;
+      case 'challenges':
+        this.renderChallenges();
         break;
       case 'paused':
         this.renderPaused();
@@ -1548,29 +2323,113 @@ export class Game {
       this.ctx.fillText('MUTED', GAME_WIDTH - 20, muteY);
     }
 
-    // Combo counter (center, when active)
-    if (this.comboCount > 1 && this.comboDisplayTimer > 0) {
-      const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
-      const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+    // Combo counter and meter (center, when active)
+    if (this.comboCount > 1) {
+      const meterWidth = 200;
+      const meterHeight = 8;
+      const meterX = (GAME_WIDTH - meterWidth) / 2;
+      const meterY = 95;
 
-      this.ctx.textAlign = 'center';
-      this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
+      // Draw combo meter background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
-      // Color based on combo count
-      let comboColor = '#ffd700';
-      if (this.comboCount >= 10) {
-        comboColor = '#ff00ff';
+      // Draw combo meter fill based on timer
+      const fillPercent = this.comboTimer / this.comboDuration;
+      const pulseBoost = this.comboMeterPulse * 0.1;
+
+      // Color based on combo tier
+      let comboColor = '#ffd700'; // Gold
+      let tierName = '';
+      if (this.comboCount >= 25) {
+        comboColor = '#ff00ff'; // Magenta - LEGENDARY
+        tierName = 'LEGENDARY!';
+      } else if (this.comboCount >= 20) {
+        comboColor = '#00ffff'; // Cyan - INSANE
+        tierName = 'INSANE!';
+      } else if (this.comboCount >= 15) {
+        comboColor = '#ff0066'; // Pink - EPIC
+        tierName = 'EPIC!';
+      } else if (this.comboCount >= 10) {
+        comboColor = '#ff6600'; // Orange - SUPER
+        tierName = 'SUPER!';
       } else if (this.comboCount >= 5) {
-        comboColor = '#ff6600';
+        comboColor = '#ffcc00'; // Yellow - NICE
+        tierName = 'NICE!';
       }
 
+      // Pulsing meter fill
       this.ctx.fillStyle = comboColor;
       this.ctx.shadowColor = comboColor;
-      this.ctx.shadowBlur = 15;
-      this.ctx.globalAlpha = comboAlpha;
-      this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
-      this.ctx.globalAlpha = 1;
+      this.ctx.shadowBlur = 10 + this.comboMeterPulse * 20;
+      this.ctx.fillRect(meterX, meterY, meterWidth * (fillPercent + pulseBoost), meterHeight);
+      this.ctx.shadowBlur = 0;
+
+      // Meter border
+      this.ctx.strokeStyle = comboColor;
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+
+      // Show combo text when recently updated
+      if (this.comboDisplayTimer > 0) {
+        const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
+        const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
+
+        this.ctx.fillStyle = comboColor;
+        this.ctx.shadowColor = comboColor;
+        this.ctx.shadowBlur = 15;
+        this.ctx.globalAlpha = comboAlpha;
+        this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
+
+        // Show multiplier below combo count
+        if (this.comboMultiplier > 1) {
+          this.ctx.font = `bold ${Math.floor(16 * comboScale)}px "Segoe UI", sans-serif`;
+          this.ctx.fillText(`${this.comboMultiplier}x POINTS ${tierName}`, GAME_WIDTH / 2, 118);
+        }
+
+        this.ctx.globalAlpha = 1;
+        this.ctx.shadowBlur = 4;
+      }
+    }
+
+    // Time Attack countdown (center-top, prominent when active)
+    if (this.modifiers.isActive('timeAttack')) {
+      const timeRemaining = this.modifiers.getTimeRemaining();
+      const seconds = Math.ceil(timeRemaining / 1000);
+      const isLow = seconds <= 10;
+
+      this.ctx.textAlign = 'center';
+      this.ctx.font = `bold ${isLow ? 28 : 24}px "Segoe UI", sans-serif`;
+      this.ctx.fillStyle = isLow ? '#ff4444' : '#ffff00';
+      this.ctx.shadowColor = this.ctx.fillStyle;
+      this.ctx.shadowBlur = isLow ? 20 : 10;
+
+      // Pulse when low
+      const scale = isLow ? 1 + Math.sin(Date.now() / 100) * 0.1 : 1;
+      this.ctx.save();
+      this.ctx.translate(GAME_WIDTH / 2, 58);
+      this.ctx.scale(scale, scale);
+      this.ctx.fillText(`⏱️ ${seconds}s`, 0, 0);
+      this.ctx.restore();
       this.ctx.shadowBlur = 4;
+    }
+
+    // Active modifiers display (bottom-left)
+    const activeModifiers = this.modifiers.getActiveModifierDetails();
+    if (activeModifiers.length > 0) {
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+
+      let modY = GAME_HEIGHT - 60;
+      for (const mod of activeModifiers) {
+        this.ctx.fillStyle = mod.color;
+        this.ctx.fillText(`${mod.icon} ${mod.name}`, 15, modY);
+        modY -= 16;
+      }
     }
 
     // Beat indicator
@@ -1591,7 +2450,155 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
+    // Mobile controls (pause, home, restart buttons)
+    if (this.input.isMobileDevice()) {
+      this.renderMobileControls();
+    }
+
     this.ctx.restore();
+  }
+
+  private renderMobileControls(): void {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Semi-transparent background for buttons
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.lineWidth = 2;
+
+    // Pause button (top-right area, below coins/best)
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    this.ctx.beginPath();
+    this.ctx.roundRect(pauseX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Pause icon (two vertical bars)
+    this.ctx.fillStyle = '#ffffff';
+    const barWidth = 6;
+    const barHeight = 20;
+    const barGap = 6;
+    const barY = topY + (buttonSize - barHeight) / 2;
+    this.ctx.fillRect(pauseX + buttonSize / 2 - barWidth - barGap / 2, barY, barWidth, barHeight);
+    this.ctx.fillRect(pauseX + buttonSize / 2 + barGap / 2, barY, barWidth, barHeight);
+
+    // Home button (left of pause)
+    const homeX = pauseX - buttonSize - buttonPadding;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(homeX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Home icon (simple house shape)
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('⌂', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
+
+    // Restart button (left of home)
+    const restartX = homeX - buttonSize - buttonPadding;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(restartX, topY, buttonSize, buttonSize, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Restart icon (circular arrow)
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillText('↻', restartX + buttonSize / 2, topY + buttonSize / 2 + 7);
+
+    // Touch zone hints at bottom of screen (only show when paused)
+    if (this.state.gameStatus === 'paused') {
+      const hintY = GAME_HEIGHT - 50;
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Left side: Flip gravity  |  Right side: Jump', GAME_WIDTH / 2, hintY);
+    }
+  }
+
+  private handleMobileControlClick(x: number, y: number): boolean {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Pause button
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    if (x >= pauseX && x <= pauseX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      if (this.state.gameStatus === 'paused') {
+        // Resume
+        this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+        this.audio.start();
+      } else {
+        // Pause
+        this.state.gameStatus = 'paused';
+        this.audio.stop();
+      }
+      return true;
+    }
+
+    // Home button
+    const homeX = pauseX - buttonSize - buttonPadding;
+    if (x >= homeX && x <= homeX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      this.audio.stop();
+      this.state.gameStatus = 'mainMenu';
+      this.isPracticeMode = false;
+      return true;
+    }
+
+    // Restart button
+    const restartX = homeX - buttonSize - buttonPadding;
+    if (x >= restartX && x <= restartX + buttonSize && y >= topY && y <= topY + buttonSize) {
+      this.audio.playSelect();
+      this.restartLevel();
+      return true;
+    }
+
+    return false;
+  }
+
+  private handlePausedClick(x: number, y: number): void {
+    // Check mobile control buttons first
+    if (this.input.isMobileDevice() && this.handleMobileControlClick(x, y)) {
+      return;
+    }
+
+    // Check pause menu buttons (matching renderPaused layout)
+    const btnWidth = 200;
+    const btnHeight = 44;
+    const btnX = GAME_WIDTH / 2 - btnWidth / 2;
+    const btnStartY = GAME_HEIGHT / 2 + 100;
+    const btnGap = 55;
+
+    // Resume button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY && y <= btnStartY + btnHeight) {
+      this.audio.playSelect();
+      this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+      this.audio.start();
+      return;
+    }
+
+    // Restart button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY + btnGap && y <= btnStartY + btnGap + btnHeight) {
+      this.audio.playSelect();
+      this.restartLevel();
+      return;
+    }
+
+    // Main Menu button
+    if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY + btnGap * 2 && y <= btnStartY + btnGap * 2 + btnHeight) {
+      this.audio.playSelect();
+      this.audio.stop();
+      this.state.gameStatus = 'mainMenu';
+      this.isPracticeMode = false;
+      return;
+    }
   }
 
   private renderMainMenu(): void {
@@ -1628,20 +2635,25 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 7 buttons)
+    // Buttons (repositioned to fit 8 buttons)
     this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
-    this.renderMenuButton('ENDLESS', GAME_WIDTH / 2, 318, false);
+
+    // Endless and Challenges side by side
+    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - 55, 315, '#00ffaa');
+    const streakInfo = this.challengeManager.getStreakInfo();
+    const streakText = streakInfo.current > 0 ? ` 🔥${streakInfo.current}` : '';
+    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + 55, 315, '#ff6600');
 
     // Editor and Custom Levels side by side
-    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 378, '#ff00ff');
-    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 378, '#00ff88');
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 370, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 370, '#00ff88');
 
     // Skins and Achievements side by side
     const achieveProgress = this.save.getAchievementProgress();
-    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 438, '#ffd700');
-    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 438, '#ff6600');
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 425, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 425, '#ff6600');
 
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 498, false);
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 480, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -1871,14 +2883,314 @@ export class Game {
       this.ctx.fill();
     }
 
+    // Modifiers button
+    const modBtnX = GAME_WIDTH / 2 - 80;
+    const modBtnY = 418;
+    const modBtnW = 160;
+    const modBtnH = 32;
+
+    this.ctx.fillStyle = this.showModifierPanel ? '#ff6600' : 'rgba(255, 102, 0, 0.7)';
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(modBtnX, modBtnY, modBtnW, modBtnH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.textAlign = 'center';
+    const activeCount = this.modifiers.getActiveCount();
+    const modifierText = activeCount > 0 ? `MODIFIERS (${activeCount})` : 'MODIFIERS';
+    this.ctx.fillText(modifierText, GAME_WIDTH / 2, modBtnY + 21);
+
+    // Show score multiplier if modifiers are active
+    if (activeCount > 0) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`${this.modifiers.getScoreMultiplier().toFixed(2)}x Score`, GAME_WIDTH / 2, modBtnY + 50);
+    }
+
+    // Section Practice button (only for unlocked levels with checkpoints)
+    const levelId = this.selectedLevelIndex + 1;
+    const isUnlocked = this.save.isLevelUnlocked(levelId);
+    if (isUnlocked && levelId <= TOTAL_LEVELS) {
+      const secBtnX = GAME_WIDTH / 2 - 80;
+      const secBtnY = modBtnY + 45;
+      const secBtnW = 160;
+      const secBtnH = 28;
+
+      this.ctx.fillStyle = this.showSectionPractice ? '#00aaff' : 'rgba(0, 170, 255, 0.6)';
+      this.ctx.strokeStyle = '#00aaff';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(secBtnX, secBtnY, secBtnW, secBtnH, 6);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, secBtnY + 18);
+    }
+
+    // Render modifier panel if open
+    if (this.showModifierPanel) {
+      this.renderModifierPanel();
+    }
+
+    // Render section practice panel if open
+    if (this.showSectionPractice) {
+      this.renderSectionPracticePanel();
+    }
+
     // Level features hint
     this.ctx.font = '14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 440);
-    this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('Hold SHIFT and click to start Practice Mode (checkpoints, no points)', GAME_WIDTH / 2, 465);
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Use ← → arrows or click arrows to navigate', GAME_WIDTH / 2, 480);
 
     this.ctx.restore();
+  }
+
+  private renderModifierPanel(): void {
+    const panelX = 80;
+    const panelY = 100;
+    const panelW = GAME_WIDTH - 160;
+    const panelH = 300;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#ff6600';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.fillText('DIFFICULTY MODIFIERS', GAME_WIDTH / 2, panelY + 35);
+
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.fillText('Enable modifiers for bonus score multipliers', GAME_WIDTH / 2, panelY + 55);
+
+    // Modifier buttons - 2 columns, 3 rows
+    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+    const btnW = 180;
+    const btnH = 50;
+    const btnGapX = 20;
+    const btnGapY = 12;
+    const startX = GAME_WIDTH / 2 - btnW - btnGapX / 2;
+    const startY = panelY + 75;
+
+    for (let i = 0; i < modIds.length; i++) {
+      const modId = modIds[i];
+      const mod = MODIFIERS[modId];
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+
+      const btnX = startX + col * (btnW + btnGapX);
+      const btnY = startY + row * (btnH + btnGapY);
+      const isActive = this.modifiers.isActive(modId);
+
+      // Button background
+      this.ctx.fillStyle = isActive ? mod.color : 'rgba(60, 60, 60, 0.8)';
+      this.ctx.strokeStyle = mod.color;
+      this.ctx.lineWidth = isActive ? 3 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, btnY, btnW, btnH, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Icon and name
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isActive ? '#000000' : '#ffffff';
+      this.ctx.fillText(`${mod.icon} ${mod.name}`, btnX + 10, btnY + 22);
+
+      // Description and multiplier
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isActive ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText(mod.description, btnX + 10, btnY + 38);
+
+      this.ctx.textAlign = 'right';
+      this.ctx.fillStyle = isActive ? '#000000' : '#ffd700';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillText(`${mod.scoreMultiplier}x`, btnX + btnW - 10, btnY + 22);
+    }
+
+    // Close hint
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click modifiers to toggle | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 15);
+  }
+
+  private renderSectionPracticePanel(): void {
+    const panelX = 100;
+    const panelY = 120;
+    const panelW = GAME_WIDTH - 200;
+    const panelH = 260;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, panelY + 30);
+
+    // Get checkpoints for the selected level
+    const levelId = this.selectedLevelIndex + 1;
+    const checkpoints = this.getCheckpointsForLevel(levelId);
+
+    if (checkpoints.length === 0) {
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText('No sections available for this level', GAME_WIDTH / 2, panelY + 100);
+    } else {
+      // Render section buttons
+      const btnW = 150;
+      const btnH = 45;
+      const btnGap = 15;
+      const startY = panelY + 55;
+
+      // "Start" option (from beginning)
+      const startBtnX = GAME_WIDTH / 2 - btnW / 2;
+      const isStartSelected = this.selectedSection === 0;
+
+      this.ctx.fillStyle = isStartSelected ? '#00ff88' : 'rgba(0, 255, 136, 0.3)';
+      this.ctx.strokeStyle = '#00ff88';
+      this.ctx.lineWidth = isStartSelected ? 3 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startBtnX, startY, btnW, btnH, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isStartSelected ? '#000' : '#fff';
+      this.ctx.fillText('⚑ Start', GAME_WIDTH / 2, startY + 20);
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isStartSelected ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.6)';
+      this.ctx.fillText('From beginning', GAME_WIDTH / 2, startY + 35);
+
+      // Checkpoint buttons (horizontal layout)
+      const checkpointsPerRow = 3;
+      const totalWidth = checkpointsPerRow * btnW + (checkpointsPerRow - 1) * btnGap;
+      const rowStartX = (GAME_WIDTH - totalWidth) / 2;
+
+      for (let i = 0; i < checkpoints.length; i++) {
+        const cp = checkpoints[i];
+        const row = Math.floor(i / checkpointsPerRow);
+        const col = i % checkpointsPerRow;
+        const btnX = rowStartX + col * (btnW + btnGap);
+        const btnY = startY + btnH + 15 + row * (btnH + 10);
+        const isSelected = this.selectedSection === i + 1;
+
+        this.ctx.fillStyle = isSelected ? '#00aaff' : 'rgba(0, 170, 255, 0.3)';
+        this.ctx.strokeStyle = '#00aaff';
+        this.ctx.lineWidth = isSelected ? 3 : 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX, btnY, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 13px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = isSelected ? '#000' : '#fff';
+        this.ctx.fillText(`◉ Section ${i + 1}`, btnX + btnW / 2, btnY + 18);
+
+        this.ctx.font = '10px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = isSelected ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.6)';
+        const cpName = cp.name || `Checkpoint ${i + 1}`;
+        this.ctx.fillText(cpName, btnX + btnW / 2, btnY + 33);
+      }
+    }
+
+    // Start Practice button
+    const playBtnX = GAME_WIDTH / 2 - 70;
+    const playBtnY = panelY + panelH - 55;
+    const playBtnW = 140;
+    const playBtnH = 36;
+
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(playBtnX, playBtnY, playBtnW, playBtnH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000';
+    this.ctx.fillText('▶ START PRACTICE', GAME_WIDTH / 2, playBtnY + 23);
+
+    // Close hint
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click section to select | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 10);
+  }
+
+  private getCheckpointsForLevel(levelId: number): { x: number; y: number; name?: string }[] {
+    // Get the level config checkpoints
+    const levelConfigs: Record<number, { checkpoints?: { x: number; y: number; name?: string }[] }> = {
+      1: { checkpoints: [
+        { x: 512, y: 390, name: 'First Spike' },
+        { x: 1024, y: 390, name: 'Bounce Section' },
+        { x: 1536, y: 390, name: 'Platform Hops' },
+      ]},
+      2: { checkpoints: [
+        { x: 700, y: 390, name: 'Moving Start' },
+        { x: 1400, y: 390, name: 'Phase Intro' },
+        { x: 2100, y: 390, name: 'Ice Slide' },
+      ]},
+      3: { checkpoints: [
+        { x: 762, y: 390, name: 'Bounce Chain' },
+        { x: 1524, y: 390, name: 'Moving Platforms' },
+        { x: 2286, y: 390, name: 'Final Climb' },
+      ]},
+      4: { checkpoints: [
+        { x: 780, y: 390, name: 'Ice Intro' },
+        { x: 1560, y: 390, name: 'Ice Gaps' },
+        { x: 2340, y: 390, name: 'Crumble Test' },
+      ]},
+      5: { checkpoints: [
+        { x: 803, y: 390, name: 'Hot Start' },
+        { x: 1606, y: 390, name: 'Lava Fields' },
+        { x: 2409, y: 390, name: 'Fire Sprint' },
+      ]},
+      6: { checkpoints: [
+        { x: 936, y: 390, name: 'Crumble Chain' },
+        { x: 1872, y: 390, name: 'Deep Waters' },
+        { x: 2808, y: 390, name: 'Final Sprint' },
+      ]},
+      7: { checkpoints: [
+        { x: 984, y: 390, name: 'Phase Gauntlet' },
+        { x: 1968, y: 390, name: 'Moving Madness' },
+        { x: 2952, y: 390, name: 'Final Challenge' },
+      ]},
+      8: { checkpoints: [
+        { x: 888, y: 390, name: 'Bounce Climb' },
+        { x: 1776, y: 340, name: 'Temple Mid' },
+        { x: 2664, y: 320, name: 'Temple Peak' },
+      ]},
+      9: { checkpoints: [
+        { x: 984, y: 390, name: 'First Escape' },
+        { x: 1968, y: 390, name: 'Halfway Point' },
+        { x: 2952, y: 390, name: 'Final Sprint' },
+      ]},
+    };
+
+    return levelConfigs[levelId]?.checkpoints || [];
   }
 
   private renderSettings(): void {
@@ -1953,51 +3265,42 @@ export class Game {
     this.ctx.fillText('Colorblind Mode', leftColX, 335);
     this.renderColorblindSelector(leftColX, 365);
 
-    // Haptic feedback toggle (mobile only indicator)
+    // Reduce flash effects
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Haptic Feedback', leftColX, 420);
-    this.renderToggle(leftColX, 445, this.save.isHapticFeedbackEnabled());
-    this.ctx.font = '10px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.fillText('(mobile only)', leftColX, 485);
+    this.ctx.fillText('Reduce Flash', leftColX, 410);
+    this.renderToggle(leftColX, 435, this.save.isReduceFlashEnabled());
 
-    // === DATA SECTION ===
+    // High contrast mode
+    this.ctx.fillText('High Contrast', leftColX, 480);
+    this.renderToggle(leftColX, 505, this.save.isHighContrastEnabled());
+
+    // === GAMEPLAY SECTION ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('DATA', rightColX, 305);
+    this.ctx.fillText('GAMEPLAY', rightColX, 305);
 
-    // Storage usage
-    const storage = this.save.getStorageUsage();
+    // Show ghost toggle
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Storage Used', rightColX, 335);
+    this.ctx.fillText('Show Ghost', rightColX, 335);
+    this.renderToggle(rightColX, 360, this.save.isShowGhostEnabled());
 
-    // Storage bar
-    const barWidth = 150;
-    const barHeight = 12;
-    const barX = rightColX - barWidth / 2;
-    const barY = 350;
-
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    this.ctx.fillRect(barX, barY, barWidth, barHeight);
-
-    const usageColor = storage.percentage > 80 ? '#ff4444' : storage.percentage > 50 ? '#ffaa00' : '#00ffaa';
-    this.ctx.fillStyle = usageColor;
-    this.ctx.fillRect(barX, barY, barWidth * (storage.percentage / 100), barHeight);
-
-    this.ctx.font = '11px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.fillText(`${this.save.formatBytes(storage.used)} / ${this.save.formatBytes(storage.available)}`, rightColX, 380);
+    // Haptic feedback toggle
+    this.ctx.fillText('Haptic Feedback', rightColX, 405);
+    this.renderToggle(rightColX, 430, this.save.isHapticFeedbackEnabled());
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    this.ctx.fillText('(mobile only)', rightColX, 465);
 
     // Export/Import buttons
     this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    this.renderSettingsButton('Export Data', rightColX - 55, 410, '#00ffaa');
-    this.renderSettingsButton('Import Data', rightColX + 55, 410, '#00aaff');
+    this.renderSettingsButton('Export Data', rightColX - 55, 495, '#00ffaa');
+    this.renderSettingsButton('Import Data', rightColX + 55, 495, '#00aaff');
 
     // Reset button
     this.ctx.fillStyle = '#ff4444';
-    this.renderSettingsButton('Reset All', rightColX, 460, '#ff4444');
+    this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
 
     this.ctx.restore();
   }
@@ -2281,6 +3584,241 @@ export class Game {
     this.ctx.restore();
   }
 
+  private renderChallenges(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.shadowColor = '#ff6600';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('DAILY CHALLENGES', GAME_WIDTH / 2, 70);
+
+    // Streak display
+    const streakInfo = this.challengeManager.getStreakInfo();
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = streakInfo.current > 0 ? '#ffd700' : 'rgba(255, 255, 255, 0.5)';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.shadowBlur = 10;
+    if (streakInfo.current > 0) {
+      this.ctx.fillText(`🔥 ${streakInfo.current} Day Streak! (Best: ${streakInfo.longest})`, GAME_WIDTH / 2, 100);
+    } else {
+      this.ctx.fillText('Start a streak by completing today\'s challenge!', GAME_WIDTH / 2, 100);
+    }
+
+    // Total completed
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText(`Total Challenges Completed: ${this.challengeManager.getTotalCompleted()}`, GAME_WIDTH / 2, 122);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.fillText('< Back (ESC)', 20, 45);
+
+    // Get current challenges
+    const challenges = this.challengeManager.getCurrentChallenges();
+    const cardWidth = 320;
+    const cardHeight = 150;
+    const gap = 30;
+    const startX = (GAME_WIDTH - cardWidth) / 2;
+    const startY = 150;
+
+    for (let i = 0; i < challenges.length; i++) {
+      const challenge = challenges[i];
+      const cardY = startY + i * (cardHeight + gap);
+      const progress = this.challengeManager.getProgress(challenge.id);
+      const isCompleted = progress?.completed || false;
+      const typeInfo = CHALLENGE_TYPES[challenge.type];
+
+      // Card background
+      const cardColor = challenge.isWeekly ? '#9933ff' : '#ff6600';
+      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.15)`;
+      this.ctx.strokeStyle = isCompleted ? '#00ff66' : cardColor;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startX, cardY, cardWidth, cardHeight, 12);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Challenge type label
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = cardColor;
+      this.ctx.fillText(challenge.isWeekly ? 'WEEKLY CHALLENGE' : 'DAILY CHALLENGE', startX + 15, cardY + 22);
+
+      // Icon and name
+      this.ctx.font = '28px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(challenge.icon, startX + 15, cardY + 58);
+
+      this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+      this.ctx.fillText(challenge.name, startX + 55, cardY + 55);
+
+      // Description
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(typeInfo.description, startX + 15, cardY + 80);
+
+      // Time remaining
+      const timeRemaining = this.challengeManager.formatTimeRemaining(challenge);
+      this.ctx.textAlign = 'right';
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = cardColor;
+      this.ctx.fillText(`⏱ ${timeRemaining}`, startX + cardWidth - 15, cardY + 22);
+
+      // Status / Play button
+      this.ctx.textAlign = 'center';
+      const btnX = startX + cardWidth / 2;
+      const btnY = cardY + 115;
+      const btnW = 140;
+      const btnH = 36;
+
+      if (isCompleted) {
+        // Show best score and completed checkmark
+        this.ctx.fillStyle = 'rgba(0, 255, 100, 0.2)';
+        this.ctx.strokeStyle = '#00ff66';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#00ff66';
+        this.ctx.fillText(`✓ Best: ${progress!.bestScore}`, btnX, btnY + 5);
+      } else {
+        // Play button
+        this.ctx.fillStyle = `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.3)`;
+        this.ctx.strokeStyle = cardColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        const attemptText = progress?.attempts ? ` (${progress.attempts} tries)` : '';
+        this.ctx.fillText(`PLAY${attemptText}`, btnX, btnY + 6);
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  private handleChallengesClick(x: number, y: number): void {
+    // Back button
+    if (x >= 10 && x <= 140 && y >= 25 && y <= 55) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Check challenge card clicks
+    const challenges = this.challengeManager.getCurrentChallenges();
+    const cardWidth = 320;
+    const cardHeight = 150;
+    const gap = 30;
+    const startX = (GAME_WIDTH - cardWidth) / 2;
+    const startY = 150;
+
+    for (let i = 0; i < challenges.length; i++) {
+      const challenge = challenges[i];
+      const cardY = startY + i * (cardHeight + gap);
+      const progress = this.challengeManager.getProgress(challenge.id);
+      const isCompleted = progress?.completed || false;
+
+      // Check if click is on play button (bottom center of card)
+      const btnX = startX + cardWidth / 2;
+      const btnY = cardY + 115;
+      const btnW = 140;
+      const btnH = 36;
+
+      if (x >= btnX - btnW / 2 && x <= btnX + btnW / 2 &&
+          y >= btnY - btnH / 2 && y <= btnY + btnH / 2 &&
+          !isCompleted) {
+        this.audio.playSelect();
+        this.startChallenge(challenge);
+        return;
+      }
+    }
+  }
+
+  private startChallenge(challenge: Challenge): void {
+    this.currentChallenge = challenge;
+    this.challengeScore = 0;
+
+    // Start endless mode with the challenge seed
+    this.isEndlessMode = true;
+    this.endlessDistance = 0;
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+
+    // Generate procedural platforms using the challenge seed
+    this.endlessPlatforms = [];
+    const GROUND_Y = GAME_HEIGHT - 40;
+
+    // Starting ground platform
+    this.endlessPlatforms.push(new Platform({ x: 0, y: GROUND_Y, width: 400, height: 40, type: 'solid' }));
+    this.nextPlatformX = 400;
+
+    // Generate initial seeded platforms
+    const seedPlatforms = this.challengeManager.generateChallengePlatforms(challenge.seed, this.nextPlatformX, 20);
+    for (const p of seedPlatforms) {
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+    }
+    if (seedPlatforms.length > 0) {
+      this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
+    }
+
+    // Reset player
+    this.player.reset({ x: 100, y: GROUND_Y - 50 });
+    this.cameraX = 0;
+    this.attempts++;
+
+    // Start music
+    this.audio.start();
+
+    this.state.gameStatus = 'challengePlaying';
+  }
+
+  private restartChallenge(): void {
+    if (!this.currentChallenge) return;
+
+    // Reset with same seed
+    this.endlessDistance = 0;
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+
+    // Regenerate procedural platforms using the same seed
+    this.endlessPlatforms = [];
+    const GROUND_Y = GAME_HEIGHT - 40;
+
+    // Starting ground platform
+    this.endlessPlatforms.push(new Platform({ x: 0, y: GROUND_Y, width: 400, height: 40, type: 'solid' }));
+    this.nextPlatformX = 400;
+
+    // Generate initial seeded platforms
+    const seedPlatforms = this.challengeManager.generateChallengePlatforms(this.currentChallenge.seed, this.nextPlatformX, 20);
+    for (const p of seedPlatforms) {
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+    }
+    if (seedPlatforms.length > 0) {
+      this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
+    }
+
+    // Reset player
+    this.player.reset({ x: 100, y: GROUND_Y - 50 });
+    this.cameraX = 0;
+    this.attempts++;
+  }
+
   private renderToggle(x: number, y: number, enabled: boolean): void {
     const width = 60;
     const height = 30;
@@ -2391,13 +3929,51 @@ export class Game {
       lineY += 22;
     }
 
-    // Resume/Quit instructions
+    // Action buttons (mobile-friendly)
+    const btnWidth = 200;
+    const btnHeight = 44;
+    const btnX = GAME_WIDTH / 2 - btnWidth / 2;
+    const btnStartY = GAME_HEIGHT / 2 + 100;
+    const btnGap = 55;
+
+    // Resume button
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000';
     this.ctx.textAlign = 'center';
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.fillText('Press ESC or ENTER to continue', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 115);
-    this.ctx.fillStyle = '#ff6666';
-    this.ctx.fillText('Press Q to quit to menu', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140);
+    this.ctx.fillText('▶ RESUME', GAME_WIDTH / 2, btnStartY + 28);
+
+    // Restart button
+    this.ctx.fillStyle = 'rgba(0, 170, 255, 0.8)';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY + btnGap, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillText('↻ RESTART', GAME_WIDTH / 2, btnStartY + btnGap + 28);
+
+    // Main Menu button
+    this.ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
+    this.ctx.strokeStyle = '#ff6666';
+    this.ctx.beginPath();
+    this.ctx.roundRect(btnX, btnStartY + btnGap * 2, btnWidth, btnHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillText('⌂ MAIN MENU', GAME_WIDTH / 2, btnStartY + btnGap * 2 + 28);
+
+    // Keyboard hints (only show on desktop)
+    if (!this.input.isMobileDevice()) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.fillText('ESC/ENTER to resume  |  R to restart  |  Q to quit', GAME_WIDTH / 2, GAME_HEIGHT - 30);
+    }
 
     this.ctx.restore();
   }
@@ -2596,6 +4172,78 @@ export class Game {
     this.ctx.restore();
   }
 
+  private renderChallengeUI(): void {
+    if (!this.currentChallenge) return;
+
+    this.ctx.save();
+
+    const challengeColor = this.currentChallenge.isWeekly ? '#9933ff' : '#ff6600';
+
+    // Distance counter (main score)
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+
+    // Target distance
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = challengeColor;
+    this.ctx.shadowColor = challengeColor;
+    this.ctx.shadowBlur = 5;
+    const targetText = this.endlessDistance >= 500 ? '✓ COMPLETE!' : 'Target: 500m';
+    this.ctx.fillText(targetText, GAME_WIDTH / 2, 75);
+
+    // Challenge name label
+    this.ctx.textAlign = 'left';
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = challengeColor;
+    this.ctx.shadowColor = challengeColor;
+    this.ctx.fillText(`${this.currentChallenge.icon} ${this.currentChallenge.name}`, 20, 30);
+
+    // Time remaining
+    this.ctx.textAlign = 'right';
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    const timeRemaining = this.challengeManager.formatTimeRemaining(this.currentChallenge);
+    this.ctx.fillText(`⏱ ${timeRemaining}`, GAME_WIDTH - 20, 30);
+
+    // Best score for this challenge
+    const progress = this.challengeManager.getProgress(this.currentChallenge.id);
+    if (progress && progress.bestScore > 0) {
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`Best: ${progress.bestScore}m`, GAME_WIDTH - 20, 50);
+    }
+
+    // Mute indicator
+    if (this.audio.isMusicMuted()) {
+      this.ctx.textAlign = 'right';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.fillText('MUTED', GAME_WIDTH - 20, 70);
+    }
+
+    // Beat indicator
+    if (this.beatPulse > 0) {
+      const size = 15 + this.beatPulse * 10;
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
+      this.ctx.fillStyle = `rgba(${parseInt(challengeColor.slice(1, 3), 16)}, ${parseInt(challengeColor.slice(3, 5), 16)}, ${parseInt(challengeColor.slice(5, 7), 16)}, ${this.beatPulse * 0.8})`;
+      this.ctx.fill();
+    }
+
+    this.ctx.beginPath();
+    this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, 15, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+
+    this.ctx.restore();
+  }
+
   private renderOverlay(): void {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -2708,11 +4356,40 @@ export class Game {
       return;
     }
 
+    // Import level prompt (from URL)
+    if (this.pendingImportLevel) {
+      const promptY = GAME_HEIGHT / 2;
+      // Import button
+      if (x >= GAME_WIDTH / 2 - 110 && x <= GAME_WIDTH / 2 - 10 &&
+          y >= promptY + 40 && y <= promptY + 80) {
+        this.audio.playSelect();
+        this.customLevelManager.saveLevel(this.pendingImportLevel);
+        this.showShareNotification('Level imported successfully!', false);
+        this.pendingImportLevel = null;
+        return;
+      }
+      // Cancel button
+      if (x >= GAME_WIDTH / 2 + 10 && x <= GAME_WIDTH / 2 + 110 &&
+          y >= promptY + 40 && y <= promptY + 80) {
+        this.audio.playSelect();
+        this.pendingImportLevel = null;
+        return;
+      }
+    }
+
     // Create New Level button
     if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 + 100 &&
         y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
       this.audio.playSelect();
       this.openEditor();
+      return;
+    }
+
+    // Import from Code button
+    if (x >= GAME_WIDTH / 2 + 120 && x <= GAME_WIDTH / 2 + 270 &&
+        y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
+      this.audio.playSelect();
+      this.importLevelFromClipboard();
       return;
     }
 
@@ -2733,26 +4410,71 @@ export class Game {
       if (cardY < 100 || cardY > GAME_HEIGHT - 100) continue;
 
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
-        // Check for play button (left side)
-        if (x >= cardX + 10 && x <= cardX + 60 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        const btnWidth = 45;
+        const btnGap = 5;
+        const btnY1 = cardY + cardHeight - 35;
+        const btnY2 = cardY + cardHeight - 10;
+
+        // Check for play button
+        if (x >= cardX + 5 && x <= cardX + 5 + btnWidth && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.playCustomLevel(levels[i]);
           return;
         }
-        // Check for edit button (middle)
-        if (x >= cardX + 70 && x <= cardX + 120 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        // Check for edit button
+        if (x >= cardX + 5 + btnWidth + btnGap && x <= cardX + 5 + btnWidth * 2 + btnGap && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.openEditor(levels[i]);
           return;
         }
-        // Check for delete button (right side)
-        if (x >= cardX + 130 && x <= cardX + 180 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        // Check for share button
+        if (x >= cardX + 5 + (btnWidth + btnGap) * 2 && x <= cardX + 5 + btnWidth * 3 + btnGap * 2 && y >= btnY1 && y <= btnY2) {
+          this.audio.playSelect();
+          this.shareLevel(levels[i]);
+          return;
+        }
+        // Check for delete button
+        if (x >= cardX + 5 + (btnWidth + btnGap) * 3 && x <= cardX + 5 + btnWidth * 4 + btnGap * 3 && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.customLevelManager.deleteLevel(levels[i].id);
           return;
         }
       }
     }
+  }
+
+  private async shareLevel(level: CustomLevel): Promise<void> {
+    const result = LevelSharingManager.encodeLevel(level);
+    if (result.success && result.code) {
+      const copied = await LevelSharingManager.copyToClipboard(result.code);
+      if (copied) {
+        this.showShareNotification('Level code copied to clipboard!', false);
+      } else {
+        this.showShareNotification('Code: ' + result.code.substring(0, 30) + '...', false);
+      }
+    } else {
+      this.showShareNotification(result.error || 'Failed to share level', true);
+    }
+  }
+
+  private async importLevelFromClipboard(): Promise<void> {
+    const code = await LevelSharingManager.readFromClipboard();
+    if (!code) {
+      this.showShareNotification('Could not read clipboard. Paste a level code.', true);
+      return;
+    }
+
+    const result = LevelSharingManager.decodeLevel(code.trim());
+    if (result.success && result.level) {
+      this.customLevelManager.saveLevel(result.level);
+      this.showShareNotification('Level imported: ' + result.level.name, false);
+    } else {
+      this.showShareNotification(result.error || 'Invalid level code', true);
+    }
+  }
+
+  private showShareNotification(message: string, isError: boolean): void {
+    this.shareNotification = { message, isError, timer: 3000 };
   }
 
   private playCustomLevel(customLevel: CustomLevel): void {
@@ -2845,33 +4567,44 @@ export class Game {
         this.ctx.fillText(`Platforms: ${level.platforms.length}`, cardX + 10, cardY + 60);
         this.ctx.fillText(`Coins: ${level.coins.length}`, cardX + 100, cardY + 60);
 
-        // Buttons
+        // Buttons (4 buttons: Play, Edit, Share, Delete)
         this.ctx.textAlign = 'center';
+        const btnWidth = 45;
+        const btnGap = 5;
+        const btnY = cardY + cardHeight - 35;
 
         // Play button
         this.ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 10, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5, btnY, btnWidth, 25, 5);
         this.ctx.fill();
-        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
         this.ctx.fillStyle = '#00ff88';
-        this.ctx.fillText('PLAY', cardX + 35, cardY + cardHeight - 18);
+        this.ctx.fillText('PLAY', cardX + 5 + btnWidth / 2, cardY + cardHeight - 18);
 
         // Edit button
         this.ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 70, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5 + btnWidth + btnGap, btnY, btnWidth, 25, 5);
         this.ctx.fill();
         this.ctx.fillStyle = '#8888ff';
-        this.ctx.fillText('EDIT', cardX + 95, cardY + cardHeight - 18);
+        this.ctx.fillText('EDIT', cardX + 5 + btnWidth * 1.5 + btnGap, cardY + cardHeight - 18);
+
+        // Share button
+        this.ctx.fillStyle = 'rgba(255, 200, 0, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX + 5 + (btnWidth + btnGap) * 2, btnY, btnWidth, 25, 5);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText('SHARE', cardX + 5 + btnWidth * 2.5 + btnGap * 2, cardY + cardHeight - 18);
 
         // Delete button
         this.ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 130, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5 + (btnWidth + btnGap) * 3, btnY, btnWidth, 25, 5);
         this.ctx.fill();
         this.ctx.fillStyle = '#ff5555';
-        this.ctx.fillText('DEL', cardX + 155, cardY + cardHeight - 18);
+        this.ctx.fillText('DEL', cardX + 5 + btnWidth * 3.5 + btnGap * 3, cardY + cardHeight - 18);
       }
     }
 
@@ -2885,11 +4618,89 @@ export class Game {
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
     this.ctx.shadowColor = '#ff00ff';
     this.ctx.shadowBlur = 10;
-    this.ctx.fillText('+ CREATE NEW LEVEL', GAME_WIDTH / 2, GAME_HEIGHT - 54);
+    this.ctx.fillText('+ CREATE NEW', GAME_WIDTH / 2, GAME_HEIGHT - 54);
+
+    // Import button
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 + 120, GAME_HEIGHT - 80, 150, 40, 10);
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('IMPORT CODE', GAME_WIDTH / 2 + 195, GAME_HEIGHT - 54);
+    this.ctx.shadowBlur = 0;
+
+    // Share notification
+    if (this.shareNotification && this.shareNotification.timer > 0) {
+      const alpha = Math.min(1, this.shareNotification.timer / 500);
+      this.ctx.fillStyle = this.shareNotification.isError
+        ? `rgba(255, 50, 50, ${alpha * 0.9})`
+        : `rgba(0, 200, 100, ${alpha * 0.9})`;
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 200, 100, 400, 40, 10);
+      this.ctx.fill();
+
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(this.shareNotification.message, GAME_WIDTH / 2, 125);
+    }
+
+    // Import prompt for URL-shared levels
+    if (this.pendingImportLevel) {
+      // Darken background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+      const promptY = GAME_HEIGHT / 2;
+
+      // Prompt box
+      this.ctx.fillStyle = 'rgba(30, 30, 50, 0.95)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 200, promptY - 60, 400, 160, 15);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#00ffaa';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Title
+      this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffaa';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Import Shared Level?', GAME_WIDTH / 2, promptY - 25);
+
+      // Level name
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(`"${this.pendingImportLevel.name}" by ${this.pendingImportLevel.author}`, GAME_WIDTH / 2, promptY + 10);
+
+      // Import button
+      this.ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 110, promptY + 40, 100, 40, 8);
+      this.ctx.fill();
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ff88';
+      this.ctx.fillText('IMPORT', GAME_WIDTH / 2 - 60, promptY + 65);
+
+      // Cancel button
+      this.ctx.fillStyle = 'rgba(255, 100, 100, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 + 10, promptY + 40, 100, 40, 8);
+      this.ctx.fill();
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.fillText('CANCEL', GAME_WIDTH / 2 + 60, promptY + 65);
+    }
 
     this.ctx.restore();
   }
@@ -3104,93 +4915,335 @@ export class Game {
 
   private renderTutorial(): void {
     // Semi-transparent overlay
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     this.ctx.save();
     this.ctx.textAlign = 'center';
 
+    // Page indicator dots
+    const dotY = 30;
+    for (let i = 0; i < Game.TUTORIAL_PAGES; i++) {
+      this.ctx.fillStyle = i === this.tutorialPage ? '#00ffff' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.arc(GAME_WIDTH / 2 - 30 + i * 20, dotY, 5, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    // Skip button
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText('SKIP (S)', GAME_WIDTH - 20, 30);
+    this.ctx.textAlign = 'center';
+
+    // Render page content based on current page
+    switch (this.tutorialPage) {
+      case 0:
+        this.renderTutorialBasicControls();
+        break;
+      case 1:
+        this.renderTutorialPlatforms();
+        break;
+      case 2:
+        this.renderTutorialPowerUps();
+        break;
+      case 3:
+        this.renderTutorialTips();
+        break;
+    }
+
+    // Navigation hints
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.shadowBlur = 0;
+
+    if (this.tutorialPage > 0) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText('< BACK (LEFT)', 20, GAME_HEIGHT - 20);
+    }
+
+    this.ctx.textAlign = 'right';
+    const pulse = Math.sin(this.menuAnimation * 4) * 0.3 + 0.7;
+    this.ctx.fillStyle = `rgba(0, 255, 170, ${pulse})`;
+    if (this.tutorialPage < Game.TUTORIAL_PAGES - 1) {
+      this.ctx.fillText('NEXT (RIGHT/TAP) >', GAME_WIDTH - 20, GAME_HEIGHT - 20);
+    } else {
+      this.ctx.fillText('START GAME (TAP) >', GAME_WIDTH - 20, GAME_HEIGHT - 20);
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderTutorialBasicControls(): void {
     // Title
-    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffff';
     this.ctx.shadowColor = '#00ffff';
     this.ctx.shadowBlur = 20;
-    this.ctx.fillText('HOW TO PLAY', GAME_WIDTH / 2, 80);
+    this.ctx.fillText('BASIC CONTROLS', GAME_WIDTH / 2, 80);
 
     // Controls box
-    const boxWidth = 400;
-    const boxHeight = 280;
+    const boxWidth = 500;
+    const boxHeight = 340;
     const boxX = (GAME_WIDTH - boxWidth) / 2;
-    const boxY = 110;
+    const boxY = 100;
 
     this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
     this.ctx.strokeStyle = '#00ffff';
     this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
     this.ctx.beginPath();
     this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Controls content
-    this.ctx.shadowBlur = 0;
     const controls = [
-      { icon: '⬆️', key: 'SPACE / W / TAP', action: 'Jump (tap again in air for double jump!)' },
-      { icon: '⚡', key: 'SHIFT / 2-FINGER', action: 'Dash forward quickly' },
-      { icon: '🎵', key: 'M', action: 'Mute/Unmute music' },
-      { icon: '⏸️', key: 'ESC', action: 'Pause game' },
+      { icon: '⬆️', keys: 'SPACE / W / UP / TAP', desc: 'JUMP', detail: 'Tap again in the air for a double jump!' },
+      { icon: '⚡', keys: 'SHIFT / 2-FINGER TAP', desc: 'DASH', detail: 'Quick burst of speed. Passes through enemies!' },
+      { icon: '⏸️', keys: 'ESC / P', desc: 'PAUSE', detail: 'Pause the game anytime' },
+      { icon: '🎵', keys: 'M', desc: 'MUTE', detail: 'Toggle music on/off' },
+      { icon: '🔄', keys: 'R (hold)', desc: 'RESTART', detail: 'Hold R to quickly restart the level' },
     ];
 
     let y = boxY + 45;
     for (const control of controls) {
-      // Icon
-      this.ctx.font = '24px "Segoe UI", sans-serif';
+      this.ctx.font = '22px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
       this.ctx.fillText(control.icon, boxX + 35, y);
 
-      // Key
+      this.ctx.textAlign = 'left';
       this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffcc00';
-      this.ctx.textAlign = 'left';
-      this.ctx.fillText(control.key, boxX + 70, y - 5);
+      this.ctx.fillText(control.desc, boxX + 70, y - 8);
 
-      // Action
-      this.ctx.font = '13px "Segoe UI", sans-serif';
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      this.ctx.fillText(control.action, boxX + 70, y + 15);
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#888888';
+      this.ctx.fillText(control.keys, boxX + 160, y - 8);
 
-      this.ctx.textAlign = 'center';
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      this.ctx.fillText(control.detail, boxX + 70, y + 10);
+
       y += 55;
     }
+    this.ctx.textAlign = 'center';
+  }
 
-    // Tips
-    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+  private renderTutorialPlatforms(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
-    this.ctx.fillText('TIPS', GAME_WIDTH / 2, boxY + boxHeight + 40);
+    this.ctx.shadowColor = '#ff00ff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLATFORM TYPES', GAME_WIDTH / 2, 80);
 
+    const boxWidth = 540;
+    const boxHeight = 380;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#ff00ff';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const platforms = [
+      { color: '#4a9eff', name: 'SOLID', desc: 'Regular safe platforms' },
+      { color: '#ff6b9d', name: 'BOUNCE', desc: 'Springs you high into the air!' },
+      { color: '#88ddff', name: 'ICE', desc: 'Slippery! Hard to stop' },
+      { color: '#ff4400', name: 'LAVA', desc: 'Deadly! Avoid at all costs' },
+      { color: '#aa8866', name: 'CRUMBLE', desc: 'Falls apart after you land' },
+      { color: '#9966ff', name: 'MOVING', desc: 'Watch the pattern!' },
+      { color: '#66ffaa', name: 'PHASE', desc: 'Appears and disappears' },
+      { color: '#48bb78', name: 'CONVEYOR', desc: 'Moves you left or right' },
+      { color: '#ed64a6', name: 'GRAVITY', desc: 'Flips your gravity!' },
+      { color: '#ecc94b', name: 'STICKY', desc: 'Slows you down. Jump to escape!' },
+    ];
+
+    const cols = 2;
+    const itemW = boxWidth / cols - 30;
+    let col = 0;
+    let row = 0;
+    const startY = boxY + 40;
+    const rowHeight = 36;
+
+    for (const p of platforms) {
+      const x = boxX + 20 + col * (itemW + 20);
+      const y = startY + row * rowHeight;
+
+      // Color square
+      this.ctx.fillStyle = p.color;
+      this.ctx.fillRect(x, y - 10, 16, 16);
+
+      // Name
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(p.name, x + 22, y + 2);
+
+      // Desc
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText(p.desc, x + 85, y + 2);
+
+      col++;
+      if (col >= cols) {
+        col = 0;
+        row++;
+      }
+    }
+    this.ctx.textAlign = 'center';
+  }
+
+  private renderTutorialPowerUps(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('POWER-UPS', GAME_WIDTH / 2, 80);
+
+    const boxWidth = 480;
+    const boxHeight = 280;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const powerups = [
+      { icon: '🛡️', color: '#00aaff', name: 'SHIELD', desc: 'Survive one hit from any hazard' },
+      { icon: '🧲', color: '#ff00ff', name: 'MAGNET', desc: 'Attracts nearby coins automatically' },
+      { icon: '⏱️', color: '#00ff88', name: 'SLOW-MO', desc: 'Slows down time for better control' },
+      { icon: '✨', color: '#ffcc00', name: '2X POINTS', desc: 'Double points from coins!' },
+    ];
+
+    let y = boxY + 55;
+    for (const p of powerups) {
+      // Icon and box
+      this.ctx.fillStyle = p.color + '33';
+      this.ctx.beginPath();
+      this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
+      this.ctx.fill();
+
+      this.ctx.font = '28px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(p.icon, boxX + 55, y + 5);
+
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = p.color;
+      this.ctx.fillText(p.name, boxX + 95, y - 3);
+
+      this.ctx.font = '13px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.fillText(p.desc, boxX + 95, y + 17);
+
+      y += 60;
+    }
+    this.ctx.textAlign = 'center';
+
+    // Hint
     this.ctx.font = '14px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.fillText('Time your jumps to the beat for better rhythm!', GAME_WIDTH / 2, boxY + boxHeight + 65);
-    this.ctx.fillText('Collect coins for bonus points!', GAME_WIDTH / 2, boxY + boxHeight + 85);
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.fillText('Power-ups appear as glowing orbs throughout levels!', GAME_WIDTH / 2, boxY + boxHeight + 30);
+  }
 
-    // Continue prompt
+  private renderTutorialTips(): void {
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.shadowColor = '#00ff88';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PRO TIPS', GAME_WIDTH / 2, 80);
+
+    const boxWidth = 500;
+    const boxHeight = 340;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 100;
+
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.9)';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.shadowBlur = 0;
+    this.ctx.beginPath();
+    this.ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    const tips = [
+      { icon: '🎵', tip: 'Time your jumps to the beat for better rhythm!' },
+      { icon: '💰', tip: 'Collecting coins quickly builds combos for bonus points' },
+      { icon: '⚡', tip: 'Dash through tight gaps and over small hazards' },
+      { icon: '👀', tip: 'Watch for moving platforms - learn their patterns' },
+      { icon: '🏆', tip: 'Practice mode lets you restart from checkpoints' },
+      { icon: '🎮', tip: 'Create and share your own levels in the editor!' },
+      { icon: '📅', tip: 'Complete daily challenges for streak bonuses' },
+      { icon: '⚙️', tip: 'Try difficulty modifiers for extra challenge!' },
+    ];
+
+    let y = boxY + 45;
+    for (const t of tips) {
+      this.ctx.font = '20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(t.icon, boxX + 35, y);
+
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      this.ctx.fillText(t.tip, boxX + 65, y);
+
+      y += 38;
+    }
+    this.ctx.textAlign = 'center';
+
+    // Ready message
     this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffaa';
     this.ctx.shadowColor = '#00ffaa';
-    this.ctx.shadowBlur = 10;
-    const pulse = Math.sin(this.menuAnimation * 4) * 0.3 + 0.7;
-    this.ctx.globalAlpha = pulse;
-    this.ctx.fillText('TAP or PRESS ANY KEY to start!', GAME_WIDTH / 2, GAME_HEIGHT - 40);
-    this.ctx.globalAlpha = 1;
-
-    this.ctx.restore();
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText("You're ready! Good luck!", GAME_WIDTH / 2, boxY + boxHeight + 35);
   }
 
   private dismissTutorial(): void {
     if (this.showingTutorial) {
-      this.showingTutorial = false;
-      this.save.markTutorialShown();
-      this.audio.start();
+      // If not on the last page, go to next page
+      if (this.tutorialPage < Game.TUTORIAL_PAGES - 1) {
+        this.tutorialPage++;
+        this.audio.playSelect();
+      } else {
+        // On last page, close tutorial
+        this.showingTutorial = false;
+        this.tutorialPage = 0;
+        this.save.markTutorialShown();
+        this.audio.start();
+      }
     }
+  }
+
+  private previousTutorialPage(): void {
+    if (this.tutorialPage > 0) {
+      this.tutorialPage--;
+      this.audio.playSelect();
+    }
+  }
+
+  private skipTutorial(): void {
+    this.showingTutorial = false;
+    this.tutorialPage = 0;
+    this.save.markTutorialShown();
+    this.audio.start();
   }
 
   // Achievement system methods

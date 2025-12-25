@@ -54,6 +54,20 @@ export class Player {
   // Current skin
   private skin: PlayerSkin = DEFAULT_SKIN;
 
+  // New platform interaction states
+  private onConveyor: Platform | null = null;
+  private isStuck = false;
+  private gravityFlipped = false;
+
+  // Wall sliding/jumping state
+  private isWallSliding = false;
+  private wallJumpCooldown = 0;
+  private static readonly WALL_SLIDE_SPEED = 100; // Slower falling when sliding
+  private static readonly WALL_JUMP_COOLDOWN = 200; // ms cooldown between wall jumps
+
+  // Slow-mo zone state
+  isInSlowMo = false;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
@@ -85,12 +99,35 @@ export class Player {
     this.airJumpsRemaining = 2;
     this.isDashing = false;
     this.dashTimer = 0;
+    this.onConveyor = null;
+    this.isStuck = false;
+    this.gravityFlipped = false;
+    this.isWallSliding = false;
+    this.wallJumpCooldown = 0;
+    this.isInSlowMo = false;
   }
 
-  update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0): void {
+  // Revive player (used when shield saves from death)
+  revive(): void {
+    this.isDead = false;
+    // Give a small upward boost to escape the hazard
+    this.velocityY = -PLAYER.JUMP_FORCE * 0.5;
+  }
+
+  update(deltaTime: number, input: InputState, platforms: Platform[], speedMultiplier: number = 1.0, allowAirJumps: boolean = true): void {
     if (this.isDead) return;
 
     this.animationTime += deltaTime;
+
+    // Reset conveyor and wall states each frame (will be re-set in collision handling)
+    this.onConveyor = null;
+    this.isWallSliding = false;
+    this.isInSlowMo = false;
+
+    // Update wall jump cooldown
+    if (this.wallJumpCooldown > 0) {
+      this.wallJumpCooldown -= deltaTime;
+    }
 
     // Update dash timer
     if (this.isDashing) {
@@ -104,17 +141,27 @@ export class Player {
     // Update trail
     this.updateTrail(deltaTime);
 
+    // Handle sticky release - jump to escape
+    if (this.isStuck && input.jumpPressed) {
+      this.isStuck = false;
+      this.velocityY = -PLAYER.JUMP_FORCE;
+      this.isGrounded = false;
+    }
+
     // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
+    // Sticky platforms slow/stop forward movement
+    const stickySlow = this.isStuck ? 0.3 : 1;
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
-    this.x += PLAYER.SPEED * speedMult * speedMultiplier * (deltaTime / 1000);
+    this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
 
     // Handle jumping (auto-jump when holding - jump as soon as grounded)
-    if (input.jump && this.isGrounded) {
+    if (input.jump && this.isGrounded && !this.isStuck) {
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
       this.airJumpsRemaining = 2; // Reset air jumps on ground jump
-    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0) {
+    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
       // Air jumps (double/triple) - each successive jump is weaker
+      // Disabled when "Grounded" modifier is active
       const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
       this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
 
@@ -127,9 +174,24 @@ export class Player {
       this.airJumpsRemaining--;
     }
 
-    // Apply gravity
-    this.velocityY += PLAYER.GRAVITY * (deltaTime / 1000);
-    this.velocityY = Math.min(this.velocityY, PLAYER.MAX_FALL_SPEED);
+    // Wall jump - can jump off walls even without air jumps
+    if (input.jumpPressed && this.isWallSliding && this.wallJumpCooldown <= 0) {
+      this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
+      this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
+      this.isWallSliding = false;
+      // Reset air jumps on wall jump
+      this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 1);
+    }
+
+    // Apply gravity (flipped if on gravity platform)
+    // Slow-mo zones reduce gravity effect
+    const slowMoMult = this.isInSlowMo ? 0.4 : 1;
+    const gravityDir = this.gravityFlipped ? -1 : 1;
+    this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
+
+    // Wall sliding reduces fall speed
+    const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
+    this.velocityY = Math.min(Math.abs(this.velocityY), maxFall) * Math.sign(this.velocityY);
 
     // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
@@ -146,8 +208,25 @@ export class Player {
     // Handle collisions
     this.handleCollisions(platforms);
 
-    // Check if fell off screen (death)
-    if (this.y > GAME_HEIGHT + 100) {
+    // Apply conveyor belt movement
+    if (this.onConveyor !== null && this.isGrounded) {
+      const conveyor = this.onConveyor as Platform;
+      const conveyorSpeed = conveyor.conveyorSpeed * 150; // 150 px/s base speed
+      this.x += conveyorSpeed * (deltaTime / 1000);
+    }
+
+    // Reset gravity flip when leaving ground (fall normally after flip)
+    if (!this.isGrounded && this.gravityFlipped) {
+      // Check if player is moving upward (escaped gravity flip)
+      if (this.velocityY < 0) {
+        this.gravityFlipped = false;
+      }
+    }
+
+    // Check if fell off screen (death) - account for gravity flip
+    const deathY = this.gravityFlipped ? -100 : GAME_HEIGHT + 100;
+    const fellOffScreen = this.gravityFlipped ? this.y < deathY : this.y > deathY;
+    if (fellOffScreen) {
       this.isDead = true;
     }
   }
@@ -177,6 +256,57 @@ export class Player {
             this.y = bounds.y - this.height;
           }
           continue;
+
+        case 'glass':
+          if (collision === 'top') {
+            platform.onGlassLanding();
+          }
+          break;
+
+        case 'conveyor':
+          if (collision === 'top') {
+            this.onConveyor = platform;
+          }
+          break;
+
+        case 'sticky':
+          if (collision === 'top') {
+            this.isStuck = true;
+          }
+          break;
+
+        case 'gravity':
+          if (collision === 'top') {
+            // Gravity flip - give upward boost and flip gravity direction
+            this.gravityFlipped = !this.gravityFlipped;
+            this.velocityY = this.gravityFlipped ? PLAYER.JUMP_FORCE : -PLAYER.JUMP_FORCE;
+            this.y = bounds.y - this.height;
+          }
+          continue;
+
+        case 'wall':
+          // Wall platforms allow wall sliding instead of death on side collision
+          if (collision === 'left' || collision === 'right') {
+            this.isWallSliding = true;
+            // Stop horizontal movement into wall but allow sliding down
+            if (collision === 'left') {
+              this.x = bounds.x + bounds.width;
+            } else {
+              this.x = bounds.x - this.width;
+            }
+          }
+          continue;
+
+        case 'slowmo':
+          // Slow-mo zones affect player regardless of collision direction
+          this.isInSlowMo = true;
+          // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'secret':
+          // Secret platforms check reveal distance (handled elsewhere)
+          // Once revealed, they behave like solid platforms
+          break;
       }
 
       // Ledge assist: if hitting side but upper 50% of player is above platform top,
@@ -318,6 +448,14 @@ export class Player {
       width: this.width,
       height: this.height,
     };
+  }
+
+  getRotation(): number {
+    return this.rotation;
+  }
+
+  getIsWallSliding(): boolean {
+    return this.isWallSliding;
   }
 
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {

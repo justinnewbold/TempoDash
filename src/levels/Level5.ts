@@ -12,13 +12,19 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 218; // pixels per beat at 145 BPM (1.5x for longer levels)
+const BEAT = 436; // pixels per beat at 145 BPM (2x length)
 
 const level5Config: LevelConfig = {
   id: 5,
   name: 'Volcanic Descent',
+  bpm: 145,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 44, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 11, y: GROUND_Y - 50, name: 'Lava Pits' },
+    { x: BEAT * 22, y: GROUND_Y - 50, name: 'Danger Zone' },
+    { x: BEAT * 33, y: GROUND_Y - 50, name: 'Final Descent' },
+  ],
   background: {
     type: 'volcano',
     primaryColor: '#1a0a00',
@@ -52,6 +58,14 @@ const level5Config: LevelConfig = {
     { x: BEAT * 35, y: GROUND_Y - 150 },
     // Final coin right before goal
     { x: BEAT * 42, y: GROUND_Y - 80 },
+  ],
+  powerUps: [
+    // Shield at the start - protection for the first lava pit
+    { type: 'shield', x: BEAT * 3, y: GROUND_Y - 60 },
+    // Magnet before the stepping stone coin section - helps collect all 3
+    { type: 'magnet', x: BEAT * 15, y: GROUND_Y - 80 },
+    // Double points before the lava river coins - risk vs reward
+    { type: 'doublePoints', x: BEAT * 24, y: GROUND_Y - 60 },
   ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe volcano entrance =====

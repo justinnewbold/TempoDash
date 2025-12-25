@@ -213,6 +213,10 @@ export class MiniMap {
       moving: '#9966ff',
       phase: '#66ffaa',
       crumble: '#aa8866',
+      conveyor: '#48bb78',
+      gravity: '#ed64a6',
+      sticky: '#ecc94b',
+      glass: '#e2e8f0',
     };
     return colors[type] || '#4a9eff';
   }

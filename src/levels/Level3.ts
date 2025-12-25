@@ -11,13 +11,19 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 210; // pixels per beat at 150 BPM (1.5x for longer levels)
+const BEAT = 420; // pixels per beat at 150 BPM (2x length)
 
 const level3Config: LevelConfig = {
   id: 3,
   name: 'Phase Shift',
+  bpm: 150,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 48, y: GROUND_Y - 80, width: 60, height: 80 },
+  checkpoints: [
+    { x: BEAT * 12, y: GROUND_Y - 50, name: 'Alternating Phases' },
+    { x: BEAT * 24, y: GROUND_Y - 50, name: 'Bounce Phase' },
+    { x: BEAT * 36, y: GROUND_Y - 50, name: 'Phase Staircase' },
+  ],
   background: {
     type: 'neon',
     primaryColor: '#0a0a0a',
@@ -40,6 +46,12 @@ const level3Config: LevelConfig = {
     { x: BEAT * 32, y: GROUND_Y - 80 },   // Between phase windows
     { x: BEAT * 40, y: GROUND_Y - 60 },   // On staircase phase
     { x: BEAT * 45, y: GROUND_Y - 100 },  // Final gauntlet coin
+  ],
+  powerUps: [
+    // Shield before the first lava section - teaches players about power-ups
+    { type: 'shield', x: BEAT * 11, y: GROUND_Y - 80 },
+    // Double points before the synchronized phase section (coin-rich area)
+    { type: 'doublePoints', x: BEAT * 17, y: GROUND_Y - 60 },
   ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe zone, observe phase behavior =====

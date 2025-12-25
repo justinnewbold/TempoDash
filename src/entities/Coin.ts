@@ -23,6 +23,25 @@ export class Coin {
     }
   }
 
+  // Attract coin toward a target position (for magnet power-up)
+  attractToward(targetX: number, targetY: number, strength: number, deltaTime: number): void {
+    if (this.collected) return;
+
+    const dx = targetX - this.x;
+    const dy = targetY - this.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > 0) {
+      // Move toward player with speed based on distance (faster when closer)
+      const speed = strength * (1 + (150 - Math.min(distance, 150)) / 50);
+      const moveX = (dx / distance) * speed * (deltaTime / 1000);
+      const moveY = (dy / distance) * speed * (deltaTime / 1000);
+
+      this.x += moveX;
+      this.y += moveY;
+    }
+  }
+
   collect(): void {
     if (!this.collected) {
       this.collected = true;

@@ -17,7 +17,7 @@ import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyI
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble'];
+const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
@@ -28,6 +28,13 @@ const PLATFORM_COLORS: Record<PlatformType, string> = {
   moving: '#9966ff',
   phase: '#66ffaa',
   crumble: '#aa8866',
+  conveyor: '#48bb78',
+  gravity: '#ed64a6',
+  sticky: '#ecc94b',
+  glass: '#e2e8f0',
+  slowmo: '#00c8ff',
+  wall: '#718096',
+  secret: '#ffd700',
 };
 
 const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean'];
@@ -833,6 +840,14 @@ export class LevelEditor {
         accentColor: '#00ccff',
         particles: { count: 40, color: 'rgba(150, 220, 255, 0.5)', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
         effects: ['bubbles'],
+      },
+      inferno: {
+        type: 'inferno',
+        primaryColor: '#1a0505',
+        secondaryColor: '#2d0a0a',
+        accentColor: '#ff4400',
+        particles: { count: 80, color: 'rgba(255, 100, 0, 0.6)', minSize: 2, maxSize: 6, speed: 50, direction: 'up' },
+        effects: ['embers', 'pulse'],
       },
     };
 

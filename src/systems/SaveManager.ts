@@ -1,4 +1,4 @@
-import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement } from '../types';
+import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFrame } from '../types';
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
@@ -89,6 +89,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   colorblindMode: 'normal',
   reducedMotion: false,
   hapticFeedback: true,
+  reduceFlash: false,
+  showGhost: true,
+  highContrast: false,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -100,6 +103,10 @@ const DEFAULT_SAVE: SaveData = {
   settings: { ...DEFAULT_SETTINGS },
   achievements: [],
   levelCoins: {},
+  levelStars: {},
+  levelDeaths: {},
+  bestTimes: {},
+  ghostRuns: {},
   totalDeaths: 0,
   totalCoinsCollected: 0,
   totalLevelsCompleted: 0,
@@ -128,6 +135,10 @@ export class SaveManager {
           settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
           achievements: parsed.achievements ?? [],
           levelCoins: parsed.levelCoins ?? {},
+          levelStars: parsed.levelStars ?? {},
+          levelDeaths: parsed.levelDeaths ?? {},
+          bestTimes: parsed.bestTimes ?? {},
+          ghostRuns: parsed.ghostRuns ?? {},
           totalDeaths: parsed.totalDeaths ?? 0,
           totalCoinsCollected: parsed.totalCoinsCollected ?? 0,
           totalLevelsCompleted: parsed.totalLevelsCompleted ?? 0,
@@ -144,6 +155,10 @@ export class SaveManager {
       unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
       achievements: [],
       levelCoins: {},
+      levelStars: {},
+      levelDeaths: {},
+      bestTimes: {},
+      ghostRuns: {},
     };
   }
 
@@ -411,6 +426,105 @@ export class SaveManager {
     return { ...this.data.levelCoins };
   }
 
+  // --- STAR RATING SYSTEM ---
+
+  /**
+   * Calculate stars for a level completion
+   * 1 star: Complete level
+   * 2 stars: Collect 50%+ coins
+   * 3 stars: Collect all coins AND no deaths
+   */
+  calculateStars(coinsCollected: number, totalCoins: number, deaths: number): number {
+    if (totalCoins === 0) {
+      // No coins in level - 3 stars if no deaths, else 1 star
+      return deaths === 0 ? 3 : 1;
+    }
+
+    const coinPercentage = coinsCollected / totalCoins;
+
+    if (coinPercentage >= 1 && deaths === 0) {
+      return 3; // Perfect run
+    } else if (coinPercentage >= 0.5) {
+      return 2; // Good run
+    }
+    return 1; // Completed
+  }
+
+  setLevelStars(levelId: number, stars: number): boolean {
+    const current = this.data.levelStars[levelId] ?? 0;
+    if (stars > current) {
+      this.data.levelStars[levelId] = stars;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getLevelStars(levelId: number): number {
+    return this.data.levelStars[levelId] ?? 0;
+  }
+
+  getTotalStars(): number {
+    return Object.values(this.data.levelStars).reduce((sum, s) => sum + s, 0);
+  }
+
+  getMaxPossibleStars(): number {
+    return TOTAL_LEVELS * 3;
+  }
+
+  // --- BEST TIMES ---
+
+  setBestTime(levelId: number, time: number): boolean {
+    const current = this.data.bestTimes[levelId];
+    if (current === undefined || time < current) {
+      this.data.bestTimes[levelId] = time;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getBestTime(levelId: number): number | undefined {
+    return this.data.bestTimes[levelId];
+  }
+
+  // --- LEVEL DEATHS (for star calculation) ---
+
+  setLevelDeaths(levelId: number, deaths: number): boolean {
+    const current = this.data.levelDeaths[levelId];
+    if (current === undefined || deaths < current) {
+      this.data.levelDeaths[levelId] = deaths;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getLevelDeaths(levelId: number): number {
+    return this.data.levelDeaths[levelId] ?? Infinity;
+  }
+
+  // --- GHOST RUNS ---
+
+  saveGhostRun(levelId: number, frames: GhostFrame[], time: number): boolean {
+    const currentBest = this.data.bestTimes[levelId];
+    // Only save ghost if it's a new best time
+    if (currentBest === undefined || time <= currentBest) {
+      this.data.ghostRuns[levelId] = frames;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  getGhostRun(levelId: number): GhostFrame[] | undefined {
+    return this.data.ghostRuns[levelId];
+  }
+
+  hasGhostRun(levelId: number): boolean {
+    return this.data.ghostRuns[levelId] !== undefined && this.data.ghostRuns[levelId].length > 0;
+  }
+
   // --- ACCESSIBILITY SETTINGS ---
 
   getColorblindMode(): GameSettings['colorblindMode'] {
@@ -437,6 +551,33 @@ export class SaveManager {
 
   setHapticFeedback(enabled: boolean): void {
     this.data.settings.hapticFeedback = enabled;
+    this.save();
+  }
+
+  isReduceFlashEnabled(): boolean {
+    return this.data.settings.reduceFlash ?? false;
+  }
+
+  setReduceFlash(enabled: boolean): void {
+    this.data.settings.reduceFlash = enabled;
+    this.save();
+  }
+
+  isShowGhostEnabled(): boolean {
+    return this.data.settings.showGhost ?? true;
+  }
+
+  setShowGhost(enabled: boolean): void {
+    this.data.settings.showGhost = enabled;
+    this.save();
+  }
+
+  isHighContrastEnabled(): boolean {
+    return this.data.settings.highContrast ?? false;
+  }
+
+  setHighContrast(enabled: boolean): void {
+    this.data.settings.highContrast = enabled;
     this.save();
   }
 
@@ -507,6 +648,10 @@ export class SaveManager {
       settings: { ...DEFAULT_SETTINGS, ...imported.settings },
       achievements: imported.achievements ?? [],
       levelCoins: imported.levelCoins ?? {},
+      levelStars: imported.levelStars ?? {},
+      levelDeaths: imported.levelDeaths ?? {},
+      bestTimes: imported.bestTimes ?? {},
+      ghostRuns: imported.ghostRuns ?? {},
       totalDeaths: imported.totalDeaths ?? 0,
       totalCoinsCollected: imported.totalCoinsCollected ?? 0,
       totalLevelsCompleted: imported.totalLevelsCompleted ?? 0,

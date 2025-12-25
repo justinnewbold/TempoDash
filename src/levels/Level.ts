@@ -1,4 +1,4 @@
-import { LevelConfig, Rectangle } from '../types';
+import { LevelConfig, Rectangle, PowerUpConfig } from '../types';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { Player } from '../entities/Player';
@@ -12,6 +12,7 @@ export class Level {
   coins: Coin[] = [];
   coinsCollected = 0;
   totalCoins = 0;
+  powerUpConfigs: PowerUpConfig[] = [];
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
@@ -37,6 +38,11 @@ export class Level {
         this.coins.push(new Coin(coinConfig));
       }
       this.totalCoins = config.coins.length;
+    }
+
+    // Store power-up configurations
+    if (config.powerUps) {
+      this.powerUpConfigs = [...config.powerUps];
     }
 
     // Calculate level length (furthest platform or goal)
@@ -192,5 +198,9 @@ export class Level {
 
   getActivePlatforms(): Platform[] {
     return this.platforms.filter((p) => p.isCollidable());
+  }
+
+  getConfig(): LevelConfig {
+    return this.config;
   }
 }

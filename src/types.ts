@@ -20,6 +20,7 @@ export interface PlatformConfig {
   phaseOffset?: number;
   phaseGroup?: number;
   color?: string;
+  conveyorSpeed?: number;  // Speed for conveyor (-1 to 1, negative = left)
 }
 
 export type PlatformType =
@@ -30,7 +31,14 @@ export type PlatformType =
   | 'ice'        // Slippery platform
   | 'lava'       // Deadly platform
   | 'phase'      // Phases in and out
-  | 'spike';     // Deadly spike obstacle
+  | 'spike'      // Deadly spike obstacle
+  | 'conveyor'   // Moves player horizontally while standing
+  | 'gravity'    // Flips player gravity on contact
+  | 'sticky'     // Player sticks until jump pressed
+  | 'glass'      // Breaks after 2nd landing
+  | 'slowmo'     // Slows down time while player is in zone
+  | 'wall'       // Vertical wall for wall-jumping
+  | 'secret';    // Hidden platform revealed on proximity
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -44,15 +52,41 @@ export interface CoinConfig {
   y: number;
 }
 
+export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
+
+export interface PowerUpConfig {
+  type: PowerUpType;
+  x: number;
+  y: number;
+}
+
+export interface ChaseConfig {
+  enabled: boolean;
+  initialDelay?: number;
+  baseSpeed?: number;
+  accelerationRate?: number;
+}
+
+export interface CheckpointConfig {
+  x: number;
+  y: number;
+  name?: string;  // Optional section name for practice mode
+}
+
 export interface LevelConfig {
   id: number;
   name: string;
   platforms: PlatformConfig[];
   coins?: CoinConfig[];
+  powerUps?: PowerUpConfig[];
   playerStart: Vector2;
   goal: Rectangle;
   background: BackgroundConfig;
   music?: string;
+  chaseMode?: ChaseConfig;  // Optional chase mode (wall of death)
+  checkpoints?: CheckpointConfig[];  // Mid-level checkpoints
+  totalCoins?: number;  // For star calculation (auto-counted if not set)
+  bpm?: number;  // Beats per minute for beat visualization
 }
 
 export interface BackgroundConfig {
@@ -70,7 +104,8 @@ export type BackgroundType =
   | 'space'      // Level 3 - Space
   | 'forest'     // Level 4 - Mystical forest
   | 'volcano'    // Level 5 - Volcanic cavern
-  | 'ocean';     // Level 6 - Underwater
+  | 'ocean'      // Level 6 - Underwater
+  | 'inferno';   // Level 9 - Chase level (wall of death)
 
 export interface ParticleConfig {
   count: number;
@@ -107,9 +142,11 @@ export type MenuState =
   | 'settings'
   | 'skins'
   | 'achievements'
+  | 'challenges'
   | 'playing'
   | 'practice'
   | 'endless'
+  | 'challengePlaying'
   | 'paused'
   | 'levelComplete'
   | 'gameOver'
@@ -126,11 +163,23 @@ export interface SaveData {
   // New tracking fields
   achievements: string[];
   levelCoins: Record<number, number>; // levelId -> coins collected (max)
+  levelStars: Record<number, number>; // levelId -> stars earned (1-3)
+  levelDeaths: Record<number, number>; // levelId -> best run death count
+  bestTimes: Record<number, number>; // levelId -> best completion time (ms)
+  ghostRuns: Record<number, GhostFrame[]>; // levelId -> ghost data
   totalDeaths: number;
   totalCoinsCollected: number;
   totalLevelsCompleted: number;
   totalPlayTime: number; // in milliseconds
   longestCombo: number;
+}
+
+// Ghost replay frame
+export interface GhostFrame {
+  x: number;
+  y: number;
+  rotation: number;
+  time: number;
 }
 
 // Achievement definitions
@@ -173,6 +222,9 @@ export interface GameSettings {
   colorblindMode: ColorblindMode;
   reducedMotion: boolean;
   hapticFeedback: boolean;
+  reduceFlash: boolean;  // Reduce screen flash effects (death/power-up)
+  showGhost: boolean;    // Show ghost replay in levels
+  highContrast: boolean; // High contrast mode for better visibility
 }
 
 export interface PlayerSkin {
@@ -206,6 +258,7 @@ export interface CustomLevel {
   goal: Rectangle;
   platforms: PlatformConfig[];
   coins: CoinConfig[];
+  powerUps?: PowerUpConfig[];
 }
 
 export interface EditorState {

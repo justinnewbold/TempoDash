@@ -10,13 +10,19 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 246; // pixels per beat at 128 BPM (1.5x for longer levels)
+const BEAT = 492; // pixels per beat at 128 BPM (2x length)
 
 const level1Config: LevelConfig = {
   id: 1,
   name: 'First Flight',
+  bpm: 128,
   playerStart: { x: 100, y: GROUND_Y - 50 },
   goal: { x: BEAT * 32, y: GROUND_Y - 80, width: 60, height: 80 }, // 32 beats = ~5248px
+  checkpoints: [
+    { x: BEAT * 8, y: GROUND_Y - 50, name: 'First Spike' },
+    { x: BEAT * 16, y: GROUND_Y - 50, name: 'Bounce Section' },
+    { x: BEAT * 24, y: GROUND_Y - 50, name: 'Platform Hops' },
+  ],
   background: {
     type: 'city',
     primaryColor: '#0a0a1a',
