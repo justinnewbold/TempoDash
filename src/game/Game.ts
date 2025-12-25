@@ -18,6 +18,7 @@ import { PowerUpManager } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
+import { LevelSharingManager } from '../systems/LevelSharing';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -132,6 +133,10 @@ export class Game {
   // Statistics dashboard visibility
   private showStatsDashboard = false;
 
+  // Level sharing state
+  private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
+  private pendingImportLevel: import('../types').CustomLevel | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -238,6 +243,19 @@ export class Game {
         this.beatPulse = 1;
       }
     });
+
+    // Check URL for shared level
+    this.checkUrlForSharedLevel();
+  }
+
+  private checkUrlForSharedLevel(): void {
+    const result = LevelSharingManager.checkUrlForLevel();
+    if (result && result.success && result.level) {
+      // Store the level for import prompt
+      this.pendingImportLevel = result.level;
+      // Clear the URL parameter
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }
 
   private loadLevel(levelId: number): void {
@@ -1076,6 +1094,14 @@ export class Game {
       this.orientationMessageTimer -= deltaTime;
       if (this.orientationMessageTimer <= 0) {
         this.showOrientationHint = false;
+      }
+    }
+
+    // Decay share notification timer
+    if (this.shareNotification && this.shareNotification.timer > 0) {
+      this.shareNotification.timer -= deltaTime;
+      if (this.shareNotification.timer <= 0) {
+        this.shareNotification = null;
       }
     }
 
@@ -3414,11 +3440,40 @@ export class Game {
       return;
     }
 
+    // Import level prompt (from URL)
+    if (this.pendingImportLevel) {
+      const promptY = GAME_HEIGHT / 2;
+      // Import button
+      if (x >= GAME_WIDTH / 2 - 110 && x <= GAME_WIDTH / 2 - 10 &&
+          y >= promptY + 40 && y <= promptY + 80) {
+        this.audio.playSelect();
+        this.customLevelManager.saveLevel(this.pendingImportLevel);
+        this.showShareNotification('Level imported successfully!', false);
+        this.pendingImportLevel = null;
+        return;
+      }
+      // Cancel button
+      if (x >= GAME_WIDTH / 2 + 10 && x <= GAME_WIDTH / 2 + 110 &&
+          y >= promptY + 40 && y <= promptY + 80) {
+        this.audio.playSelect();
+        this.pendingImportLevel = null;
+        return;
+      }
+    }
+
     // Create New Level button
     if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 + 100 &&
         y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
       this.audio.playSelect();
       this.openEditor();
+      return;
+    }
+
+    // Import from Code button
+    if (x >= GAME_WIDTH / 2 + 120 && x <= GAME_WIDTH / 2 + 270 &&
+        y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
+      this.audio.playSelect();
+      this.importLevelFromClipboard();
       return;
     }
 
@@ -3439,26 +3494,71 @@ export class Game {
       if (cardY < 100 || cardY > GAME_HEIGHT - 100) continue;
 
       if (x >= cardX && x <= cardX + cardWidth && y >= cardY && y <= cardY + cardHeight) {
-        // Check for play button (left side)
-        if (x >= cardX + 10 && x <= cardX + 60 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        const btnWidth = 45;
+        const btnGap = 5;
+        const btnY1 = cardY + cardHeight - 35;
+        const btnY2 = cardY + cardHeight - 10;
+
+        // Check for play button
+        if (x >= cardX + 5 && x <= cardX + 5 + btnWidth && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.playCustomLevel(levels[i]);
           return;
         }
-        // Check for edit button (middle)
-        if (x >= cardX + 70 && x <= cardX + 120 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        // Check for edit button
+        if (x >= cardX + 5 + btnWidth + btnGap && x <= cardX + 5 + btnWidth * 2 + btnGap && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.openEditor(levels[i]);
           return;
         }
-        // Check for delete button (right side)
-        if (x >= cardX + 130 && x <= cardX + 180 && y >= cardY + cardHeight - 35 && y <= cardY + cardHeight - 10) {
+        // Check for share button
+        if (x >= cardX + 5 + (btnWidth + btnGap) * 2 && x <= cardX + 5 + btnWidth * 3 + btnGap * 2 && y >= btnY1 && y <= btnY2) {
+          this.audio.playSelect();
+          this.shareLevel(levels[i]);
+          return;
+        }
+        // Check for delete button
+        if (x >= cardX + 5 + (btnWidth + btnGap) * 3 && x <= cardX + 5 + btnWidth * 4 + btnGap * 3 && y >= btnY1 && y <= btnY2) {
           this.audio.playSelect();
           this.customLevelManager.deleteLevel(levels[i].id);
           return;
         }
       }
     }
+  }
+
+  private async shareLevel(level: CustomLevel): Promise<void> {
+    const result = LevelSharingManager.encodeLevel(level);
+    if (result.success && result.code) {
+      const copied = await LevelSharingManager.copyToClipboard(result.code);
+      if (copied) {
+        this.showShareNotification('Level code copied to clipboard!', false);
+      } else {
+        this.showShareNotification('Code: ' + result.code.substring(0, 30) + '...', false);
+      }
+    } else {
+      this.showShareNotification(result.error || 'Failed to share level', true);
+    }
+  }
+
+  private async importLevelFromClipboard(): Promise<void> {
+    const code = await LevelSharingManager.readFromClipboard();
+    if (!code) {
+      this.showShareNotification('Could not read clipboard. Paste a level code.', true);
+      return;
+    }
+
+    const result = LevelSharingManager.decodeLevel(code.trim());
+    if (result.success && result.level) {
+      this.customLevelManager.saveLevel(result.level);
+      this.showShareNotification('Level imported: ' + result.level.name, false);
+    } else {
+      this.showShareNotification(result.error || 'Invalid level code', true);
+    }
+  }
+
+  private showShareNotification(message: string, isError: boolean): void {
+    this.shareNotification = { message, isError, timer: 3000 };
   }
 
   private playCustomLevel(customLevel: CustomLevel): void {
@@ -3551,33 +3651,44 @@ export class Game {
         this.ctx.fillText(`Platforms: ${level.platforms.length}`, cardX + 10, cardY + 60);
         this.ctx.fillText(`Coins: ${level.coins.length}`, cardX + 100, cardY + 60);
 
-        // Buttons
+        // Buttons (4 buttons: Play, Edit, Share, Delete)
         this.ctx.textAlign = 'center';
+        const btnWidth = 45;
+        const btnGap = 5;
+        const btnY = cardY + cardHeight - 35;
 
         // Play button
         this.ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 10, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5, btnY, btnWidth, 25, 5);
         this.ctx.fill();
-        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
         this.ctx.fillStyle = '#00ff88';
-        this.ctx.fillText('PLAY', cardX + 35, cardY + cardHeight - 18);
+        this.ctx.fillText('PLAY', cardX + 5 + btnWidth / 2, cardY + cardHeight - 18);
 
         // Edit button
         this.ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 70, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5 + btnWidth + btnGap, btnY, btnWidth, 25, 5);
         this.ctx.fill();
         this.ctx.fillStyle = '#8888ff';
-        this.ctx.fillText('EDIT', cardX + 95, cardY + cardHeight - 18);
+        this.ctx.fillText('EDIT', cardX + 5 + btnWidth * 1.5 + btnGap, cardY + cardHeight - 18);
+
+        // Share button
+        this.ctx.fillStyle = 'rgba(255, 200, 0, 0.3)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(cardX + 5 + (btnWidth + btnGap) * 2, btnY, btnWidth, 25, 5);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText('SHARE', cardX + 5 + btnWidth * 2.5 + btnGap * 2, cardY + cardHeight - 18);
 
         // Delete button
         this.ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
         this.ctx.beginPath();
-        this.ctx.roundRect(cardX + 130, cardY + cardHeight - 35, 50, 25, 5);
+        this.ctx.roundRect(cardX + 5 + (btnWidth + btnGap) * 3, btnY, btnWidth, 25, 5);
         this.ctx.fill();
         this.ctx.fillStyle = '#ff5555';
-        this.ctx.fillText('DEL', cardX + 155, cardY + cardHeight - 18);
+        this.ctx.fillText('DEL', cardX + 5 + btnWidth * 3.5 + btnGap * 3, cardY + cardHeight - 18);
       }
     }
 
@@ -3591,11 +3702,89 @@ export class Game {
     this.ctx.lineWidth = 2;
     this.ctx.stroke();
 
-    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ff00ff';
     this.ctx.shadowColor = '#ff00ff';
     this.ctx.shadowBlur = 10;
-    this.ctx.fillText('+ CREATE NEW LEVEL', GAME_WIDTH / 2, GAME_HEIGHT - 54);
+    this.ctx.fillText('+ CREATE NEW', GAME_WIDTH / 2, GAME_HEIGHT - 54);
+
+    // Import button
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 + 120, GAME_HEIGHT - 80, 150, 40, 10);
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('IMPORT CODE', GAME_WIDTH / 2 + 195, GAME_HEIGHT - 54);
+    this.ctx.shadowBlur = 0;
+
+    // Share notification
+    if (this.shareNotification && this.shareNotification.timer > 0) {
+      const alpha = Math.min(1, this.shareNotification.timer / 500);
+      this.ctx.fillStyle = this.shareNotification.isError
+        ? `rgba(255, 50, 50, ${alpha * 0.9})`
+        : `rgba(0, 200, 100, ${alpha * 0.9})`;
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 200, 100, 400, 40, 10);
+      this.ctx.fill();
+
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(this.shareNotification.message, GAME_WIDTH / 2, 125);
+    }
+
+    // Import prompt for URL-shared levels
+    if (this.pendingImportLevel) {
+      // Darken background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+      const promptY = GAME_HEIGHT / 2;
+
+      // Prompt box
+      this.ctx.fillStyle = 'rgba(30, 30, 50, 0.95)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 200, promptY - 60, 400, 160, 15);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#00ffaa';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Title
+      this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffaa';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Import Shared Level?', GAME_WIDTH / 2, promptY - 25);
+
+      // Level name
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(`"${this.pendingImportLevel.name}" by ${this.pendingImportLevel.author}`, GAME_WIDTH / 2, promptY + 10);
+
+      // Import button
+      this.ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 - 110, promptY + 40, 100, 40, 8);
+      this.ctx.fill();
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ff88';
+      this.ctx.fillText('IMPORT', GAME_WIDTH / 2 - 60, promptY + 65);
+
+      // Cancel button
+      this.ctx.fillStyle = 'rgba(255, 100, 100, 0.3)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(GAME_WIDTH / 2 + 10, promptY + 40, 100, 40, 8);
+      this.ctx.fill();
+      this.ctx.fillStyle = '#ff6666';
+      this.ctx.fillText('CANCEL', GAME_WIDTH / 2 + 60, promptY + 65);
+    }
 
     this.ctx.restore();
   }
