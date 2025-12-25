@@ -89,6 +89,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   colorblindMode: 'normal',
   reducedMotion: false,
   hapticFeedback: true,
+  reduceFlash: false,
+  showGhost: true,
+  highContrast: false,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -548,6 +551,33 @@ export class SaveManager {
 
   setHapticFeedback(enabled: boolean): void {
     this.data.settings.hapticFeedback = enabled;
+    this.save();
+  }
+
+  isReduceFlashEnabled(): boolean {
+    return this.data.settings.reduceFlash ?? false;
+  }
+
+  setReduceFlash(enabled: boolean): void {
+    this.data.settings.reduceFlash = enabled;
+    this.save();
+  }
+
+  isShowGhostEnabled(): boolean {
+    return this.data.settings.showGhost ?? true;
+  }
+
+  setShowGhost(enabled: boolean): void {
+    this.data.settings.showGhost = enabled;
+    this.save();
+  }
+
+  isHighContrastEnabled(): boolean {
+    return this.data.settings.highContrast ?? false;
+  }
+
+  setHighContrast(enabled: boolean): void {
+    this.data.settings.highContrast = enabled;
     this.save();
   }
 

@@ -222,6 +222,9 @@ export interface GameSettings {
   colorblindMode: ColorblindMode;
   reducedMotion: boolean;
   hapticFeedback: boolean;
+  reduceFlash: boolean;  // Reduce screen flash effects (death/power-up)
+  showGhost: boolean;    // Show ghost replay in levels
+  highContrast: boolean; // High contrast mode for better visibility
 }
 
 export interface PlayerSkin {

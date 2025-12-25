@@ -19,6 +19,7 @@ import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
+import { GhostManager } from '../systems/GhostManager';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -60,11 +61,15 @@ export class Game {
   private powerUpFlashOpacity = 0;
   private powerUpFlashColor = '#00ffaa';
 
-  // Combo system
+  // Combo system - expanded
   private comboCount = 0;
   private comboTimer = 0;
-  private comboDuration = 1500; // 1.5 seconds to maintain combo
+  private comboDuration = 2000; // 2 seconds to maintain combo (extended)
   private comboDisplayTimer = 0; // For animation
+  private comboMultiplier = 1; // Score multiplier based on combo
+  private nearMissTimer = 0; // For near-miss detection
+  private nearMissCount = 0; // Near misses add to combo
+  private comboMeterPulse = 0; // Visual pulse for combo meter
 
   // Practice mode
   private isPracticeMode = false;
@@ -124,12 +129,29 @@ export class Game {
   // Modifier UI state
   private showModifierPanel = false;
 
+  // Section Practice mode
+  private showSectionPractice = false;
+  private selectedSection = 0;
+
   // Challenge mode state
   private currentChallenge: Challenge | null = null;
   private challengeScore = 0;
 
   // Chase mode (wall of death)
   private chaseMode: ChaseModeManager;
+
+  // Ghost racing
+  private ghostManager: GhostManager;
+  private showGhost = true;
+
+  // Level timing and stats
+  private levelStartTime = 0;
+  private levelElapsedTime = 0;
+  private levelDeathCount = 0;
+
+  // Beat visualization
+  private beatTimer = 0;
+  private currentBPM = 128;
 
   // Quick restart key tracking
   private quickRestartHeld = false;
@@ -184,6 +206,7 @@ export class Game {
     this.modifiers = new ModifierManager();
     this.challengeManager = new ChallengeManager();
     this.chaseMode = new ChaseModeManager();
+    this.ghostManager = new GhostManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -198,6 +221,7 @@ export class Game {
     const settings = this.save.getSettings();
     this.audio.setMusicVolume(settings.musicVolume);
     this.audio.setSfxVolume(settings.sfxVolume);
+    this.showGhost = this.save.isShowGhostEnabled();
 
     this.loadLevel(1);
 
@@ -449,6 +473,71 @@ export class Game {
   }
 
   private handleLevelSelectClick(x: number, y: number, shiftKey = false): void {
+    // Handle section practice panel clicks first if panel is open
+    if (this.showSectionPractice) {
+      const panelX = 100;
+      const panelY = 120;
+      const panelW = GAME_WIDTH - 200;
+      const panelH = 260;
+
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        const levelId = this.selectedLevelIndex + 1;
+        const checkpoints = this.getCheckpointsForLevel(levelId);
+
+        const btnW = 150;
+        const btnH = 45;
+        const btnGap = 15;
+        const startY = panelY + 55;
+
+        // Check "Start" button (from beginning)
+        const startBtnX = GAME_WIDTH / 2 - btnW / 2;
+        if (x >= startBtnX && x <= startBtnX + btnW && y >= startY && y <= startY + btnH) {
+          this.selectedSection = 0;
+          this.audio.playSelect();
+          return;
+        }
+
+        // Check checkpoint buttons
+        const checkpointsPerRow = 3;
+        const totalWidth = checkpointsPerRow * btnW + (checkpointsPerRow - 1) * btnGap;
+        const rowStartX = (GAME_WIDTH - totalWidth) / 2;
+
+        for (let i = 0; i < checkpoints.length; i++) {
+          const row = Math.floor(i / checkpointsPerRow);
+          const col = i % checkpointsPerRow;
+          const btnX = rowStartX + col * (btnW + btnGap);
+          const btnY = startY + btnH + 15 + row * (btnH + 10);
+
+          if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            this.selectedSection = i + 1;
+            this.audio.playSelect();
+            return;
+          }
+        }
+
+        // Check "Start Practice" button
+        const playBtnX = GAME_WIDTH / 2 - 70;
+        const playBtnY = panelY + panelH - 55;
+        const playBtnW = 140;
+        const playBtnH = 36;
+
+        if (x >= playBtnX && x <= playBtnX + playBtnW && y >= playBtnY && y <= playBtnY + playBtnH) {
+          // Start the level at the selected section
+          this.showSectionPractice = false;
+          this.startLevelAtSection(levelId, this.selectedSection);
+          this.audio.playSelect();
+          return;
+        }
+
+        return; // Click inside panel but not on a button
+      } else {
+        // Click outside panel - close it
+        this.showSectionPractice = false;
+        this.selectedSection = 0;
+        return;
+      }
+    }
+
     // Handle modifier panel clicks first if panel is open
     if (this.showModifierPanel) {
       const panelX = 80;
@@ -501,8 +590,25 @@ export class Game {
     const modBtnH = 32;
     if (x >= modBtnX && x <= modBtnX + modBtnW && y >= modBtnY && y <= modBtnY + modBtnH) {
       this.showModifierPanel = !this.showModifierPanel;
+      this.showSectionPractice = false; // Close section practice if open
       this.audio.playSelect();
       return;
+    }
+
+    // Section Practice button (only for unlocked levels)
+    const levelId = this.selectedLevelIndex + 1;
+    if (this.save.isLevelUnlocked(levelId)) {
+      const secBtnX = GAME_WIDTH / 2 - 80;
+      const secBtnY = modBtnY + 45;
+      const secBtnW = 160;
+      const secBtnH = 28;
+      if (x >= secBtnX && x <= secBtnX + secBtnW && y >= secBtnY && y <= secBtnY + secBtnH) {
+        this.showSectionPractice = !this.showSectionPractice;
+        this.showModifierPanel = false; // Close modifiers if open
+        this.selectedSection = 0; // Reset section selection
+        this.audio.playSelect();
+        return;
+      }
     }
 
     // Level cards - carousel style (must match renderLevelSelect dimensions)
@@ -581,31 +687,129 @@ export class Game {
       return;
     }
 
-    const sliderWidth = 250;
-    const sliderX = GAME_WIDTH / 2 - sliderWidth / 2 - 30;
+    const leftColX = GAME_WIDTH / 4;
+    const rightColX = (GAME_WIDTH * 3) / 4;
+    const sliderWidth = 180;
+    const toggleWidth = 60;
 
-    // Music volume slider
-    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 190 && y <= 230) {
-      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
+    // Music volume slider (left column)
+    const musicSliderX = leftColX - sliderWidth / 2 - 15;
+    if (x >= musicSliderX && x <= musicSliderX + sliderWidth && y >= 145 && y <= 175) {
+      const volume = Math.max(0, Math.min(1, (x - musicSliderX) / sliderWidth));
       this.audio.setMusicVolume(volume);
       this.save.updateSettings({ musicVolume: volume });
     }
 
-    // SFX volume slider
-    if (x >= sliderX && x <= sliderX + sliderWidth && y >= 280 && y <= 320) {
-      const volume = Math.max(0, Math.min(1, (x - sliderX) / sliderWidth));
+    // SFX volume slider (left column)
+    if (x >= musicSliderX && x <= musicSliderX + sliderWidth && y >= 210 && y <= 240) {
+      const volume = Math.max(0, Math.min(1, (x - musicSliderX) / sliderWidth));
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
     }
 
-    // Screen shake toggle
-    const toggleWidth = 60;
-    const toggleX = GAME_WIDTH / 2 - toggleWidth / 2;
-    if (x >= toggleX && x <= toggleX + toggleWidth && y >= 385 && y <= 415) {
+    // Screen shake toggle (right column)
+    const rightToggleX = rightColX - toggleWidth / 2;
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
       const currentShake = this.save.getSettings().screenShake;
       this.save.updateSettings({ screenShake: !currentShake });
       this.audio.playSelect();
+    }
+
+    // Reduced motion toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 225 && y <= 260) {
+      this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
+      this.audio.playSelect();
+    }
+
+    // Colorblind mode buttons (left column)
+    const modes: Array<{ id: GameSettings['colorblindMode']; label: string }> = [
+      { id: 'normal', label: 'Normal' },
+      { id: 'deuteranopia', label: 'Deutan' },
+      { id: 'protanopia', label: 'Protan' },
+      { id: 'tritanopia', label: 'Tritan' },
+    ];
+    const cbBtnWidth = 50;
+    const cbGap = 8;
+    const cbTotalWidth = modes.length * cbBtnWidth + (modes.length - 1) * cbGap;
+    const cbStartX = leftColX - cbTotalWidth / 2;
+    if (y >= 365 && y <= 390) {
+      for (let i = 0; i < modes.length; i++) {
+        const btnX = cbStartX + i * (cbBtnWidth + cbGap);
+        if (x >= btnX && x <= btnX + cbBtnWidth) {
+          this.save.setColorblindMode(modes[i].id);
+          this.audio.playSelect();
+          return;
+        }
+      }
+    }
+
+    // Reduce flash toggle (left column)
+    const leftToggleX = leftColX - toggleWidth / 2;
+    if (x >= leftToggleX && x <= leftToggleX + toggleWidth && y >= 425 && y <= 460) {
+      this.save.setReduceFlash(!this.save.isReduceFlashEnabled());
+      this.audio.playSelect();
+    }
+
+    // High contrast toggle (left column)
+    if (x >= leftToggleX && x <= leftToggleX + toggleWidth && y >= 495 && y <= 530) {
+      this.save.setHighContrast(!this.save.isHighContrastEnabled());
+      this.audio.playSelect();
+    }
+
+    // Show ghost toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 350 && y <= 385) {
+      this.save.setShowGhost(!this.save.isShowGhostEnabled());
+      this.showGhost = this.save.isShowGhostEnabled();
+      this.audio.playSelect();
+    }
+
+    // Haptic feedback toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 420 && y <= 455) {
+      this.save.setHapticFeedback(!this.save.isHapticFeedbackEnabled());
+      this.audio.playSelect();
+    }
+
+    // Export data button (right column)
+    if (x >= rightColX - 100 && x <= rightColX && y >= 485 && y <= 515) {
+      // Export save data to clipboard
+      const exportedData = this.save.exportData();
+      navigator.clipboard.writeText(exportedData).then(() => {
+        this.audio.playSelect();
+      }).catch(() => {
+        // Fallback: create download
+        const blob = new Blob([exportedData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tempodash-save.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // Import data button (right column)
+    if (x >= rightColX && x <= rightColX + 100 && y >= 485 && y <= 515) {
+      // Import save data from clipboard
+      navigator.clipboard.readText().then((text) => {
+        const result = this.save.importData(text);
+        if (result.success) {
+          this.audio.playUnlock();
+        } else {
+          console.error('Import failed:', result.error);
+        }
+      }).catch(() => {
+        console.error('Failed to read clipboard');
+      });
+    }
+
+    // Reset all button (right column)
+    if (x >= rightColX - 45 && x <= rightColX + 45 && y >= 530 && y <= 560) {
+      // Confirm before resetting
+      if (confirm('Are you sure you want to reset all data? This cannot be undone.')) {
+        this.save.resetAllData();
+        this.audio.playSelect();
+      }
     }
   }
 
@@ -870,6 +1074,10 @@ export class Game {
     this.particles.clear();
     this.comboCount = 0;
     this.comboTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.nearMissCount = 0;
+    this.comboMeterPulse = 0;
     this.audio.start();
   }
 
@@ -886,12 +1094,70 @@ export class Game {
     // Reset modifier timers for new level
     this.modifiers.resetForLevel();
 
+    // Initialize level timing and stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
+
+    // Initialize BPM for beat visualization
+    const config = this.level.getConfig();
+    this.currentBPM = config.bpm || 128;
+    this.beatTimer = 0;
+
+    // Start ghost recording
+    this.ghostManager.startRecording();
+
+    // Load ghost for playback if available
+    const savedGhost = this.save.getGhostRun(levelId);
+    if (savedGhost && this.showGhost) {
+      this.ghostManager.startPlayback(savedGhost);
+    }
+
     // Show tutorial on first play
     if (!this.save.hasTutorialBeenShown()) {
       this.showingTutorial = true;
     } else {
       this.audio.start();
     }
+  }
+
+  private startLevelAtSection(levelId: number, sectionIndex: number): void {
+    // Start level in practice mode
+    this.loadLevel(levelId);
+    this.attempts = 1;
+    this.levelScoreThisRun = 0;
+    this.isPracticeMode = true; // Always practice mode for section practice
+    this.state.gameStatus = 'practice';
+
+    // Get checkpoint position for the selected section
+    const checkpoints = this.getCheckpointsForLevel(levelId);
+    if (sectionIndex > 0 && sectionIndex <= checkpoints.length) {
+      const checkpoint = checkpoints[sectionIndex - 1];
+      // Set player position to checkpoint
+      this.player.x = checkpoint.x;
+      this.player.y = checkpoint.y;
+      this.player.velocityY = 0;
+      this.checkpointX = checkpoint.x;
+      this.checkpointY = checkpoint.y;
+      this.cameraX = Math.max(0, checkpoint.x - GAME_WIDTH / 3);
+      this.lastCheckpointProgress = (sectionIndex / (checkpoints.length + 1)) * 100;
+    } else {
+      // Start from beginning
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
+    }
+
+    // Reset modifier timers
+    this.modifiers.resetForLevel();
+
+    // Initialize BPM for beat visualization
+    const config = this.level.getConfig();
+    this.currentBPM = config.bpm || 128;
+    this.beatTimer = 0;
+
+    // Start audio
+    this.audio.start();
   }
 
   private nextLevel(): void {
@@ -1020,6 +1286,9 @@ export class Game {
     this.comboCount = 0;
     this.comboTimer = 0;
     this.comboDisplayTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.comboMeterPulse = 0;
 
     // Reset speed multiplier on death
     this.speedMultiplier = 1.0;
@@ -1162,7 +1431,10 @@ export class Game {
         doubleJump: '#ffff00'
       };
       this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
-      this.powerUpFlashOpacity = 0.25;
+      // Trigger power-up flash (reduced or disabled based on settings)
+      if (!this.save.isReduceFlashEnabled()) {
+        this.powerUpFlashOpacity = 0.25;
+      }
     }
 
     const wasGroundedBefore = this.player.isGrounded;
@@ -1232,6 +1504,46 @@ export class Game {
       }
     }
 
+    // Update level timing
+    if (!this.player.isDead) {
+      this.levelElapsedTime = performance.now() - this.levelStartTime;
+    }
+
+    // Record ghost frame
+    if (this.ghostManager.getIsRecording() && !this.player.isDead) {
+      this.ghostManager.recordFrame(
+        this.player.x,
+        this.player.y,
+        this.player.getRotation(),
+        deltaTime
+      );
+    }
+
+    // Update ghost playback
+    this.ghostManager.update(deltaTime);
+
+    // Beat visualization - pulse platforms on beat
+    this.beatTimer += deltaTime;
+    const beatInterval = 60000 / this.currentBPM; // ms per beat
+    if (this.beatTimer >= beatInterval) {
+      this.beatTimer -= beatInterval;
+      // Trigger pulse on visible platforms
+      for (const platform of this.level.getActivePlatforms()) {
+        platform.triggerBeatPulse();
+      }
+    }
+
+    // Check secret platform reveals
+    const playerCenterX = this.player.x + this.player.width / 2;
+    const playerCenterY = this.player.y + this.player.height / 2;
+    for (const platform of this.level.getActivePlatforms()) {
+      if (platform.checkSecretReveal(playerCenterX, playerCenterY)) {
+        // Secret platform revealed! Add feedback
+        this.audio.playCoinCollect();
+        this.particles.spawnCoinCollect(playerCenterX, playerCenterY);
+      }
+    }
+
     // Apply magnet effect to attract nearby coins
     const magnetRange = this.powerUps.getMagnetRange();
     if (magnetRange > 0) {
@@ -1251,20 +1563,81 @@ export class Game {
       }
     }
 
+    // Calculate combo multiplier based on combo count
+    if (this.comboCount >= 25) {
+      this.comboMultiplier = 4;
+    } else if (this.comboCount >= 20) {
+      this.comboMultiplier = 3;
+    } else if (this.comboCount >= 15) {
+      this.comboMultiplier = 2.5;
+    } else if (this.comboCount >= 10) {
+      this.comboMultiplier = 2;
+    } else if (this.comboCount >= 5) {
+      this.comboMultiplier = 1.5;
+    } else {
+      this.comboMultiplier = 1;
+    }
+
+    // Near-miss detection - check if player is close to spikes/lava without dying
+    const nearMissDistance = 15; // pixels
+    const playerBounds = this.player.getBounds();
+    for (const platform of this.level.getActivePlatforms()) {
+      if (platform.type === 'spike' || platform.type === 'lava') {
+        const platBounds = platform.getBounds();
+        const dx = Math.max(0, Math.max(platBounds.x - (playerBounds.x + playerBounds.width), playerBounds.x - (platBounds.x + platBounds.width)));
+        const dy = Math.max(0, Math.max(platBounds.y - (playerBounds.y + playerBounds.height), playerBounds.y - (platBounds.y + platBounds.height)));
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
+          // Near miss! Add to combo
+          this.nearMissCount++;
+          this.comboCount += 1;
+          this.comboTimer = this.comboDuration;
+          this.comboDisplayTimer = 400;
+          this.nearMissTimer = 500; // Cooldown to prevent spam
+          this.comboMeterPulse = 1;
+
+          // Spawn near-miss particle effect
+          this.particles.spawnFloatingText(
+            this.player.x + this.player.width / 2,
+            this.player.y - 20,
+            'CLOSE!',
+            '#ff6600'
+          );
+        }
+      }
+    }
+
+    // Decay near-miss cooldown
+    if (this.nearMissTimer > 0) {
+      this.nearMissTimer -= deltaTime;
+    }
+
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
     if (coinsCollected > 0) {
       this.audio.playCoinCollect();
       this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
-      // Apply double points multiplier from power-up
+      // Apply double points multiplier from power-up AND combo multiplier
       const pointsMultiplier = this.powerUps.getPointsMultiplier();
-      const effectiveCoins = coinsCollected * pointsMultiplier;
+      const effectiveCoins = Math.floor(coinsCollected * pointsMultiplier * this.comboMultiplier);
 
       // Update combo (with multiplied coins)
-      this.comboCount += effectiveCoins;
+      this.comboCount += coinsCollected; // Raw coins for combo count
       this.comboTimer = this.comboDuration;
       this.comboDisplayTimer = 500; // Show combo text for 500ms
+      this.comboMeterPulse = 1;
+
+      // Show bonus points from multiplier
+      if (this.comboMultiplier > 1) {
+        this.particles.spawnFloatingText(
+          this.player.x + this.player.width / 2,
+          this.player.y - 40,
+          `+${effectiveCoins}`,
+          '#ffd700'
+        );
+      }
 
       // Check combo achievements
       if (this.comboCount >= 5) {
@@ -1283,12 +1656,16 @@ export class Game {
       this.comboTimer -= deltaTime;
       if (this.comboTimer <= 0) {
         this.comboCount = 0;
+        this.comboMultiplier = 1;
       }
     }
 
-    // Decay combo display
+    // Decay combo display and pulse
     if (this.comboDisplayTimer > 0) {
       this.comboDisplayTimer -= deltaTime;
+    }
+    if (this.comboMeterPulse > 0) {
+      this.comboMeterPulse -= deltaTime / 200;
     }
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
@@ -1337,7 +1714,10 @@ export class Game {
         // No shield - player dies
         this.audio.playDeath();
         this.triggerShake(12, 350); // Strong shake on death
-        this.deathFlashOpacity = 0.6; // Trigger death flash
+        // Trigger death flash (reduced or disabled based on settings)
+        if (!this.save.isReduceFlashEnabled()) {
+          this.deathFlashOpacity = 0.6;
+        }
         this.input.triggerHapticPattern([50, 30, 100]); // Death haptic pattern
 
         // Spawn death particle explosion
@@ -1349,6 +1729,9 @@ export class Game {
         this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
         this.save.recordDeath();
         this.tryUnlockAchievement('first_death');
+
+        // Increment level death count for star calculation
+        this.levelDeathCount++;
       }
     }
 
@@ -1464,6 +1847,27 @@ export class Game {
         this.checkAchievements();
       } else {
         this.levelScoreThisRun = 0; // No points in practice mode
+      }
+
+      // Calculate and save star rating
+      const totalCoinsInLevel = this.level.getConfig().totalCoins || this.level.totalCoins;
+      const stars = this.save.calculateStars(
+        this.level.coinsCollected,
+        totalCoinsInLevel,
+        this.levelDeathCount
+      );
+      this.save.setLevelStars(this.state.currentLevel, stars);
+      this.save.setLevelDeaths(this.state.currentLevel, this.levelDeathCount);
+
+      // Save best time and ghost
+      const completionTime = this.levelElapsedTime;
+      const isNewBest = this.save.setBestTime(this.state.currentLevel, completionTime);
+      if (isNewBest) {
+        // Save ghost run for new best time
+        const ghostFrames = this.ghostManager.stopRecording();
+        this.save.saveGhostRun(this.state.currentLevel, ghostFrames, completionTime);
+      } else {
+        this.ghostManager.stopRecording();
       }
 
       this.state.gameStatus = 'levelComplete';
@@ -1582,6 +1986,11 @@ export class Game {
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
         // Render power-ups before player so they appear behind
         this.powerUps.render(this.ctx, this.cameraX);
+
+        // Render ghost before player so player appears on top
+        if (this.showGhost) {
+          this.ghostManager.render(this.ctx, this.cameraX);
+        }
 
         this.player.render(this.ctx, this.cameraX);
 
@@ -1889,29 +2298,76 @@ export class Game {
       this.ctx.fillText('MUTED', GAME_WIDTH - 20, muteY);
     }
 
-    // Combo counter (center, when active)
-    if (this.comboCount > 1 && this.comboDisplayTimer > 0) {
-      const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
-      const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+    // Combo counter and meter (center, when active)
+    if (this.comboCount > 1) {
+      const meterWidth = 200;
+      const meterHeight = 8;
+      const meterX = (GAME_WIDTH - meterWidth) / 2;
+      const meterY = 95;
 
-      this.ctx.textAlign = 'center';
-      this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
+      // Draw combo meter background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
-      // Color based on combo count
-      let comboColor = '#ffd700';
-      if (this.comboCount >= 10) {
-        comboColor = '#ff00ff';
+      // Draw combo meter fill based on timer
+      const fillPercent = this.comboTimer / this.comboDuration;
+      const pulseBoost = this.comboMeterPulse * 0.1;
+
+      // Color based on combo tier
+      let comboColor = '#ffd700'; // Gold
+      let tierName = '';
+      if (this.comboCount >= 25) {
+        comboColor = '#ff00ff'; // Magenta - LEGENDARY
+        tierName = 'LEGENDARY!';
+      } else if (this.comboCount >= 20) {
+        comboColor = '#00ffff'; // Cyan - INSANE
+        tierName = 'INSANE!';
+      } else if (this.comboCount >= 15) {
+        comboColor = '#ff0066'; // Pink - EPIC
+        tierName = 'EPIC!';
+      } else if (this.comboCount >= 10) {
+        comboColor = '#ff6600'; // Orange - SUPER
+        tierName = 'SUPER!';
       } else if (this.comboCount >= 5) {
-        comboColor = '#ff6600';
+        comboColor = '#ffcc00'; // Yellow - NICE
+        tierName = 'NICE!';
       }
 
+      // Pulsing meter fill
       this.ctx.fillStyle = comboColor;
       this.ctx.shadowColor = comboColor;
-      this.ctx.shadowBlur = 15;
-      this.ctx.globalAlpha = comboAlpha;
-      this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
-      this.ctx.globalAlpha = 1;
-      this.ctx.shadowBlur = 4;
+      this.ctx.shadowBlur = 10 + this.comboMeterPulse * 20;
+      this.ctx.fillRect(meterX, meterY, meterWidth * (fillPercent + pulseBoost), meterHeight);
+      this.ctx.shadowBlur = 0;
+
+      // Meter border
+      this.ctx.strokeStyle = comboColor;
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+
+      // Show combo text when recently updated
+      if (this.comboDisplayTimer > 0) {
+        const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
+        const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
+
+        this.ctx.fillStyle = comboColor;
+        this.ctx.shadowColor = comboColor;
+        this.ctx.shadowBlur = 15;
+        this.ctx.globalAlpha = comboAlpha;
+        this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
+
+        // Show multiplier below combo count
+        if (this.comboMultiplier > 1) {
+          this.ctx.font = `bold ${Math.floor(16 * comboScale)}px "Segoe UI", sans-serif`;
+          this.ctx.fillText(`${this.comboMultiplier}x POINTS ${tierName}`, GAME_WIDTH / 2, 118);
+        }
+
+        this.ctx.globalAlpha = 1;
+        this.ctx.shadowBlur = 4;
+      }
     }
 
     // Time Attack countdown (center-top, prominent when active)
@@ -2282,9 +2738,36 @@ export class Game {
       this.ctx.fillText(`${this.modifiers.getScoreMultiplier().toFixed(2)}x Score`, GAME_WIDTH / 2, modBtnY + 50);
     }
 
+    // Section Practice button (only for unlocked levels with checkpoints)
+    const levelId = this.selectedLevelIndex + 1;
+    const isUnlocked = this.save.isLevelUnlocked(levelId);
+    if (isUnlocked && levelId <= TOTAL_LEVELS) {
+      const secBtnX = GAME_WIDTH / 2 - 80;
+      const secBtnY = modBtnY + 45;
+      const secBtnW = 160;
+      const secBtnH = 28;
+
+      this.ctx.fillStyle = this.showSectionPractice ? '#00aaff' : 'rgba(0, 170, 255, 0.6)';
+      this.ctx.strokeStyle = '#00aaff';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(secBtnX, secBtnY, secBtnW, secBtnH, 6);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, secBtnY + 18);
+    }
+
     // Render modifier panel if open
     if (this.showModifierPanel) {
       this.renderModifierPanel();
+    }
+
+    // Render section practice panel if open
+    if (this.showSectionPractice) {
+      this.renderSectionPracticePanel();
     }
 
     // Level features hint
@@ -2373,6 +2856,170 @@ export class Game {
     this.ctx.fillText('Click modifiers to toggle | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 15);
   }
 
+  private renderSectionPracticePanel(): void {
+    const panelX = 100;
+    const panelY = 120;
+    const panelW = GAME_WIDTH - 200;
+    const panelH = 260;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, panelY + 30);
+
+    // Get checkpoints for the selected level
+    const levelId = this.selectedLevelIndex + 1;
+    const checkpoints = this.getCheckpointsForLevel(levelId);
+
+    if (checkpoints.length === 0) {
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      this.ctx.fillText('No sections available for this level', GAME_WIDTH / 2, panelY + 100);
+    } else {
+      // Render section buttons
+      const btnW = 150;
+      const btnH = 45;
+      const btnGap = 15;
+      const startY = panelY + 55;
+
+      // "Start" option (from beginning)
+      const startBtnX = GAME_WIDTH / 2 - btnW / 2;
+      const isStartSelected = this.selectedSection === 0;
+
+      this.ctx.fillStyle = isStartSelected ? '#00ff88' : 'rgba(0, 255, 136, 0.3)';
+      this.ctx.strokeStyle = '#00ff88';
+      this.ctx.lineWidth = isStartSelected ? 3 : 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startBtnX, startY, btnW, btnH, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isStartSelected ? '#000' : '#fff';
+      this.ctx.fillText('⚑ Start', GAME_WIDTH / 2, startY + 20);
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isStartSelected ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.6)';
+      this.ctx.fillText('From beginning', GAME_WIDTH / 2, startY + 35);
+
+      // Checkpoint buttons (horizontal layout)
+      const checkpointsPerRow = 3;
+      const totalWidth = checkpointsPerRow * btnW + (checkpointsPerRow - 1) * btnGap;
+      const rowStartX = (GAME_WIDTH - totalWidth) / 2;
+
+      for (let i = 0; i < checkpoints.length; i++) {
+        const cp = checkpoints[i];
+        const row = Math.floor(i / checkpointsPerRow);
+        const col = i % checkpointsPerRow;
+        const btnX = rowStartX + col * (btnW + btnGap);
+        const btnY = startY + btnH + 15 + row * (btnH + 10);
+        const isSelected = this.selectedSection === i + 1;
+
+        this.ctx.fillStyle = isSelected ? '#00aaff' : 'rgba(0, 170, 255, 0.3)';
+        this.ctx.strokeStyle = '#00aaff';
+        this.ctx.lineWidth = isSelected ? 3 : 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(btnX, btnY, btnW, btnH, 8);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 13px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = isSelected ? '#000' : '#fff';
+        this.ctx.fillText(`◉ Section ${i + 1}`, btnX + btnW / 2, btnY + 18);
+
+        this.ctx.font = '10px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = isSelected ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.6)';
+        const cpName = cp.name || `Checkpoint ${i + 1}`;
+        this.ctx.fillText(cpName, btnX + btnW / 2, btnY + 33);
+      }
+    }
+
+    // Start Practice button
+    const playBtnX = GAME_WIDTH / 2 - 70;
+    const playBtnY = panelY + panelH - 55;
+    const playBtnW = 140;
+    const playBtnH = 36;
+
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.strokeStyle = '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(playBtnX, playBtnY, playBtnW, playBtnH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000';
+    this.ctx.fillText('▶ START PRACTICE', GAME_WIDTH / 2, playBtnY + 23);
+
+    // Close hint
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click section to select | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 10);
+  }
+
+  private getCheckpointsForLevel(levelId: number): { x: number; y: number; name?: string }[] {
+    // Get the level config checkpoints
+    const levelConfigs: Record<number, { checkpoints?: { x: number; y: number; name?: string }[] }> = {
+      1: { checkpoints: [
+        { x: 512, y: 390, name: 'First Spike' },
+        { x: 1024, y: 390, name: 'Bounce Section' },
+        { x: 1536, y: 390, name: 'Platform Hops' },
+      ]},
+      2: { checkpoints: [
+        { x: 700, y: 390, name: 'Moving Start' },
+        { x: 1400, y: 390, name: 'Phase Intro' },
+        { x: 2100, y: 390, name: 'Ice Slide' },
+      ]},
+      3: { checkpoints: [
+        { x: 762, y: 390, name: 'Bounce Chain' },
+        { x: 1524, y: 390, name: 'Moving Platforms' },
+        { x: 2286, y: 390, name: 'Final Climb' },
+      ]},
+      4: { checkpoints: [
+        { x: 780, y: 390, name: 'Ice Intro' },
+        { x: 1560, y: 390, name: 'Ice Gaps' },
+        { x: 2340, y: 390, name: 'Crumble Test' },
+      ]},
+      5: { checkpoints: [
+        { x: 803, y: 390, name: 'Hot Start' },
+        { x: 1606, y: 390, name: 'Lava Fields' },
+        { x: 2409, y: 390, name: 'Fire Sprint' },
+      ]},
+      6: { checkpoints: [
+        { x: 936, y: 390, name: 'Crumble Chain' },
+        { x: 1872, y: 390, name: 'Deep Waters' },
+        { x: 2808, y: 390, name: 'Final Sprint' },
+      ]},
+      7: { checkpoints: [
+        { x: 984, y: 390, name: 'Phase Gauntlet' },
+        { x: 1968, y: 390, name: 'Moving Madness' },
+        { x: 2952, y: 390, name: 'Final Challenge' },
+      ]},
+      8: { checkpoints: [
+        { x: 888, y: 390, name: 'Bounce Climb' },
+        { x: 1776, y: 340, name: 'Temple Mid' },
+        { x: 2664, y: 320, name: 'Temple Peak' },
+      ]},
+      9: { checkpoints: [
+        { x: 984, y: 390, name: 'First Escape' },
+        { x: 1968, y: 390, name: 'Halfway Point' },
+        { x: 2952, y: 390, name: 'Final Sprint' },
+      ]},
+    };
+
+    return levelConfigs[levelId]?.checkpoints || [];
+  }
+
   private renderSettings(): void {
     this.renderOverlay();
 
@@ -2445,51 +3092,42 @@ export class Game {
     this.ctx.fillText('Colorblind Mode', leftColX, 335);
     this.renderColorblindSelector(leftColX, 365);
 
-    // Haptic feedback toggle (mobile only indicator)
+    // Reduce flash effects
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Haptic Feedback', leftColX, 420);
-    this.renderToggle(leftColX, 445, this.save.isHapticFeedbackEnabled());
-    this.ctx.font = '10px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.fillText('(mobile only)', leftColX, 485);
+    this.ctx.fillText('Reduce Flash', leftColX, 410);
+    this.renderToggle(leftColX, 435, this.save.isReduceFlashEnabled());
 
-    // === DATA SECTION ===
+    // High contrast mode
+    this.ctx.fillText('High Contrast', leftColX, 480);
+    this.renderToggle(leftColX, 505, this.save.isHighContrastEnabled());
+
+    // === GAMEPLAY SECTION ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffaa00';
-    this.ctx.fillText('DATA', rightColX, 305);
+    this.ctx.fillText('GAMEPLAY', rightColX, 305);
 
-    // Storage usage
-    const storage = this.save.getStorageUsage();
+    // Show ghost toggle
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Storage Used', rightColX, 335);
+    this.ctx.fillText('Show Ghost', rightColX, 335);
+    this.renderToggle(rightColX, 360, this.save.isShowGhostEnabled());
 
-    // Storage bar
-    const barWidth = 150;
-    const barHeight = 12;
-    const barX = rightColX - barWidth / 2;
-    const barY = 350;
-
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-    this.ctx.fillRect(barX, barY, barWidth, barHeight);
-
-    const usageColor = storage.percentage > 80 ? '#ff4444' : storage.percentage > 50 ? '#ffaa00' : '#00ffaa';
-    this.ctx.fillStyle = usageColor;
-    this.ctx.fillRect(barX, barY, barWidth * (storage.percentage / 100), barHeight);
-
-    this.ctx.font = '11px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.fillText(`${this.save.formatBytes(storage.used)} / ${this.save.formatBytes(storage.available)}`, rightColX, 380);
+    // Haptic feedback toggle
+    this.ctx.fillText('Haptic Feedback', rightColX, 405);
+    this.renderToggle(rightColX, 430, this.save.isHapticFeedbackEnabled());
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    this.ctx.fillText('(mobile only)', rightColX, 465);
 
     // Export/Import buttons
     this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    this.renderSettingsButton('Export Data', rightColX - 55, 410, '#00ffaa');
-    this.renderSettingsButton('Import Data', rightColX + 55, 410, '#00aaff');
+    this.renderSettingsButton('Export Data', rightColX - 55, 495, '#00ffaa');
+    this.renderSettingsButton('Import Data', rightColX + 55, 495, '#00aaff');
 
     // Reset button
     this.ctx.fillStyle = '#ff4444';
-    this.renderSettingsButton('Reset All', rightColX, 460, '#ff4444');
+    this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
 
     this.ctx.restore();
   }
