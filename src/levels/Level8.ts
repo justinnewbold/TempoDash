@@ -10,7 +10,7 @@ import { GAME_HEIGHT } from '../constants';
 
 const GROUND_Y = GAME_HEIGHT - 40;
 const GROUND_HEIGHT = 40;
-const BEAT = 222; // pixels per beat at 142 BPM (1.5x for longer levels)
+const BEAT = 444; // pixels per beat at 142 BPM (2x length)
 
 const level8Config: LevelConfig = {
   id: 8,

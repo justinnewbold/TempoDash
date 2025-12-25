@@ -102,10 +102,10 @@ export class Game {
   // High-DPI support
   private dpr = 1;
 
-  // Speed increase system - each jump increases speed by 0.25%
+  // Speed increase system - each jump increases speed by 1%
   private speedMultiplier = 1.0;
   private jumpCount = 0;
-  private static readonly SPEED_INCREASE_PER_JUMP = 0.0025; // 0.25%
+  private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
 
   // Orientation and screen sizing
   private isPortrait = false;
