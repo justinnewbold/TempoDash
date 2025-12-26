@@ -294,16 +294,18 @@ export class LevelEditor {
         // Calculate drag offset
         if (element.type === 'platform') {
           const p = this.level.platforms[element.index];
-          this.dragOffset = { x: worldX - p.x, y: worldY - p.y };
+          if (p) {
+            this.dragOffset = { x: worldX - p.x, y: worldY - p.y };
 
-          // Check resize handle
-          const handleSize = 15;
-          if (worldX >= p.x + p.width - handleSize && worldY >= p.y + p.height - handleSize) {
-            this.resizeHandle = 'se';
+            // Check resize handle
+            const handleSize = 15;
+            if (worldX >= p.x + p.width - handleSize && worldY >= p.y + p.height - handleSize) {
+              this.resizeHandle = 'se';
+            }
           }
         } else if (element.type === 'coin') {
           const c = this.level.coins[element.index];
-          this.dragOffset = { x: worldX - c.x, y: worldY - c.y };
+          if (c) this.dragOffset = { x: worldX - c.x, y: worldY - c.y };
         } else if (element.type === 'playerStart') {
           this.dragOffset = { x: worldX - this.level.playerStart.x, y: worldY - this.level.playerStart.y };
         } else if (element.type === 'goal' && this.level.goal) {
@@ -480,6 +482,7 @@ export class LevelEditor {
     let dragWidth = 0, dragHeight = 0;
     if (draggedElement.type === 'platform') {
       const p = this.level.platforms[draggedElement.index];
+      if (!p) return { x: targetX, y: targetY };
       dragWidth = p.width;
       dragHeight = p.height;
     } else if (draggedElement.type === 'coin') {
@@ -629,15 +632,19 @@ export class LevelEditor {
     let inspectorElement: InspectorElement;
 
     if (element.type === 'platform') {
+      const platform = this.level.platforms[element.index];
+      if (!platform) return;
       inspectorElement = {
         type: 'platform',
-        data: this.level.platforms[element.index],
+        data: platform,
         index: element.index,
       };
     } else if (element.type === 'coin') {
+      const coin = this.level.coins[element.index];
+      if (!coin) return;
       inspectorElement = {
         type: 'coin',
-        data: this.level.coins[element.index],
+        data: coin,
         index: element.index,
       };
     } else if (element.type === 'playerStart') {
@@ -833,6 +840,7 @@ export class LevelEditor {
     for (const el of elementsToClone) {
       if (el.type === 'platform') {
         const original = this.level.platforms[el.index];
+        if (!original) continue;
         const clone: PlatformConfig = {
           ...original,
           x: original.x + offset,
@@ -842,6 +850,7 @@ export class LevelEditor {
         newElements.push({ type: 'platform', index: this.level.platforms.length - 1 });
       } else if (el.type === 'coin') {
         const original = this.level.coins[el.index];
+        if (!original) continue;
         const clone: CoinConfig = {
           x: original.x + offset,
           y: original.y + offset,
@@ -870,10 +879,12 @@ export class LevelEditor {
     for (const el of elements) {
       if (el.type === 'platform') {
         const p = this.level.platforms[el.index];
+        if (!p) continue;
         p.x += dx;
         p.y += dy;
       } else if (el.type === 'coin') {
         const c = this.level.coins[el.index];
+        if (!c) continue;
         c.x += dx;
         c.y += dy;
       } else if (el.type === 'playerStart') {
@@ -896,9 +907,11 @@ export class LevelEditor {
 
     for (const el of elements) {
       if (el.type === 'platform') {
-        this.clipboard.push({ ...this.level.platforms[el.index] });
+        const platform = this.level.platforms[el.index];
+        if (platform) this.clipboard.push({ ...platform });
       } else if (el.type === 'coin') {
-        this.clipboard.push({ ...this.level.coins[el.index] });
+        const coin = this.level.coins[el.index];
+        if (coin) this.clipboard.push({ ...coin });
       }
     }
   }
@@ -1486,10 +1499,14 @@ export class LevelEditor {
     if (!this.state.selectedElement) return null;
 
     switch (this.state.selectedElement.type) {
-      case 'platform':
-        return { type: 'platform', data: this.level.platforms[this.state.selectedElement.index] };
-      case 'coin':
-        return { type: 'coin', data: this.level.coins[this.state.selectedElement.index] };
+      case 'platform': {
+        const platform = this.level.platforms[this.state.selectedElement.index];
+        return platform ? { type: 'platform', data: platform } : null;
+      }
+      case 'coin': {
+        const coin = this.level.coins[this.state.selectedElement.index];
+        return coin ? { type: 'coin', data: coin } : null;
+      }
       case 'playerStart':
         return { type: 'playerStart', data: this.level.playerStart };
       case 'goal':
@@ -1502,6 +1519,7 @@ export class LevelEditor {
   updateSelectedPlatformType(type: PlatformType): void {
     if (this.state.selectedElement?.type === 'platform') {
       const platform = this.level.platforms[this.state.selectedElement.index];
+      if (!platform) return;
       platform.type = type;
 
       // Add/remove move pattern
@@ -2172,6 +2190,7 @@ export class LevelEditor {
     switch (this.state.selectedElement.type) {
       case 'platform': {
         const p = this.level.platforms[this.state.selectedElement.index];
+        if (!p) break;
         const screenX = p.x - this.state.cameraX;
         ctx.strokeRect(screenX - 2, p.y - 2, p.width + 4, p.height + 4);
 
@@ -2182,6 +2201,7 @@ export class LevelEditor {
       }
       case 'coin': {
         const c = this.level.coins[this.state.selectedElement.index];
+        if (!c) break;
         const screenX = c.x - this.state.cameraX;
         ctx.beginPath();
         ctx.arc(screenX, c.y, 16, 0, Math.PI * 2);

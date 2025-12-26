@@ -450,10 +450,17 @@ export class PropertyInspector {
 
     if (!this.element) return true;
 
-    // Close button
-    const closeX = x;
-    const closeY = y - panelY;
-    if (closeY < this.headerHeight && closeX > x - 40) {
+    // Close button (positioned at right side of header)
+    const canvasWidth = 400; // Approximate panel width
+    const closeBtnX = canvasWidth - this.padding - 16;
+    const closeBtnY = 24;
+    const closeBtnRadius = 16;
+    const relY = y - panelY;
+
+    // Check if click is within close button circle
+    const dx = x - closeBtnX;
+    const dy = relY - closeBtnY;
+    if (dx * dx + dy * dy <= closeBtnRadius * closeBtnRadius) {
       if (isEnd) this.hide();
       return true;
     }
@@ -461,7 +468,7 @@ export class PropertyInspector {
     // Handle type selector buttons (platforms)
     if (this.element.type === 'platform') {
       const typeY = this.headerHeight + 20;
-      if (closeY >= typeY && closeY <= typeY + 40) {
+      if (relY >= typeY && relY <= typeY + 40) {
         if (isEnd) {
           const width = 300; // Approximate
           const buttonWidth = width / PLATFORM_TYPES.length;
@@ -487,6 +494,8 @@ export class PropertyInspector {
 
         // Only start hold-to-repeat for +/- buttons (not for value tap)
         if (result.delta !== 0) {
+          // Cancel any existing hold timers first to prevent race conditions
+          this.cancelHold();
           this.holdButton = result;
 
           // Start hold-to-repeat
@@ -569,7 +578,7 @@ export class PropertyInspector {
   private promptForValue(property: string): void {
     if (!this.element) return;
 
-    const currentValue = this.getProperty(property) as number || 0;
+    const currentValue = (this.getProperty(property) as number) ?? 0;
     const propertyLabel = property.charAt(0).toUpperCase() + property.slice(1);
 
     const input = window.prompt(`Enter new value for ${propertyLabel}:`, Math.round(currentValue).toString());
@@ -595,7 +604,7 @@ export class PropertyInspector {
       return;
     }
 
-    const currentValue = this.getProperty(property) as number || 0;
+    const currentValue = (this.getProperty(property) as number) ?? 0;
     const newValue = Math.max(0, currentValue + delta);
 
     this.onChange({

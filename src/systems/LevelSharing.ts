@@ -191,9 +191,11 @@ export class LevelSharingManager {
    */
   private static simpleDecode(str: string): string {
     let result = '';
-    for (let i = 0; i < str.length; i += 2) {
+    for (let i = 0; i + 1 < str.length; i += 2) {
       const high = ENCODE_CHARS.indexOf(str[i]);
       const low = ENCODE_CHARS.indexOf(str[i + 1]);
+      // Validate characters are in the encoding alphabet
+      if (high === -1 || low === -1) break;
       result += String.fromCharCode((high << 6) | low);
     }
     return result;
