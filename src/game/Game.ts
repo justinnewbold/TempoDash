@@ -4780,14 +4780,32 @@ export class Game {
       return;
     }
 
-    // Arrow keys for camera pan
-    if (e.key === 'ArrowRight') {
-      this.editor.moveCamera(50);
-    } else if (e.key === 'ArrowLeft') {
-      this.editor.moveCamera(-50);
+    // Prevent default browser behaviors for editor shortcuts
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    if (ctrlOrMeta && ['a', 'd', 'z', 'y'].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+    }
+    if (e.key.startsWith('Arrow') || e.key === 'Backspace') {
+      e.preventDefault();
     }
 
-    this.editor.handleKeyDown(e.key);
+    // Pass keyboard event to editor with modifier keys
+    // Arrow keys: move selection if something is selected, otherwise pan camera
+    const hasSelection = this.editor.getSelectedElement() !== null;
+
+    if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft' ||
+         e.key === 'ArrowUp' || e.key === 'ArrowDown') && !hasSelection) {
+      // No selection - pan camera
+      if (e.key === 'ArrowRight') {
+        this.editor.moveCamera(50);
+      } else if (e.key === 'ArrowLeft') {
+        this.editor.moveCamera(-50);
+      }
+      // Vertical arrows don't pan, just ignore
+    } else {
+      // Pass to editor (handles selection movement, shortcuts, etc.)
+      this.editor.handleKeyDown(e.key, ctrlOrMeta, e.shiftKey);
+    }
   }
 
   private testLevel(): void {

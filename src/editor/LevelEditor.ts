@@ -77,6 +77,9 @@ export class LevelEditor {
   private boxSelectStart: Vector2 | null = null;
   private boxSelectEnd: Vector2 | null = null;
 
+  // Help overlay state
+  private showHelpOverlay = false;
+
   // Zoom state
   private zoom = 1;
   private minZoom = 0.25;
@@ -638,40 +641,6 @@ export class LevelEditor {
     }
   }
 
-  private duplicateSelected(): void {
-    if (!this.state.selectedElement) return;
-
-    if (this.state.selectedElement.type === 'platform') {
-      const original = this.level.platforms[this.state.selectedElement.index];
-      const duplicate: PlatformConfig = { ...original, x: original.x + 20, y: original.y + 20 };
-      if (original.movePattern) {
-        duplicate.movePattern = { ...original.movePattern };
-      }
-      this.level.platforms.push(duplicate);
-      this.state.selectedElement = { type: 'platform', index: this.level.platforms.length - 1 };
-    } else if (this.state.selectedElement.type === 'coin') {
-      const original = this.level.coins[this.state.selectedElement.index];
-      this.level.coins.push({ x: original.x + 20, y: original.y + 20 });
-      this.state.selectedElement = { type: 'coin', index: this.level.coins.length - 1 };
-    }
-
-    this.saveUndoState();
-  }
-
-  private copySelected(): void {
-    if (!this.state.selectedElement) return;
-
-    this.clipboard = [];
-
-    if (this.state.selectedElement.type === 'platform') {
-      const original = this.level.platforms[this.state.selectedElement.index];
-      this.clipboard.push({ ...original });
-    } else if (this.state.selectedElement.type === 'coin') {
-      const original = this.level.coins[this.state.selectedElement.index];
-      this.clipboard.push({ ...original });
-    }
-  }
-
   private paste(): void {
     if (this.clipboard.length === 0) return;
 
@@ -698,6 +667,32 @@ export class LevelEditor {
   }
 
   deleteSelected(): void {
+    // Handle multi-select deletion
+    if (this.selectedElements.length > 1) {
+      // Sort by index descending to avoid index shifting issues
+      const platforms = this.selectedElements
+        .filter(e => e.type === 'platform')
+        .sort((a, b) => b.index - a.index);
+      const coins = this.selectedElements
+        .filter(e => e.type === 'coin')
+        .sort((a, b) => b.index - a.index);
+
+      // Delete platforms (from end to start)
+      for (const el of platforms) {
+        this.level.platforms.splice(el.index, 1);
+      }
+      // Delete coins (from end to start)
+      for (const el of coins) {
+        this.level.coins.splice(el.index, 1);
+      }
+
+      this.selectedElements = [];
+      this.state.selectedElement = null;
+      this.saveUndoState();
+      return;
+    }
+
+    // Single element deletion
     if (!this.state.selectedElement) return;
 
     if (this.state.selectedElement.type === 'platform') {
@@ -707,7 +702,146 @@ export class LevelEditor {
     }
 
     this.state.selectedElement = null;
+    this.selectedElements = [];
     this.saveUndoState();
+  }
+
+  // Duplicate selected elements with offset
+  duplicateSelected(): void {
+    if (this.selectedElements.length === 0 && !this.state.selectedElement) return;
+
+    const elementsToClone = this.selectedElements.length > 0
+      ? this.selectedElements
+      : (this.state.selectedElement ? [this.state.selectedElement] : []);
+
+    const offset = 20; // Offset for duplicated elements
+    const newElements: SelectedElement[] = [];
+
+    for (const el of elementsToClone) {
+      if (el.type === 'platform') {
+        const original = this.level.platforms[el.index];
+        const clone: PlatformConfig = {
+          ...original,
+          x: original.x + offset,
+          y: original.y + offset,
+        };
+        this.level.platforms.push(clone);
+        newElements.push({ type: 'platform', index: this.level.platforms.length - 1 });
+      } else if (el.type === 'coin') {
+        const original = this.level.coins[el.index];
+        const clone: CoinConfig = {
+          x: original.x + offset,
+          y: original.y + offset,
+        };
+        this.level.coins.push(clone);
+        newElements.push({ type: 'coin', index: this.level.coins.length - 1 });
+      }
+    }
+
+    // Select the new duplicates
+    this.selectedElements = newElements;
+    if (newElements.length > 0) {
+      this.state.selectedElement = newElements[0];
+    }
+    this.saveUndoState();
+  }
+
+  // Move selected elements by offset (for arrow key movement)
+  moveSelectedByOffset(dx: number, dy: number): void {
+    if (this.selectedElements.length === 0 && !this.state.selectedElement) return;
+
+    const elements = this.selectedElements.length > 0
+      ? this.selectedElements
+      : (this.state.selectedElement ? [this.state.selectedElement] : []);
+
+    for (const el of elements) {
+      if (el.type === 'platform') {
+        const p = this.level.platforms[el.index];
+        p.x += dx;
+        p.y += dy;
+      } else if (el.type === 'coin') {
+        const c = this.level.coins[el.index];
+        c.x += dx;
+        c.y += dy;
+      } else if (el.type === 'playerStart') {
+        this.level.playerStart.x += dx;
+        this.level.playerStart.y += dy;
+      } else if (el.type === 'goal') {
+        this.level.goal.x += dx;
+        this.level.goal.y += dy;
+      }
+    }
+    this.saveUndoState();
+  }
+
+  // Copy selected elements to clipboard
+  copySelected(): void {
+    this.clipboard = [];
+    const elements = this.selectedElements.length > 0
+      ? this.selectedElements
+      : (this.state.selectedElement ? [this.state.selectedElement] : []);
+
+    for (const el of elements) {
+      if (el.type === 'platform') {
+        this.clipboard.push({ ...this.level.platforms[el.index] });
+      } else if (el.type === 'coin') {
+        this.clipboard.push({ ...this.level.coins[el.index] });
+      }
+    }
+  }
+
+  // Paste from clipboard
+  pasteClipboard(): void {
+    if (this.clipboard.length === 0) return;
+
+    const offset = 20;
+    const newElements: SelectedElement[] = [];
+
+    for (const item of this.clipboard) {
+      if ('width' in item) {
+        // It's a platform
+        const clone: PlatformConfig = {
+          ...(item as PlatformConfig),
+          x: item.x + offset,
+          y: item.y + offset,
+        };
+        this.level.platforms.push(clone);
+        newElements.push({ type: 'platform', index: this.level.platforms.length - 1 });
+      } else {
+        // It's a coin
+        const clone: CoinConfig = {
+          x: item.x + offset,
+          y: item.y + offset,
+        };
+        this.level.coins.push(clone);
+        newElements.push({ type: 'coin', index: this.level.coins.length - 1 });
+      }
+    }
+
+    this.selectedElements = newElements;
+    if (newElements.length > 0) {
+      this.state.selectedElement = newElements[0];
+    }
+    this.saveUndoState();
+  }
+
+  // Select all elements
+  selectAll(): void {
+    this.selectedElements = [];
+    for (let i = 0; i < this.level.platforms.length; i++) {
+      this.selectedElements.push({ type: 'platform', index: i });
+    }
+    for (let i = 0; i < this.level.coins.length; i++) {
+      this.selectedElements.push({ type: 'coin', index: i });
+    }
+    if (this.selectedElements.length > 0) {
+      this.state.selectedElement = this.selectedElements[0];
+    }
+  }
+
+  // Toggle help overlay
+  toggleHelpOverlay(): void {
+    this.showHelpOverlay = !this.showHelpOverlay;
   }
 
   private moveSelectedToFront(): void {
@@ -739,15 +873,22 @@ export class LevelEditor {
   // Mobile bottom toolbar tap handling
   private handleBottomToolbarTap(x: number, _y: number): void {
     const canvasWidth = this.canvas?.width || GAME_WIDTH;
-    const buttonWidth = canvasWidth / 6;
+    const buttonCount = 7; // select, platform, coin, delete, pan, test, help
+    const buttonWidth = canvasWidth / buttonCount;
 
+    const buttonIndex = Math.floor(x / buttonWidth);
     const tools: EditorTool[] = ['select', 'platform', 'coin', 'delete', 'pan'];
-    const toolIndex = Math.floor(x / buttonWidth);
 
-    if (toolIndex < tools.length) {
-      this.setTool(tools[toolIndex]);
-    } else {
-      // Menu button - could show more options
+    if (buttonIndex < tools.length) {
+      this.setTool(tools[buttonIndex]);
+    } else if (buttonIndex === 5) {
+      // Test button
+      if (this.onPlayCallback) {
+        this.onPlayCallback();
+      }
+    } else if (buttonIndex === 6) {
+      // Help button
+      this.toggleHelpOverlay();
     }
   }
 
@@ -1251,17 +1392,66 @@ export class LevelEditor {
   }
 
   // Keyboard handling
-  handleKeyDown(key: string): void {
+  handleKeyDown(key: string, ctrlKey = false, shiftKey = false): void {
+    // Modifier key shortcuts
+    if (ctrlKey) {
+      switch (key.toLowerCase()) {
+        case 'z':
+          if (shiftKey) {
+            this.redo(); // Ctrl+Shift+Z = redo
+          } else {
+            this.undo(); // Ctrl+Z = undo
+          }
+          return;
+        case 'y':
+          this.redo(); // Ctrl+Y = redo
+          return;
+        case 'd':
+          this.duplicateSelected(); // Ctrl+D = duplicate
+          return;
+        case 'c':
+          this.copySelected(); // Ctrl+C = copy
+          return;
+        case 'v':
+          this.pasteClipboard(); // Ctrl+V = paste
+          return;
+        case 'a':
+          this.selectAll(); // Ctrl+A = select all
+          return;
+      }
+    }
+
+    // Get grid step (shift = fine movement)
+    const step = shiftKey ? 1 : this.state.gridSize;
+
     switch (key) {
       case 'Delete':
       case 'Backspace':
         this.deleteSelected();
         break;
-      case 'z':
-        this.undo();
+      case 'ArrowUp':
+        this.moveSelectedByOffset(0, -step);
         break;
-      case 'y':
-        this.redo();
+      case 'ArrowDown':
+        this.moveSelectedByOffset(0, step);
+        break;
+      case 'ArrowLeft':
+        this.moveSelectedByOffset(-step, 0);
+        break;
+      case 'ArrowRight':
+        this.moveSelectedByOffset(step, 0);
+        break;
+      case 'Escape':
+        this.state.selectedElement = null;
+        this.selectedElements = [];
+        this.showHelpOverlay = false;
+        this.propertyInspector.hide();
+        this.contextMenu.hide();
+        break;
+      case 'h':
+      case 'H':
+      case '?':
+        this.toggleHelpOverlay();
         break;
       case 'g':
         this.toggleGrid();
@@ -1282,6 +1472,11 @@ export class LevelEditor {
         this.setTool('pan');
         break;
     }
+  }
+
+  // Check if help overlay is visible
+  isHelpOverlayVisible(): boolean {
+    return this.showHelpOverlay;
   }
 
   // Update editor and UI components
@@ -1368,6 +1563,11 @@ export class LevelEditor {
 
     // Zoom indicator
     this.renderZoomIndicator(ctx, canvasHeight);
+
+    // Help overlay (on very top)
+    if (this.showHelpOverlay) {
+      this.renderHelpOverlay(ctx, canvasWidth, canvasHeight);
+    }
   }
 
   // Render zoom indicator
@@ -1384,6 +1584,123 @@ export class LevelEditor {
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`${zoomPercent}%`, 40, canvasHeight - this.bottomToolbarHeight - 22);
+    ctx.textAlign = 'left';
+  }
+
+  // Render keyboard shortcuts help overlay
+  private renderHelpOverlay(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
+    // Dim background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Help panel
+    const panelWidth = Math.min(500, canvasWidth - 40);
+    const panelHeight = Math.min(500, canvasHeight - 40);
+    const panelX = (canvasWidth - panelWidth) / 2;
+    const panelY = (canvasHeight - panelHeight) / 2;
+
+    ctx.fillStyle = '#2a2a3e';
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 12);
+    ctx.fill();
+
+    ctx.strokeStyle = '#4a9eff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Keyboard Shortcuts', canvasWidth / 2, panelY + 35);
+
+    // Close hint
+    ctx.fillStyle = '#888888';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Press H, ?, or Escape to close', canvasWidth / 2, panelY + 55);
+
+    // Shortcuts list
+    const shortcuts = [
+      { key: '1-5', action: 'Switch tools (Select, Platform, Coin, Delete, Pan)' },
+      { key: 'G', action: 'Toggle grid' },
+      { key: 'H or ?', action: 'Toggle this help overlay' },
+      { key: '', action: '' }, // Spacer
+      { key: 'Ctrl+Z', action: 'Undo' },
+      { key: 'Ctrl+Y / Ctrl+Shift+Z', action: 'Redo' },
+      { key: 'Ctrl+C', action: 'Copy selected' },
+      { key: 'Ctrl+V', action: 'Paste' },
+      { key: 'Ctrl+D', action: 'Duplicate selected' },
+      { key: 'Ctrl+A', action: 'Select all' },
+      { key: '', action: '' }, // Spacer
+      { key: 'Arrow Keys', action: 'Move selected (grid snap)' },
+      { key: 'Shift + Arrows', action: 'Move selected (1px fine)' },
+      { key: 'Delete / Backspace', action: 'Delete selected' },
+      { key: 'Escape', action: 'Deselect all / Close panels' },
+    ];
+
+    let y = panelY + 85;
+    ctx.textAlign = 'left';
+
+    for (const { key, action } of shortcuts) {
+      if (key === '') {
+        y += 10; // Spacer
+        continue;
+      }
+
+      // Key badge
+      ctx.fillStyle = '#3a3a4e';
+      ctx.beginPath();
+      const keyWidth = Math.max(80, ctx.measureText(key).width + 20);
+      ctx.roundRect(panelX + 20, y - 14, keyWidth, 22, 4);
+      ctx.fill();
+
+      ctx.fillStyle = '#4a9eff';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(key, panelX + 30, y);
+
+      // Action text
+      ctx.fillStyle = '#cccccc';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(action, panelX + 30 + keyWidth + 15, y);
+
+      y += 28;
+    }
+
+    // Touch gestures section (for mobile)
+    if (this.isMobileLayout) {
+      y += 10;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('Touch Gestures', panelX + 20, y);
+      y += 25;
+
+      const gestures = [
+        { gesture: 'Tap', action: 'Select or place element' },
+        { gesture: 'Double Tap', action: 'Open property editor' },
+        { gesture: 'Long Press', action: 'Open context menu' },
+        { gesture: 'Drag', action: 'Move element or box select' },
+        { gesture: 'Pinch', action: 'Zoom in/out' },
+        { gesture: 'Two-finger Pan', action: 'Scroll the level' },
+      ];
+
+      for (const { gesture, action } of gestures) {
+        ctx.fillStyle = '#3a3a4e';
+        ctx.beginPath();
+        ctx.roundRect(panelX + 20, y - 14, 100, 22, 4);
+        ctx.fill();
+
+        ctx.fillStyle = '#66ff88';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(gesture, panelX + 30, y);
+
+        ctx.fillStyle = '#cccccc';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(action, panelX + 140, y);
+
+        y += 28;
+      }
+    }
+
     ctx.textAlign = 'left';
   }
 
@@ -1471,48 +1788,49 @@ export class LevelEditor {
     ctx.lineTo(canvasWidth, y);
     ctx.stroke();
 
-    // Tool buttons
-    const tools: { tool: EditorTool; icon: string; label: string }[] = [
-      { tool: 'select', icon: '👆', label: 'Select' },
-      { tool: 'platform', icon: '▬', label: 'Platform' },
-      { tool: 'coin', icon: '●', label: 'Coin' },
-      { tool: 'delete', icon: '🗑', label: 'Delete' },
-      { tool: 'pan', icon: '✋', label: 'Pan' },
+    // Tool and action buttons
+    const buttons: { id: string; icon: string; label: string; color?: string }[] = [
+      { id: 'select', icon: '👆', label: 'Select' },
+      { id: 'platform', icon: '▬', label: 'Platform' },
+      { id: 'coin', icon: '●', label: 'Coin' },
+      { id: 'delete', icon: '🗑', label: 'Delete' },
+      { id: 'pan', icon: '✋', label: 'Pan' },
+      { id: 'test', icon: '▶', label: 'Test', color: '#2d7d46' },
+      { id: 'help', icon: '?', label: 'Help', color: '#6a5acd' },
     ];
 
-    const buttonWidth = canvasWidth / (tools.length + 1);
+    const buttonWidth = canvasWidth / buttons.length;
     let bx = 0;
 
-    for (const { tool, icon, label } of tools) {
-      const isSelected = this.state.selectedTool === tool;
+    for (const { id, icon, label, color } of buttons) {
+      const isTool = ['select', 'platform', 'coin', 'delete', 'pan'].includes(id);
+      const isSelected = isTool && this.state.selectedTool === id;
 
       // Button background
       if (isSelected) {
         ctx.fillStyle = '#4a9eff';
         ctx.beginPath();
-        ctx.roundRect(bx + 4, y + 8, buttonWidth - 8, this.bottomToolbarHeight - 16, 8);
+        ctx.roundRect(bx + 3, y + 8, buttonWidth - 6, this.bottomToolbarHeight - 16, 8);
+        ctx.fill();
+      } else if (color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(bx + 3, y + 8, buttonWidth - 6, this.bottomToolbarHeight - 16, 8);
         ctx.fill();
       }
 
       // Icon
-      ctx.font = '20px sans-serif';
+      ctx.font = id === 'help' ? 'bold 18px sans-serif' : '18px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillStyle = isSelected ? '#ffffff' : '#aaaaaa';
+      ctx.fillStyle = (isSelected || color) ? '#ffffff' : '#aaaaaa';
       ctx.fillText(icon, bx + buttonWidth / 2, y + 32);
 
       // Label
-      ctx.font = '9px sans-serif';
-      ctx.fillText(label, bx + buttonWidth / 2, y + 52);
+      ctx.font = '8px sans-serif';
+      ctx.fillText(label, bx + buttonWidth / 2, y + 50);
 
       bx += buttonWidth;
     }
-
-    // Menu button (hamburger)
-    ctx.fillStyle = '#aaaaaa';
-    ctx.font = '20px sans-serif';
-    ctx.fillText('☰', bx + buttonWidth / 2, y + 32);
-    ctx.font = '9px sans-serif';
-    ctx.fillText('Menu', bx + buttonWidth / 2, y + 52);
 
     // Platform type indicator (when platform tool selected)
     if (this.state.selectedTool === 'platform') {
@@ -1780,14 +2098,17 @@ export class LevelEditor {
     // Play and Save buttons (center area)
     buttonX += 20; // Add gap after tools
 
-    // Play button
+    // Play/Test button with shortcut hint
     ctx.fillStyle = '#2d7d46';
-    ctx.fillRect(buttonX, 10, 60, 40);
+    ctx.fillRect(buttonX, 10, 70, 40);
     ctx.fillStyle = '#66ff88';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('PLAY', buttonX + 12, 35);
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('TEST', buttonX + 18, 26);
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#44aa66';
+    ctx.fillText('[F5]', buttonX + 22, 42);
 
-    buttonX += 70;
+    buttonX += 78;
 
     // Save button
     ctx.fillStyle = '#4a6fa5';
@@ -1796,21 +2117,37 @@ export class LevelEditor {
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText('SAVE', buttonX + 12, 35);
 
+    // Help button (on far right)
+    buttonX = GAME_WIDTH + this.sidebarWidth - 250;
+
+    ctx.fillStyle = '#6a5acd';
+    ctx.fillRect(buttonX, 10, 40, 40);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('?', buttonX + 15, 36);
+
     // Undo/Redo buttons
-    buttonX = GAME_WIDTH + this.sidebarWidth - 170;
+    buttonX += 50;
 
     ctx.fillStyle = this.canUndo() ? '#3a3a4e' : '#2a2a3e';
-    ctx.fillRect(buttonX, 10, 70, 40);
+    ctx.fillRect(buttonX, 10, 90, 40);
     ctx.fillStyle = this.canUndo() ? '#aaaaaa' : '#555555';
-    ctx.font = '11px sans-serif';
-    ctx.fillText('Undo [Z]', buttonX + 8, 35);
+    ctx.font = '10px sans-serif';
+    ctx.fillText('Undo', buttonX + 8, 26);
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#666666';
+    ctx.fillText('[Ctrl+Z]', buttonX + 8, 40);
 
-    buttonX += 80;
+    buttonX += 98;
 
     ctx.fillStyle = this.canRedo() ? '#3a3a4e' : '#2a2a3e';
-    ctx.fillRect(buttonX, 10, 70, 40);
+    ctx.fillRect(buttonX, 10, 90, 40);
     ctx.fillStyle = this.canRedo() ? '#aaaaaa' : '#555555';
-    ctx.fillText('Redo [Y]', buttonX + 8, 35);
+    ctx.font = '10px sans-serif';
+    ctx.fillText('Redo', buttonX + 8, 26);
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#666666';
+    ctx.fillText('[Ctrl+Y]', buttonX + 8, 40);
   }
 
   private renderSidebar(ctx: CanvasRenderingContext2D): void {
@@ -1910,9 +2247,9 @@ export class LevelEditor {
       buttonX += 80;
     }
 
-    // Play button (after tools + 20px gap)
+    // Test button (after tools + 20px gap)
     buttonX += 20;
-    if (x >= buttonX && x <= buttonX + 60 && y >= 10 && y <= 50) {
+    if (x >= buttonX && x <= buttonX + 70 && y >= 10 && y <= 50) {
       if (this.onPlayCallback) {
         this.onPlayCallback();
       }
@@ -1920,7 +2257,7 @@ export class LevelEditor {
     }
 
     // Save button
-    buttonX += 70;
+    buttonX += 78;
     if (x >= buttonX && x <= buttonX + 60 && y >= 10 && y <= 50) {
       if (this.onSaveCallback) {
         this.onSaveCallback();
@@ -1928,16 +2265,23 @@ export class LevelEditor {
       return;
     }
 
+    // Help button
+    buttonX = GAME_WIDTH + this.sidebarWidth - 250;
+    if (x >= buttonX && x <= buttonX + 40 && y >= 10 && y <= 50) {
+      this.toggleHelpOverlay();
+      return;
+    }
+
     // Undo button
-    buttonX = GAME_WIDTH + this.sidebarWidth - 170;
-    if (x >= buttonX && x <= buttonX + 70 && y >= 10 && y <= 50) {
+    buttonX += 50;
+    if (x >= buttonX && x <= buttonX + 90 && y >= 10 && y <= 50) {
       this.undo();
       return;
     }
 
     // Redo button
-    buttonX += 80;
-    if (x >= buttonX && x <= buttonX + 70 && y >= 10 && y <= 50) {
+    buttonX += 98;
+    if (x >= buttonX && x <= buttonX + 90 && y >= 10 && y <= 50) {
       this.redo();
       return;
     }
