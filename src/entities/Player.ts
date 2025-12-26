@@ -309,19 +309,21 @@ export class Player {
           break;
       }
 
-      // Ledge assist: if hitting side but upper 50% of player is above platform top,
-      // boost them up onto the platform instead of dying
+      // Edge bounce: if hitting side but at least 25% of player body is above platform edge,
+      // bounce them back and up to give a chance to recover with a well-timed jump
       if (collision === 'left') {
-        const playerMidpoint = this.y + this.height * 0.5;
+        const playerTop = this.y;
         const platformTop = bounds.y;
+        const overlapAbove = platformTop - playerTop; // How much of player is above platform
 
-        // If player's midpoint (50% of height) is above platform top, assist them up
-        if (playerMidpoint < platformTop) {
-          // Boost player up onto the platform
-          this.y = platformTop - this.height;
-          this.velocityY = 0;
-          this.isGrounded = true;
-          this.airJumpsRemaining = 2;
+        // If at least 25% of player height is above platform top, bounce back and up
+        if (overlapAbove >= this.height * 0.25) {
+          // Push back from the platform edge
+          this.x = bounds.x + bounds.width + 2;
+          // Give upward velocity - enough to potentially clear platform with a jump
+          // Use a fraction of jump force so player needs to time their jump
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
+          // Don't consume air jumps - give player a chance to recover
           continue;
         }
 
@@ -331,15 +333,15 @@ export class Player {
       }
 
       if (collision === 'right') {
-        // Apply same ledge assist logic to right side
-        const playerMidpoint = this.y + this.height * 0.5;
+        const playerTop = this.y;
         const platformTop = bounds.y;
+        const overlapAbove = platformTop - playerTop;
 
-        if (playerMidpoint < platformTop) {
-          this.y = platformTop - this.height;
-          this.velocityY = 0;
-          this.isGrounded = true;
-          this.airJumpsRemaining = 2;
+        if (overlapAbove >= this.height * 0.25) {
+          // Push back from the platform edge
+          this.x = bounds.x - this.width - 2;
+          // Give upward velocity for recovery
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
           continue;
         }
 
