@@ -433,53 +433,65 @@ export class Game {
   private handleMainMenuClick(x: number, y: number): void {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
-    const smallButtonWidth = 100;
+    const buttonHeight = 50;
+    const smallButtonWidth = 105;
+    const smallButtonHeight = 45;
+    const colOffset = 58;
+    const rowHeight = 55;
 
-    // Play button (y=260)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 235 && y <= 285) {
+    // Helper to check if click is within a button
+    const inButton = (bx: number, by: number, w: number, h: number) =>
+      x >= bx - w / 2 && x <= bx + w / 2 && y >= by - h / 2 && y <= by + h / 2;
+
+    // Play button (y=270)
+    if (inButton(centerX, 270, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
+      return;
     }
-    // Endless button (left side, y=315)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 295 && y <= 335) {
+
+    // Row 1 (y=325): Endless and Daily
+    let rowY = 325;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.startEndlessMode();
+      return;
     }
-    // Daily Challenges button (right side, y=315)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 295 && y <= 335) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'challenges';
+      return;
     }
-    // Editor button (left side, y=370)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 350 && y <= 390) {
+
+    // Row 2 (y=380): Editor and My Levels
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.openEditor();
+      return;
     }
-    // Custom Levels button (right side, y=370)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 350 && y <= 390) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'customLevels';
+      return;
     }
-    // Skins button (left side, y=425)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 405 && y <= 445) {
+
+    // Row 3 (y=435): Skins and Badges
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
+      return;
     }
-    // Achievements button (right side, y=425)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 405 && y <= 445) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'achievements';
+      return;
     }
-    // Settings button (y=480)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 455 && y <= 505) {
+
+    // Settings button (y=490)
+    rowY += rowHeight;
+    if (inButton(centerX, rowY, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'settings';
     }
@@ -2635,25 +2647,34 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 8 buttons)
-    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
+    // Buttons - uniform grid layout
+    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 270, true);
 
-    // Endless and Challenges side by side
-    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - 55, 315, '#00ffaa');
+    // Card grid with consistent spacing (58px from center for each column)
+    const colOffset = 58;
+    const rowHeight = 55;
+    let rowY = 325;
+
+    // Row 1: Endless and Daily Challenge
     const streakInfo = this.challengeManager.getStreakInfo();
     const streakText = streakInfo.current > 0 ? ` 🔥${streakInfo.current}` : '';
-    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + 55, 315, '#ff6600');
+    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - colOffset, rowY, '#00ffaa');
+    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + colOffset, rowY, '#ff6600');
 
-    // Editor and Custom Levels side by side
-    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 370, '#ff00ff');
-    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 370, '#00ff88');
+    // Row 2: Editor and My Levels
+    rowY += rowHeight;
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - colOffset, rowY, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + colOffset, rowY, '#00ff88');
 
-    // Skins and Achievements side by side
+    // Row 3: Skins and Badges
+    rowY += rowHeight;
     const achieveProgress = this.save.getAchievementProgress();
-    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 425, '#ffd700');
-    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 425, '#ff6600');
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - colOffset, rowY, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + colOffset, rowY, '#ff6600');
 
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 480, false);
+    // Settings button
+    rowY += rowHeight;
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, rowY, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -2678,25 +2699,22 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Button text
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = primary ? '#00ffff' : '#ffffff';
-    this.ctx.shadowBlur = primary ? 10 : 0;
-    this.ctx.shadowColor = '#00ffff';
-    this.ctx.fillText(text, x, y + 7);
+    // Button text - responsive sizing
+    const color = primary ? '#00ffff' : '#ffffff';
+    this.renderResponsiveText(text, x, y + 7, width - 20, 20, color, primary ? 10 : 0);
   }
 
   private renderSmallMenuButton(text: string, x: number, y: number, color: string): void {
-    const width = 100;
-    const height = 40;
+    // Uniform card size for all small buttons
+    const width = 105;
+    const height = 45;
 
-    this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba').replace('#', 'rgba(');
-    // Handle hex colors
+    // Parse color for background
     if (color.startsWith('#')) {
       const r = parseInt(color.slice(1, 3), 16);
       const g = parseInt(color.slice(3, 5), 16);
       const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 2;
@@ -2706,11 +2724,40 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    // Responsive text that fits in the card
+    this.renderResponsiveText(text, x, y + 5, width - 16, 13, color, 5);
+  }
+
+  // Render text that scales to fit within maxWidth
+  private renderResponsiveText(
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    baseFontSize: number,
+    color: string,
+    shadowBlur: number
+  ): void {
     this.ctx.fillStyle = color;
-    this.ctx.shadowBlur = 5;
+    this.ctx.shadowBlur = shadowBlur;
     this.ctx.shadowColor = color;
-    this.ctx.fillText(text, x, y + 4);
+    this.ctx.textAlign = 'center';
+
+    // Start with base font size and scale down if needed
+    let fontSize = baseFontSize;
+    const minFontSize = 9;
+
+    this.ctx.font = `bold ${fontSize}px "Segoe UI", sans-serif`;
+    let textWidth = this.ctx.measureText(text).width;
+
+    // Scale down until text fits or we hit minimum
+    while (textWidth > maxWidth && fontSize > minFontSize) {
+      fontSize -= 1;
+      this.ctx.font = `bold ${fontSize}px "Segoe UI", sans-serif`;
+      textWidth = this.ctx.measureText(text).width;
+    }
+
+    this.ctx.fillText(text, x, y);
   }
 
   private renderLevelSelect(): void {
