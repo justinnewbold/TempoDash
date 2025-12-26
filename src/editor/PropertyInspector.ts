@@ -546,6 +546,7 @@ export class PropertyInspector {
   }
 
   private detectButtonInRow(x: number, properties: string[]): { property: string; delta: number } | null {
+    if (properties.length === 0) return null;
     const width = 300; // Approximate canvas width for panel
     const fieldWidth = (width - 16) / properties.length;
 

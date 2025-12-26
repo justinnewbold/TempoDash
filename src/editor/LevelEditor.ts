@@ -1202,9 +1202,16 @@ export class LevelEditor {
       const current = this.undoStack.pop()!;
       this.redoStack.push(current);
       const previous = this.undoStack[this.undoStack.length - 1];
-      this.level = JSON.parse(previous);
-      this.background = new Background(this.level.background);
-      this.state.selectedElement = null;
+      try {
+        this.level = JSON.parse(previous);
+        this.background = new Background(this.level.background);
+        this.state.selectedElement = null;
+      } catch {
+        // Restore stack state on parse error
+        this.redoStack.pop();
+        this.undoStack.push(current);
+        console.error('Failed to parse undo state');
+      }
     }
   }
 
@@ -1212,9 +1219,16 @@ export class LevelEditor {
     if (this.redoStack.length > 0) {
       const next = this.redoStack.pop()!;
       this.undoStack.push(next);
-      this.level = JSON.parse(next);
-      this.background = new Background(this.level.background);
-      this.state.selectedElement = null;
+      try {
+        this.level = JSON.parse(next);
+        this.background = new Background(this.level.background);
+        this.state.selectedElement = null;
+      } catch {
+        // Restore stack state on parse error
+        this.undoStack.pop();
+        this.redoStack.push(next);
+        console.error('Failed to parse redo state');
+      }
     }
   }
 
