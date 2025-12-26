@@ -89,6 +89,13 @@ export class Game {
   private editor: LevelEditor | null = null;
   private editingLevel: CustomLevel | null = null;
   private customLevelScrollOffset = 0;
+  private settingsScrollOffset = 0;
+  private achievementsScrollOffset = 0;
+
+  // Touch scrolling
+  private touchStartY = 0;
+  private lastTouchY = 0;
+  private isTouchScrolling = false;
 
   // Tutorial
   private showingTutorial = false;
@@ -232,8 +239,49 @@ export class Game {
     // Setup click/touch for menus
     canvas.addEventListener('click', (e) => this.handleClick(e));
 
+    // Touch support for scrolling
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        this.touchStartY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        this.lastTouchY = this.touchStartY;
+        this.isTouchScrolling = false;
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const currentY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const deltaY = this.lastTouchY - currentY;
+
+        // Check if we've moved enough to consider this a scroll
+        if (Math.abs(currentY - this.touchStartY) > 10) {
+          this.isTouchScrolling = true;
+        }
+
+        if (this.isTouchScrolling) {
+          e.preventDefault();
+          this.handleTouchScroll(deltaY);
+        }
+
+        this.lastTouchY = currentY;
+      }
+    }, { passive: false });
+
     // Touch support for menu navigation (click events unreliable on mobile)
     canvas.addEventListener('touchend', (e) => {
+      // If we were scrolling, don't handle as a click
+      const wasScrolling = this.isTouchScrolling;
+      this.isTouchScrolling = false;
+
+      if (wasScrolling) {
+        e.preventDefault();
+        return;
+      }
+
       // Dismiss orientation hint on any tap
       if (this.showOrientationHint) {
         e.preventDefault();
@@ -266,6 +314,9 @@ export class Game {
     canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
     canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+
+    // Wheel events for scrolling
+    canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
 
     // Setup beat callback
     this.audio.setBeatCallback((beat) => {
@@ -319,6 +370,41 @@ export class Game {
       });
     } else {
       this.chaseMode.setEnabled(false);
+    }
+  }
+
+  private handleWheel(e: WheelEvent): void {
+    const scrollSpeed = 40;
+    const delta = Math.sign(e.deltaY) * scrollSpeed;
+    this.applyScroll(delta);
+    if (this.state.gameStatus === 'customLevels' || this.state.gameStatus === 'settings' || this.state.gameStatus === 'achievements') {
+      e.preventDefault();
+    }
+  }
+
+  private handleTouchScroll(delta: number): void {
+    this.applyScroll(delta);
+  }
+
+  private applyScroll(delta: number): void {
+    switch (this.state.gameStatus) {
+      case 'customLevels': {
+        const levels = this.customLevelManager.getAllLevels();
+        const rows = Math.ceil(levels.length / 3);
+        const maxScroll = Math.max(0, rows * 135 - 300); // cardHeight + gap = 135, visible area ~300
+        this.customLevelScrollOffset = Math.max(0, Math.min(maxScroll, this.customLevelScrollOffset + delta));
+        break;
+      }
+      case 'settings': {
+        const maxScroll = 150; // Settings content extends ~150px below visible area
+        this.settingsScrollOffset = Math.max(0, Math.min(maxScroll, this.settingsScrollOffset + delta));
+        break;
+      }
+      case 'achievements': {
+        const maxScroll = 100; // Some buffer for achievements
+        this.achievementsScrollOffset = Math.max(0, Math.min(maxScroll, this.achievementsScrollOffset + delta));
+        break;
+      }
     }
   }
 
@@ -472,6 +558,7 @@ export class Game {
     }
     if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
+      this.customLevelScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'customLevels';
       return;
     }
@@ -485,6 +572,7 @@ export class Game {
     }
     if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
+      this.achievementsScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'achievements';
       return;
     }
@@ -493,6 +581,7 @@ export class Game {
     rowY += rowHeight;
     if (inButton(centerX, rowY, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
+      this.settingsScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'settings';
     }
   }
@@ -4747,6 +4836,39 @@ export class Game {
       this.ctx.fill();
       this.ctx.fillStyle = '#ff6666';
       this.ctx.fillText('CANCEL', GAME_WIDTH / 2 + 60, promptY + 65);
+    }
+
+    // Scroll indicator (show if there are more levels than visible)
+    if (levels.length > 6) { // More than 2 rows
+      const rows = Math.ceil(levels.length / 3);
+      const maxScroll = Math.max(0, rows * 135 - 300);
+
+      if (maxScroll > 0) {
+        // Scrollbar track
+        const trackX = GAME_WIDTH - 20;
+        const trackY = 120;
+        const trackHeight = GAME_HEIGHT - 200;
+
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(trackX, trackY, 8, trackHeight, 4);
+        this.ctx.fill();
+
+        // Scrollbar thumb
+        const thumbHeight = Math.max(30, (300 / (rows * 135)) * trackHeight);
+        const thumbY = trackY + (this.customLevelScrollOffset / maxScroll) * (trackHeight - thumbHeight);
+
+        this.ctx.fillStyle = 'rgba(0, 255, 136, 0.6)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(trackX, thumbY, 8, thumbHeight, 4);
+        this.ctx.fill();
+
+        // Scroll hint text
+        this.ctx.font = '10px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Scroll or swipe', GAME_WIDTH - 50, GAME_HEIGHT - 95);
+      }
     }
 
     this.ctx.restore();
