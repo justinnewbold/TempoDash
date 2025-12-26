@@ -88,6 +88,10 @@ export class LevelEditor {
   // Clipboard
   private clipboard: Array<PlatformConfig | CoinConfig> = [];
 
+  // Alignment guides (visual snap feedback)
+  private alignmentGuides: { type: 'horizontal' | 'vertical'; position: number; start: number; end: number }[] = [];
+  private snapThreshold = 10; // Distance in pixels to trigger snap
+
   // Canvas reference for touch handling
   private canvas: HTMLCanvasElement | null = null;
 
@@ -337,6 +341,7 @@ export class LevelEditor {
 
   private handleDragEnd(_x: number, _y: number): void {
     this.miniMap.handleDragEnd();
+    this.clearAlignmentGuides();
 
     if (this.state.isDragging) {
       this.saveUndoState();
@@ -465,6 +470,114 @@ export class LevelEditor {
     if (this.selectedElements.length > 0) {
       this.state.selectedElement = this.selectedElements[0];
     }
+  }
+
+  // Calculate alignment guides for snapping feedback
+  private calculateAlignmentGuides(draggedElement: SelectedElement, targetX: number, targetY: number): { x: number; y: number } {
+    this.alignmentGuides = [];
+
+    // Get bounds of dragged element
+    let dragWidth = 0, dragHeight = 0;
+    if (draggedElement.type === 'platform') {
+      const p = this.level.platforms[draggedElement.index];
+      dragWidth = p.width;
+      dragHeight = p.height;
+    } else if (draggedElement.type === 'coin') {
+      dragWidth = 24; // Coin diameter
+      dragHeight = 24;
+    } else if (draggedElement.type === 'playerStart') {
+      dragWidth = 40;
+      dragHeight = 40;
+    } else if (draggedElement.type === 'goal') {
+      dragWidth = this.level.goal.width;
+      dragHeight = this.level.goal.height;
+    }
+
+    // Edges and center of dragged element
+    const dragLeft = targetX;
+    const dragRight = targetX + dragWidth;
+    const dragTop = targetY;
+    const dragBottom = targetY + dragHeight;
+    const dragCenterX = targetX + dragWidth / 2;
+    const dragCenterY = targetY + dragHeight / 2;
+
+    let snapX = targetX;
+    let snapY = targetY;
+
+    // Check alignment with other platforms
+    for (let i = 0; i < this.level.platforms.length; i++) {
+      // Skip the dragged element
+      if (draggedElement.type === 'platform' && draggedElement.index === i) continue;
+
+      const p = this.level.platforms[i];
+      const otherLeft = p.x;
+      const otherRight = p.x + p.width;
+      const otherTop = p.y;
+      const otherBottom = p.y + p.height;
+      const otherCenterX = p.x + p.width / 2;
+      const otherCenterY = p.y + p.height / 2;
+
+      // Vertical alignment (X axis)
+      // Left edge to left edge
+      if (Math.abs(dragLeft - otherLeft) <= this.snapThreshold) {
+        snapX = otherLeft;
+        this.alignmentGuides.push({ type: 'vertical', position: otherLeft, start: Math.min(dragTop, otherTop), end: Math.max(dragBottom, otherBottom) });
+      }
+      // Right edge to right edge
+      if (Math.abs(dragRight - otherRight) <= this.snapThreshold) {
+        snapX = otherRight - dragWidth;
+        this.alignmentGuides.push({ type: 'vertical', position: otherRight, start: Math.min(dragTop, otherTop), end: Math.max(dragBottom, otherBottom) });
+      }
+      // Left to right
+      if (Math.abs(dragLeft - otherRight) <= this.snapThreshold) {
+        snapX = otherRight;
+        this.alignmentGuides.push({ type: 'vertical', position: otherRight, start: Math.min(dragTop, otherTop), end: Math.max(dragBottom, otherBottom) });
+      }
+      // Right to left
+      if (Math.abs(dragRight - otherLeft) <= this.snapThreshold) {
+        snapX = otherLeft - dragWidth;
+        this.alignmentGuides.push({ type: 'vertical', position: otherLeft, start: Math.min(dragTop, otherTop), end: Math.max(dragBottom, otherBottom) });
+      }
+      // Center to center (X)
+      if (Math.abs(dragCenterX - otherCenterX) <= this.snapThreshold) {
+        snapX = otherCenterX - dragWidth / 2;
+        this.alignmentGuides.push({ type: 'vertical', position: otherCenterX, start: Math.min(dragTop, otherTop), end: Math.max(dragBottom, otherBottom) });
+      }
+
+      // Horizontal alignment (Y axis)
+      // Top to top
+      if (Math.abs(dragTop - otherTop) <= this.snapThreshold) {
+        snapY = otherTop;
+        this.alignmentGuides.push({ type: 'horizontal', position: otherTop, start: Math.min(dragLeft, otherLeft), end: Math.max(dragRight, otherRight) });
+      }
+      // Bottom to bottom
+      if (Math.abs(dragBottom - otherBottom) <= this.snapThreshold) {
+        snapY = otherBottom - dragHeight;
+        this.alignmentGuides.push({ type: 'horizontal', position: otherBottom, start: Math.min(dragLeft, otherLeft), end: Math.max(dragRight, otherRight) });
+      }
+      // Top to bottom
+      if (Math.abs(dragTop - otherBottom) <= this.snapThreshold) {
+        snapY = otherBottom;
+        this.alignmentGuides.push({ type: 'horizontal', position: otherBottom, start: Math.min(dragLeft, otherLeft), end: Math.max(dragRight, otherRight) });
+      }
+      // Bottom to top
+      if (Math.abs(dragBottom - otherTop) <= this.snapThreshold) {
+        snapY = otherTop - dragHeight;
+        this.alignmentGuides.push({ type: 'horizontal', position: otherTop, start: Math.min(dragLeft, otherLeft), end: Math.max(dragRight, otherRight) });
+      }
+      // Center to center (Y)
+      if (Math.abs(dragCenterY - otherCenterY) <= this.snapThreshold) {
+        snapY = otherCenterY - dragHeight / 2;
+        this.alignmentGuides.push({ type: 'horizontal', position: otherCenterY, start: Math.min(dragLeft, otherLeft), end: Math.max(dragRight, otherRight) });
+      }
+    }
+
+    return { x: snapX, y: snapY };
+  }
+
+  // Clear alignment guides when not dragging
+  private clearAlignmentGuides(): void {
+    this.alignmentGuides = [];
   }
 
   // Element placement
@@ -1172,6 +1285,7 @@ export class LevelEditor {
     this.state.isDragging = false;
     this.state.dragStart = null;
     this.resizeHandle = null;
+    this.clearAlignmentGuides();
   }
 
   // Selection
@@ -1237,8 +1351,17 @@ export class LevelEditor {
   private handleDrag(): void {
     if (!this.state.selectedElement) return;
 
-    const snappedX = this.snapToGrid(this.mouseWorldX - this.dragOffset.x);
-    const snappedY = this.snapToGrid(this.mouseWorldY - this.dragOffset.y);
+    // Calculate raw target position (before any snapping)
+    const rawX = this.mouseWorldX - this.dragOffset.x;
+    const rawY = this.mouseWorldY - this.dragOffset.y;
+
+    // Calculate alignment guides and get smart snap position
+    const smartSnap = this.calculateAlignmentGuides(this.state.selectedElement, rawX, rawY);
+
+    // Use smart snap if guides are active, otherwise use grid snap
+    const hasAlignmentSnap = this.alignmentGuides.length > 0;
+    const finalX = hasAlignmentSnap ? smartSnap.x : this.snapToGrid(rawX);
+    const finalY = hasAlignmentSnap ? smartSnap.y : this.snapToGrid(rawY);
 
     switch (this.state.selectedElement.type) {
       case 'platform': {
@@ -1246,13 +1369,14 @@ export class LevelEditor {
         if (idx < 0 || idx >= this.level.platforms.length) break;
         const platform = this.level.platforms[idx];
         if (this.resizeHandle === 'se') {
-          // Resize
+          // Resize - keep grid snap only
           platform.width = Math.max(20, this.snapToGrid(this.mouseWorldX - platform.x));
           platform.height = Math.max(20, this.snapToGrid(this.mouseWorldY - platform.y));
+          this.clearAlignmentGuides(); // No alignment guides during resize
         } else {
           // Move
-          platform.x = Math.max(0, snappedX);
-          platform.y = Math.max(0, Math.min(GAME_HEIGHT - platform.height, snappedY));
+          platform.x = Math.max(0, finalX);
+          platform.y = Math.max(0, Math.min(GAME_HEIGHT - platform.height, finalY));
         }
         break;
       }
@@ -1260,18 +1384,18 @@ export class LevelEditor {
         const idx = this.state.selectedElement.index;
         if (idx < 0 || idx >= this.level.coins.length) break;
         const coin = this.level.coins[idx];
-        coin.x = Math.max(0, snappedX);
-        coin.y = Math.max(0, Math.min(GAME_HEIGHT, snappedY));
+        coin.x = Math.max(0, finalX);
+        coin.y = Math.max(0, Math.min(GAME_HEIGHT, finalY));
         break;
       }
       case 'playerStart': {
-        this.level.playerStart.x = Math.max(0, snappedX);
-        this.level.playerStart.y = Math.max(0, Math.min(GAME_HEIGHT - 40, snappedY));
+        this.level.playerStart.x = Math.max(0, finalX);
+        this.level.playerStart.y = Math.max(0, Math.min(GAME_HEIGHT - 40, finalY));
         break;
       }
       case 'goal': {
-        this.level.goal.x = Math.max(0, snappedX);
-        this.level.goal.y = Math.max(0, Math.min(GAME_HEIGHT - this.level.goal.height, snappedY));
+        this.level.goal.x = Math.max(0, finalX);
+        this.level.goal.y = Math.max(0, Math.min(GAME_HEIGHT - this.level.goal.height, finalY));
         break;
       }
     }
@@ -1540,6 +1664,9 @@ export class LevelEditor {
     // Selection highlight
     this.renderSelection(ctx);
 
+    // Alignment guides (snap feedback)
+    this.renderAlignmentGuides(ctx);
+
     // Box selection
     this.renderBoxSelection(ctx);
 
@@ -1770,6 +1897,58 @@ export class LevelEditor {
       Math.abs(y2 - y1)
     );
     ctx.setLineDash([]);
+  }
+
+  // Render alignment guides (snap feedback lines)
+  private renderAlignmentGuides(ctx: CanvasRenderingContext2D): void {
+    if (this.alignmentGuides.length === 0) return;
+
+    ctx.strokeStyle = '#ff6b9d'; // Pink/magenta for visibility
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+
+    for (const guide of this.alignmentGuides) {
+      ctx.beginPath();
+      if (guide.type === 'vertical') {
+        const x = guide.position - this.state.cameraX;
+        ctx.moveTo(x, guide.start);
+        ctx.lineTo(x, guide.end);
+      } else {
+        const y = guide.position;
+        ctx.moveTo(guide.start - this.state.cameraX, y);
+        ctx.lineTo(guide.end - this.state.cameraX, y);
+      }
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+
+    // Draw snap indicators (small diamonds at snap points)
+    ctx.fillStyle = '#ff6b9d';
+    for (const guide of this.alignmentGuides) {
+      const size = 4;
+      if (guide.type === 'vertical') {
+        const x = guide.position - this.state.cameraX;
+        const midY = (guide.start + guide.end) / 2;
+        ctx.beginPath();
+        ctx.moveTo(x, midY - size);
+        ctx.lineTo(x + size, midY);
+        ctx.lineTo(x, midY + size);
+        ctx.lineTo(x - size, midY);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        const y = guide.position;
+        const midX = ((guide.start + guide.end) / 2) - this.state.cameraX;
+        ctx.beginPath();
+        ctx.moveTo(midX, y - size);
+        ctx.lineTo(midX + size, y);
+        ctx.lineTo(midX, y + size);
+        ctx.lineTo(midX - size, y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
   }
 
   // Render mobile bottom toolbar
