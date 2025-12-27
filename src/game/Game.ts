@@ -3,7 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
-import { CustomLevelManager } from '../systems/CustomLevelManager';
+import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
@@ -89,6 +89,13 @@ export class Game {
   private editor: LevelEditor | null = null;
   private editingLevel: CustomLevel | null = null;
   private customLevelScrollOffset = 0;
+  private settingsScrollOffset = 0;
+  private achievementsScrollOffset = 0;
+
+  // Touch scrolling
+  private touchStartY = 0;
+  private lastTouchY = 0;
+  private isTouchScrolling = false;
 
   // Tutorial
   private showingTutorial = false;
@@ -164,6 +171,7 @@ export class Game {
   // Level sharing state
   private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
   private pendingImportLevel: import('../types').CustomLevel | null = null;
+  private showingTemplateSelect = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -193,9 +201,15 @@ export class Game {
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
+
+    // Set up mobile UI exclusion zones and callback for button handling
+    this.setupMobileUIExclusions();
     this.audio = new AudioManager();
     this.save = new SaveManager();
     this.customLevelManager = new CustomLevelManager();
+
+    // Sync colorblind mode from settings
+    Platform.setColorblindMode(this.save.getColorblindMode() !== 'normal');
 
     // Initialize new systems
     this.particles = new ParticleEffects();
@@ -232,8 +246,49 @@ export class Game {
     // Setup click/touch for menus
     canvas.addEventListener('click', (e) => this.handleClick(e));
 
+    // Touch support for scrolling
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        this.touchStartY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        this.lastTouchY = this.touchStartY;
+        this.isTouchScrolling = false;
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const currentY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const deltaY = this.lastTouchY - currentY;
+
+        // Check if we've moved enough to consider this a scroll
+        if (Math.abs(currentY - this.touchStartY) > 10) {
+          this.isTouchScrolling = true;
+        }
+
+        if (this.isTouchScrolling) {
+          e.preventDefault();
+          this.handleTouchScroll(deltaY);
+        }
+
+        this.lastTouchY = currentY;
+      }
+    }, { passive: false });
+
     // Touch support for menu navigation (click events unreliable on mobile)
     canvas.addEventListener('touchend', (e) => {
+      // If we were scrolling, don't handle as a click
+      const wasScrolling = this.isTouchScrolling;
+      this.isTouchScrolling = false;
+
+      if (wasScrolling) {
+        e.preventDefault();
+        return;
+      }
+
       // Dismiss orientation hint on any tap
       if (this.showOrientationHint) {
         e.preventDefault();
@@ -266,6 +321,9 @@ export class Game {
     canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
     canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+
+    // Wheel events for scrolling
+    canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
 
     // Setup beat callback
     this.audio.setBeatCallback((beat) => {
@@ -319,6 +377,41 @@ export class Game {
       });
     } else {
       this.chaseMode.setEnabled(false);
+    }
+  }
+
+  private handleWheel(e: WheelEvent): void {
+    const scrollSpeed = 40;
+    const delta = Math.sign(e.deltaY) * scrollSpeed;
+    this.applyScroll(delta);
+    if (this.state.gameStatus === 'customLevels' || this.state.gameStatus === 'settings' || this.state.gameStatus === 'achievements') {
+      e.preventDefault();
+    }
+  }
+
+  private handleTouchScroll(delta: number): void {
+    this.applyScroll(delta);
+  }
+
+  private applyScroll(delta: number): void {
+    switch (this.state.gameStatus) {
+      case 'customLevels': {
+        const levels = this.customLevelManager.getAllLevels();
+        const rows = Math.ceil(levels.length / 3);
+        const maxScroll = Math.max(0, rows * 135 - 300); // cardHeight + gap = 135, visible area ~300
+        this.customLevelScrollOffset = Math.max(0, Math.min(maxScroll, this.customLevelScrollOffset + delta));
+        break;
+      }
+      case 'settings': {
+        const maxScroll = 150; // Settings content extends ~150px below visible area
+        this.settingsScrollOffset = Math.max(0, Math.min(maxScroll, this.settingsScrollOffset + delta));
+        break;
+      }
+      case 'achievements': {
+        const maxScroll = 100; // Some buffer for achievements
+        this.achievementsScrollOffset = Math.max(0, Math.min(maxScroll, this.achievementsScrollOffset + delta));
+        break;
+      }
     }
   }
 
@@ -433,54 +526,69 @@ export class Game {
   private handleMainMenuClick(x: number, y: number): void {
     const centerX = GAME_WIDTH / 2;
     const buttonWidth = 200;
-    const smallButtonWidth = 100;
+    const buttonHeight = 50;
+    const smallButtonWidth = 105;
+    const smallButtonHeight = 45;
+    const colOffset = 58;
+    const rowHeight = 55;
 
-    // Play button (y=260)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 235 && y <= 285) {
+    // Helper to check if click is within a button
+    const inButton = (bx: number, by: number, w: number, h: number) =>
+      x >= bx - w / 2 && x <= bx + w / 2 && y >= by - h / 2 && y <= by + h / 2;
+
+    // Play button (y=270)
+    if (inButton(centerX, 270, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'levelSelect';
+      return;
     }
-    // Endless button (left side, y=315)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 295 && y <= 335) {
+
+    // Row 1 (y=325): Endless and Daily
+    let rowY = 325;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.startEndlessMode();
+      return;
     }
-    // Daily Challenges button (right side, y=315)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 295 && y <= 335) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'challenges';
+      return;
     }
-    // Editor button (left side, y=370)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 350 && y <= 390) {
+
+    // Row 2 (y=380): Editor and My Levels
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.openEditor();
+      return;
     }
-    // Custom Levels button (right side, y=370)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 350 && y <= 390) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
+      this.customLevelScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'customLevels';
+      return;
     }
-    // Skins button (left side, y=425)
-    if (x >= centerX - 55 - smallButtonWidth / 2 && x <= centerX - 55 + smallButtonWidth / 2 &&
-        y >= 405 && y <= 445) {
+
+    // Row 3 (y=435): Skins and Badges
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
       this.state.gameStatus = 'skins';
+      return;
     }
-    // Achievements button (right side, y=425)
-    if (x >= centerX + 55 - smallButtonWidth / 2 && x <= centerX + 55 + smallButtonWidth / 2 &&
-        y >= 405 && y <= 445) {
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
       this.audio.playSelect();
+      this.achievementsScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'achievements';
+      return;
     }
-    // Settings button (y=480)
-    if (x >= centerX - buttonWidth / 2 && x <= centerX + buttonWidth / 2 &&
-        y >= 455 && y <= 505) {
+
+    // Settings button (y=490)
+    rowY += rowHeight;
+    if (inButton(centerX, rowY, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
+      this.settingsScrollOffset = 0; // Reset scroll when entering
       this.state.gameStatus = 'settings';
     }
   }
@@ -751,6 +859,7 @@ export class Game {
         const btnX = cbStartX + i * (cbBtnWidth + cbGap);
         if (x >= btnX && x <= btnX + cbBtnWidth) {
           this.save.setColorblindMode(modes[i].id);
+          Platform.setColorblindMode(modes[i].id !== 'normal');
           this.audio.playSelect();
           return;
         }
@@ -1498,6 +1607,44 @@ export class Game {
     } else {
       this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
     }
+
+    // Handle player particle events
+    if (this.player.edgeBounceEvent) {
+      this.particles.spawnEdgeBounce(
+        this.player.edgeBounceEvent.x,
+        this.player.edgeBounceEvent.y,
+        this.player.edgeBounceEvent.direction
+      );
+      this.particles.spawnFloatingText(
+        this.player.x + this.player.width / 2,
+        this.player.y - 10,
+        'SAVE!',
+        '#ffff00',
+        16
+      );
+    }
+    if (this.player.bounceEvent) {
+      this.particles.spawnBounceEffect(
+        this.player.bounceEvent.x,
+        this.player.bounceEvent.y,
+        this.player.bounceEvent.width
+      );
+    }
+    if (this.player.wallSlideEvent) {
+      this.particles.spawnWallSparks(
+        this.player.wallSlideEvent.x,
+        this.player.wallSlideEvent.y,
+        this.player.wallSlideEvent.side
+      );
+    }
+    if (this.player.gravityFlipEvent) {
+      this.particles.spawnGravityFlip(
+        this.player.gravityFlipEvent.x,
+        this.player.gravityFlipEvent.y,
+        this.player.gravityFlipEvent.flipped
+      );
+    }
+    this.player.clearEvents();
 
     // Trigger dash shake
     if (!wasDashing && this.player.isDashing) {
@@ -2323,6 +2470,29 @@ export class Game {
       this.ctx.fillText('MUTED', GAME_WIDTH - 20, muteY);
     }
 
+    // Speedrun timer (bottom-right corner with milliseconds)
+    this.ctx.textAlign = 'right';
+    this.ctx.font = 'bold 16px "Courier New", monospace';
+    const currentTime = this.formatSpeedrunTime(this.levelElapsedTime);
+    const bestTime = this.save.getBestTime(this.state.currentLevel) ?? 0;
+
+    // Current time - changes color based on comparison to best
+    if (bestTime > 0 && this.levelElapsedTime > bestTime) {
+      this.ctx.fillStyle = '#ff6666'; // Red if behind
+    } else if (bestTime > 0) {
+      this.ctx.fillStyle = '#00ff88'; // Green if ahead
+    } else {
+      this.ctx.fillStyle = '#ffffff'; // White if no best
+    }
+    this.ctx.fillText(currentTime, GAME_WIDTH - 20, GAME_HEIGHT - 20);
+
+    // Best time display (smaller, above current time)
+    if (bestTime > 0) {
+      this.ctx.font = '12px "Courier New", monospace';
+      this.ctx.fillStyle = 'rgba(255, 170, 0, 0.8)';
+      this.ctx.fillText(`Best: ${this.formatSpeedrunTime(bestTime)}`, GAME_WIDTH - 20, GAME_HEIGHT - 38);
+    }
+
     // Combo counter and meter (center, when active)
     if (this.comboCount > 1) {
       const meterWidth = 200;
@@ -2521,6 +2691,40 @@ export class Game {
     }
   }
 
+  // Set up mobile UI exclusion zones so button taps don't trigger jumps
+  private setupMobileUIExclusions(): void {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Calculate button positions
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    const homeX = pauseX - buttonSize - buttonPadding;
+    const restartX = homeX - buttonSize - buttonPadding;
+
+    // Define exclusion zones for all three buttons
+    const zones = [
+      { x: restartX, y: topY, width: buttonSize, height: buttonSize },
+      { x: homeX, y: topY, width: buttonSize, height: buttonSize },
+      { x: pauseX, y: topY, width: buttonSize, height: buttonSize },
+    ];
+
+    this.input.setExclusionZones(zones);
+
+    // Set callback to handle button taps
+    this.input.setExcludedTouchCallback((x, y) => {
+      // Only handle during gameplay states
+      if (this.state.gameStatus === 'playing' ||
+          this.state.gameStatus === 'practice' ||
+          this.state.gameStatus === 'endless' ||
+          this.state.gameStatus === 'challengePlaying' ||
+          this.state.gameStatus === 'editorTest' ||
+          this.state.gameStatus === 'paused') {
+        this.handleMobileControlClick(x, y);
+      }
+    });
+  }
+
   private handleMobileControlClick(x: number, y: number): boolean {
     const buttonSize = 44;
     const buttonPadding = 12;
@@ -2635,25 +2839,34 @@ export class Game {
       this.ctx.fillText(`Endless Best: ${endlessHigh}m`, GAME_WIDTH / 2, 242);
     }
 
-    // Buttons (repositioned to fit 8 buttons)
-    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 260, true);
+    // Buttons - uniform grid layout
+    this.renderMenuButton('PLAY', GAME_WIDTH / 2, 270, true);
 
-    // Endless and Challenges side by side
-    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - 55, 315, '#00ffaa');
+    // Card grid with consistent spacing (58px from center for each column)
+    const colOffset = 58;
+    const rowHeight = 55;
+    let rowY = 325;
+
+    // Row 1: Endless and Daily Challenge
     const streakInfo = this.challengeManager.getStreakInfo();
     const streakText = streakInfo.current > 0 ? ` 🔥${streakInfo.current}` : '';
-    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + 55, 315, '#ff6600');
+    this.renderSmallMenuButton('ENDLESS', GAME_WIDTH / 2 - colOffset, rowY, '#00ffaa');
+    this.renderSmallMenuButton(`DAILY${streakText}`, GAME_WIDTH / 2 + colOffset, rowY, '#ff6600');
 
-    // Editor and Custom Levels side by side
-    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - 55, 370, '#ff00ff');
-    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + 55, 370, '#00ff88');
+    // Row 2: Editor and My Levels
+    rowY += rowHeight;
+    this.renderSmallMenuButton('EDITOR', GAME_WIDTH / 2 - colOffset, rowY, '#ff00ff');
+    this.renderSmallMenuButton('MY LEVELS', GAME_WIDTH / 2 + colOffset, rowY, '#00ff88');
 
-    // Skins and Achievements side by side
+    // Row 3: Skins and Badges
+    rowY += rowHeight;
     const achieveProgress = this.save.getAchievementProgress();
-    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - 55, 425, '#ffd700');
-    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + 55, 425, '#ff6600');
+    this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - colOffset, rowY, '#ffd700');
+    this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + colOffset, rowY, '#ff6600');
 
-    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, 480, false);
+    // Settings button
+    rowY += rowHeight;
+    this.renderMenuButton('SETTINGS', GAME_WIDTH / 2, rowY, false);
 
     // Controls hint (smaller to fit)
     this.ctx.font = '12px "Segoe UI", sans-serif';
@@ -2678,25 +2891,22 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Button text
-    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = primary ? '#00ffff' : '#ffffff';
-    this.ctx.shadowBlur = primary ? 10 : 0;
-    this.ctx.shadowColor = '#00ffff';
-    this.ctx.fillText(text, x, y + 7);
+    // Button text - responsive sizing
+    const color = primary ? '#00ffff' : '#ffffff';
+    this.renderResponsiveText(text, x, y + 7, width - 20, 20, color, primary ? 10 : 0);
   }
 
   private renderSmallMenuButton(text: string, x: number, y: number, color: string): void {
-    const width = 100;
-    const height = 40;
+    // Uniform card size for all small buttons
+    const width = 105;
+    const height = 45;
 
-    this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba').replace('#', 'rgba(');
-    // Handle hex colors
+    // Parse color for background
     if (color.startsWith('#')) {
       const r = parseInt(color.slice(1, 3), 16);
       const g = parseInt(color.slice(3, 5), 16);
       const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 2;
@@ -2706,11 +2916,40 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    // Responsive text that fits in the card
+    this.renderResponsiveText(text, x, y + 5, width - 16, 13, color, 5);
+  }
+
+  // Render text that scales to fit within maxWidth
+  private renderResponsiveText(
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    baseFontSize: number,
+    color: string,
+    shadowBlur: number
+  ): void {
     this.ctx.fillStyle = color;
-    this.ctx.shadowBlur = 5;
+    this.ctx.shadowBlur = shadowBlur;
     this.ctx.shadowColor = color;
-    this.ctx.fillText(text, x, y + 4);
+    this.ctx.textAlign = 'center';
+
+    // Start with base font size and scale down if needed
+    let fontSize = baseFontSize;
+    const minFontSize = 9;
+
+    this.ctx.font = `bold ${fontSize}px "Segoe UI", sans-serif`;
+    let textWidth = this.ctx.measureText(text).width;
+
+    // Scale down until text fits or we hit minimum
+    while (textWidth > maxWidth && fontSize > minFontSize) {
+      fontSize -= 1;
+      this.ctx.font = `bold ${fontSize}px "Segoe UI", sans-serif`;
+      textWidth = this.ctx.measureText(text).width;
+    }
+
+    this.ctx.fillText(text, x, y);
   }
 
   private renderLevelSelect(): void {
@@ -4270,6 +4509,20 @@ export class Game {
     };
   }
 
+  // Format time for speedrun display (mm:ss.mmm)
+  private formatSpeedrunTime(ms: number): string {
+    const totalSeconds = ms / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    const milliseconds = Math.floor(ms % 1000);
+
+    const minStr = minutes.toString().padStart(2, '0');
+    const secStr = seconds.toString().padStart(2, '0');
+    const msStr = milliseconds.toString().padStart(3, '0');
+
+    return `${minStr}:${secStr}.${msStr}`;
+  }
+
   // ==================== LEVEL EDITOR METHODS ====================
 
   private openEditor(levelToEdit?: CustomLevel): void {
@@ -4280,7 +4533,7 @@ export class Game {
     }
     this.editor = new LevelEditor(this.editingLevel);
     this.editor.setOnSave(() => this.saveCurrentLevel());
-    this.editor.setOnPlay(() => this.testLevel());
+    this.editor.setOnPlay((pos) => this.testLevel(pos));
     this.state.gameStatus = 'editor';
 
     // Resize canvas for editor (needs more space for UI) with high-DPI support
@@ -4377,12 +4630,52 @@ export class Game {
       }
     }
 
-    // Create New Level button
+    // Create New Level button - show template selection
     if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 + 100 &&
         y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
       this.audio.playSelect();
-      this.openEditor();
+      this.showingTemplateSelect = true;
       return;
+    }
+
+    // Template selection modal
+    if (this.showingTemplateSelect) {
+      const templates = CustomLevelManager.getTemplates();
+      const modalWidth = 400;
+      const modalHeight = 280;
+      const modalX = (GAME_WIDTH - modalWidth) / 2;
+      const modalY = (GAME_HEIGHT - modalHeight) / 2;
+      const templateHeight = 45;
+      const startY = modalY + 50;
+
+      // Check template buttons
+      for (let i = 0; i < templates.length; i++) {
+        const btnY = startY + i * (templateHeight + 10);
+        if (x >= modalX + 20 && x <= modalX + modalWidth - 20 &&
+            y >= btnY && y <= btnY + templateHeight) {
+          this.audio.playSelect();
+          this.showingTemplateSelect = false;
+          const newLevel = this.customLevelManager.createFromTemplate(templates[i].id as LevelTemplate);
+          this.openEditor(newLevel);
+          return;
+        }
+      }
+
+      // Cancel button
+      if (x >= modalX + modalWidth / 2 - 50 && x <= modalX + modalWidth / 2 + 50 &&
+          y >= modalY + modalHeight - 45 && y <= modalY + modalHeight - 15) {
+        this.audio.playSelect();
+        this.showingTemplateSelect = false;
+        return;
+      }
+
+      // Click outside modal - close it
+      if (x < modalX || x > modalX + modalWidth || y < modalY || y > modalY + modalHeight) {
+        this.audio.playSelect();
+        this.showingTemplateSelect = false;
+        return;
+      }
+      return; // Consume click when template select is showing
     }
 
     // Import from Code button
@@ -4702,6 +4995,114 @@ export class Game {
       this.ctx.fillText('CANCEL', GAME_WIDTH / 2 + 60, promptY + 65);
     }
 
+    // Template selection modal
+    if (this.showingTemplateSelect) {
+      // Darken background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+      const templates = CustomLevelManager.getTemplates();
+      const modalWidth = 400;
+      const modalHeight = 280;
+      const modalX = (GAME_WIDTH - modalWidth) / 2;
+      const modalY = (GAME_HEIGHT - modalHeight) / 2;
+
+      // Modal background
+      this.ctx.fillStyle = 'rgba(30, 30, 50, 0.98)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(modalX, modalY, modalWidth, modalHeight, 15);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#ff00ff';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Title
+      this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff00ff';
+      this.ctx.textAlign = 'center';
+      this.ctx.shadowColor = '#ff00ff';
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText('Choose a Template', GAME_WIDTH / 2, modalY + 35);
+      this.ctx.shadowBlur = 0;
+
+      // Template options
+      const templateHeight = 45;
+      const startY = modalY + 50;
+
+      for (let i = 0; i < templates.length; i++) {
+        const template = templates[i];
+        const btnY = startY + i * (templateHeight + 10);
+
+        // Button background
+        this.ctx.fillStyle = 'rgba(60, 60, 90, 0.8)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(modalX + 20, btnY, modalWidth - 40, templateHeight, 8);
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+
+        // Icon
+        this.ctx.font = '24px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(template.icon, modalX + 35, btnY + 32);
+
+        // Name
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(template.name, modalX + 75, btnY + 22);
+
+        // Description
+        this.ctx.font = '12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#aaaaaa';
+        this.ctx.fillText(template.description, modalX + 75, btnY + 38);
+      }
+
+      // Cancel button
+      this.ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(modalX + modalWidth / 2 - 50, modalY + modalHeight - 45, 100, 30, 6);
+      this.ctx.fill();
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Cancel', GAME_WIDTH / 2, modalY + modalHeight - 25);
+    }
+
+    // Scroll indicator (show if there are more levels than visible)
+    if (levels.length > 6) { // More than 2 rows
+      const rows = Math.ceil(levels.length / 3);
+      const maxScroll = Math.max(0, rows * 135 - 300);
+
+      if (maxScroll > 0) {
+        // Scrollbar track
+        const trackX = GAME_WIDTH - 20;
+        const trackY = 120;
+        const trackHeight = GAME_HEIGHT - 200;
+
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(trackX, trackY, 8, trackHeight, 4);
+        this.ctx.fill();
+
+        // Scrollbar thumb
+        const thumbHeight = Math.max(30, (300 / (rows * 135)) * trackHeight);
+        const thumbY = trackY + (this.customLevelScrollOffset / maxScroll) * (trackHeight - thumbHeight);
+
+        this.ctx.fillStyle = 'rgba(0, 255, 136, 0.6)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(trackX, thumbY, 8, thumbHeight, 4);
+        this.ctx.fill();
+
+        // Scroll hint text
+        this.ctx.font = '10px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Scroll or swipe', GAME_WIDTH - 50, GAME_HEIGHT - 95);
+      }
+    }
+
     this.ctx.restore();
   }
 
@@ -4780,17 +5181,35 @@ export class Game {
       return;
     }
 
-    // Arrow keys for camera pan
-    if (e.key === 'ArrowRight') {
-      this.editor.moveCamera(50);
-    } else if (e.key === 'ArrowLeft') {
-      this.editor.moveCamera(-50);
+    // Prevent default browser behaviors for editor shortcuts
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    if (ctrlOrMeta && ['a', 'd', 'z', 'y'].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+    }
+    if (e.key.startsWith('Arrow') || e.key === 'Backspace') {
+      e.preventDefault();
     }
 
-    this.editor.handleKeyDown(e.key);
+    // Pass keyboard event to editor with modifier keys
+    // Arrow keys: move selection if something is selected, otherwise pan camera
+    const hasSelection = this.editor.getSelectedElement() !== null;
+
+    if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft' ||
+         e.key === 'ArrowUp' || e.key === 'ArrowDown') && !hasSelection) {
+      // No selection - pan camera
+      if (e.key === 'ArrowRight') {
+        this.editor.moveCamera(50);
+      } else if (e.key === 'ArrowLeft') {
+        this.editor.moveCamera(-50);
+      }
+      // Vertical arrows don't pan, just ignore
+    } else {
+      // Pass to editor (handles selection movement, shortcuts, etc.)
+      this.editor.handleKeyDown(e.key, ctrlOrMeta, e.shiftKey);
+    }
   }
 
-  private testLevel(): void {
+  private testLevel(testPosition?: { x: number; y: number }): void {
     if (!this.editor) return;
 
     // Save first
@@ -4802,9 +5221,14 @@ export class Game {
     // Play the level in test mode
     const config = this.customLevelManager.toLevelConfig(level);
     this.level = new Level(config);
-    this.player = new Player(config.playerStart);
+
+    // Use test position if provided, otherwise use normal player start
+    const startPosition = testPosition || config.playerStart;
+    this.player = new Player(startPosition);
     this.player.setSkin(this.save.getSelectedSkin());
-    this.cameraX = 0;
+
+    // Set camera to center on test position
+    this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
     this.attempts = 0;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing
@@ -4833,7 +5257,7 @@ export class Game {
       this.setupCrispRendering();
       this.editor = new LevelEditor(this.editingLevel);
       this.editor.setOnSave(() => this.saveCurrentLevel());
-      this.editor.setOnPlay(() => this.testLevel());
+      this.editor.setOnPlay((pos) => this.testLevel(pos));
       this.state.gameStatus = 'editor';
       this.audio.stop();
 

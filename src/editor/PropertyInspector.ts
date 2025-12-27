@@ -339,14 +339,28 @@ export class PropertyInspector {
       ctx.textAlign = 'center';
       ctx.fillText('−', fx + 20 + this.buttonSize / 2, y + 40);
 
-      // Value display
+      // Value display (clickable for direct input)
+      const valueBoxX = fx + 20 + this.buttonSize + 4;
+      const valueBoxWidth = fieldWidth - this.buttonSize * 2 - 32;
+
       ctx.fillStyle = '#2a2a3e';
       ctx.beginPath();
-      ctx.roundRect(fx + 20 + this.buttonSize + 4, y + 18, fieldWidth - this.buttonSize * 2 - 32, 32, 6);
+      ctx.roundRect(valueBoxX, y + 18, valueBoxWidth, 32, 6);
       ctx.fill();
+
+      // Subtle border to indicate clickability
+      ctx.strokeStyle = '#4a4a5e';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
       ctx.fillStyle = '#ffffff';
       ctx.font = '14px sans-serif';
-      ctx.fillText(Math.round(field.value).toString(), fx + 20 + this.buttonSize + 4 + (fieldWidth - this.buttonSize * 2 - 32) / 2, y + 40);
+      ctx.fillText(Math.round(field.value).toString(), valueBoxX + valueBoxWidth / 2, y + 40);
+
+      // Small edit indicator
+      ctx.fillStyle = '#666';
+      ctx.font = '8px sans-serif';
+      ctx.fillText('tap', valueBoxX + valueBoxWidth / 2, y + 52);
 
       // Plus button
       ctx.fillStyle = '#3a3a4e';
@@ -436,10 +450,17 @@ export class PropertyInspector {
 
     if (!this.element) return true;
 
-    // Close button
-    const closeX = x;
-    const closeY = y - panelY;
-    if (closeY < this.headerHeight && closeX > x - 40) {
+    // Close button (positioned at right side of header)
+    const canvasWidth = 400; // Approximate panel width
+    const closeBtnX = canvasWidth - this.padding - 16;
+    const closeBtnY = 24;
+    const closeBtnRadius = 16;
+    const relY = y - panelY;
+
+    // Check if click is within close button circle
+    const dx = x - closeBtnX;
+    const dy = relY - closeBtnY;
+    if (dx * dx + dy * dy <= closeBtnRadius * closeBtnRadius) {
       if (isEnd) this.hide();
       return true;
     }
@@ -447,7 +468,7 @@ export class PropertyInspector {
     // Handle type selector buttons (platforms)
     if (this.element.type === 'platform') {
       const typeY = this.headerHeight + 20;
-      if (closeY >= typeY && closeY <= typeY + 40) {
+      if (relY >= typeY && relY <= typeY + 40) {
         if (isEnd) {
           const width = 300; // Approximate
           const buttonWidth = width / PLATFORM_TYPES.length;
@@ -469,17 +490,23 @@ export class PropertyInspector {
     if (isStart) {
       const result = this.detectNumberButton(x, y, canvasHeight);
       if (result) {
-        this.holdButton = result;
         this.applyNumberChange(result.property, result.delta);
 
-        // Start hold-to-repeat
-        this.holdTimer = window.setTimeout(() => {
-          this.holdInterval = window.setInterval(() => {
-            if (this.holdButton) {
-              this.applyNumberChange(this.holdButton.property, this.holdButton.delta);
-            }
-          }, 100);
-        }, 400);
+        // Only start hold-to-repeat for +/- buttons (not for value tap)
+        if (result.delta !== 0) {
+          // Cancel any existing hold timers first to prevent race conditions
+          this.cancelHold();
+          this.holdButton = result;
+
+          // Start hold-to-repeat
+          this.holdTimer = window.setTimeout(() => {
+            this.holdInterval = window.setInterval(() => {
+              if (this.holdButton) {
+                this.applyNumberChange(this.holdButton.property, this.holdButton.delta);
+              }
+            }, 100);
+          }, 400);
+        }
 
         return true;
       }
@@ -519,6 +546,7 @@ export class PropertyInspector {
   }
 
   private detectButtonInRow(x: number, properties: string[]): { property: string; delta: number } | null {
+    if (properties.length === 0) return null;
     const width = 300; // Approximate canvas width for panel
     const fieldWidth = (width - 16) / properties.length;
 
@@ -534,15 +562,50 @@ export class PropertyInspector {
       if (x >= fx + fieldWidth - this.buttonSize - 4 && x <= fx + fieldWidth - 4) {
         return { property: properties[i], delta: 10 };
       }
+
+      // Value box area (for direct input)
+      const valueBoxX = fx + 20 + this.buttonSize + 4;
+      const valueBoxWidth = fieldWidth - this.buttonSize * 2 - 32;
+      if (x >= valueBoxX && x <= valueBoxX + valueBoxWidth) {
+        // Return special delta of 0 to trigger direct input
+        return { property: properties[i], delta: 0 };
+      }
     }
 
     return null;
   }
 
+  // Prompt user for direct numeric input
+  private promptForValue(property: string): void {
+    if (!this.element) return;
+
+    const currentValue = (this.getProperty(property) as number) ?? 0;
+    const propertyLabel = property.charAt(0).toUpperCase() + property.slice(1);
+
+    const input = window.prompt(`Enter new value for ${propertyLabel}:`, Math.round(currentValue).toString());
+    if (input !== null) {
+      const newValue = parseFloat(input);
+      if (!isNaN(newValue) && newValue >= 0) {
+        this.onChange({
+          elementType: this.element.type,
+          index: 'index' in this.element ? this.element.index : undefined,
+          property,
+          value: Math.round(newValue),
+        });
+      }
+    }
+  }
+
   private applyNumberChange(property: string, delta: number): void {
     if (!this.element) return;
 
-    const currentValue = this.getProperty(property) as number || 0;
+    // Delta of 0 means direct input requested
+    if (delta === 0) {
+      this.promptForValue(property);
+      return;
+    }
+
+    const currentValue = (this.getProperty(property) as number) ?? 0;
     const newValue = Math.max(0, currentValue + delta);
 
     this.onChange({

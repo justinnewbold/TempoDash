@@ -225,11 +225,19 @@ export class GhostReplay {
     let y = 0;
     let rotation = 0;
 
-    for (let i = 0; i < values.length; i += 4) {
-      x += values[i];
-      y += values[i + 1];
-      rotation += values[i + 2];
+    // Ensure we have complete 4-value sets before processing
+    for (let i = 0; i + 3 < values.length; i += 4) {
+      const dx = values[i];
+      const dy = values[i + 1];
+      const dr = values[i + 2];
       const flags = values[i + 3];
+
+      // Skip if any value is NaN (corrupted data)
+      if (isNaN(dx) || isNaN(dy) || isNaN(dr) || isNaN(flags)) continue;
+
+      x += dx;
+      y += dy;
+      rotation += dr;
 
       frames.push({
         x,

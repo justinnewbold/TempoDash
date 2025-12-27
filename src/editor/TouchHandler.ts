@@ -118,7 +118,8 @@ export class TouchHandler {
 
     if (this.touches.size === 1) {
       // Single touch - could be tap, long press, or drag
-      // Start long press timer
+      // Start long press timer (cancel any existing one first)
+      this.cancelLongPress();
       this.longPressTimer = window.setTimeout(() => {
         if (this.touches.size === 1 && !this.isDragging) {
           const currentTouch = Array.from(this.touches.values())[0];
@@ -408,7 +409,8 @@ export class TouchHandler {
     this.lastMoveY = coords.y;
     this.lastMoveTime = Date.now();
 
-    // Start long press timer for mouse too
+    // Start long press timer for mouse too (cancel any existing one first)
+    this.cancelLongPress();
     this.longPressTimer = window.setTimeout(() => {
       if (this.mouseDown && !this.isDragging) {
         this.callback({

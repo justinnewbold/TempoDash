@@ -68,6 +68,12 @@ export class Player {
   // Slow-mo zone state
   isInSlowMo = false;
 
+  // Particle effect events (cleared each frame after being read)
+  edgeBounceEvent: { x: number; y: number; direction: 'left' | 'right' } | null = null;
+  bounceEvent: { x: number; y: number; width: number } | null = null;
+  wallSlideEvent: { x: number; y: number; side: 'left' | 'right' } | null = null;
+  gravityFlipEvent: { x: number; y: number; flipped: boolean } | null = null;
+
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
     this.y = startPosition.y;
@@ -105,6 +111,15 @@ export class Player {
     this.isWallSliding = false;
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
+    this.clearEvents();
+  }
+
+  // Clear particle effect events (called after Game reads them)
+  clearEvents(): void {
+    this.edgeBounceEvent = null;
+    this.bounceEvent = null;
+    this.wallSlideEvent = null;
+    this.gravityFlipEvent = null;
   }
 
   // Revive player (used when shield saves from death)
@@ -254,6 +269,7 @@ export class Player {
           if (collision === 'top') {
             this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
             this.y = bounds.y - this.height;
+            this.bounceEvent = { x: bounds.x, y: bounds.y, width: bounds.width };
           }
           continue;
 
@@ -281,6 +297,7 @@ export class Player {
             this.gravityFlipped = !this.gravityFlipped;
             this.velocityY = this.gravityFlipped ? PLAYER.JUMP_FORCE : -PLAYER.JUMP_FORCE;
             this.y = bounds.y - this.height;
+            this.gravityFlipEvent = { x: this.x + this.width / 2, y: this.y + this.height / 2, flipped: this.gravityFlipped };
           }
           continue;
 
@@ -291,8 +308,10 @@ export class Player {
             // Stop horizontal movement into wall but allow sliding down
             if (collision === 'left') {
               this.x = bounds.x + bounds.width;
+              this.wallSlideEvent = { x: this.x, y: this.y + this.height / 2, side: 'left' };
             } else {
               this.x = bounds.x - this.width;
+              this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'right' };
             }
           }
           continue;
@@ -309,19 +328,23 @@ export class Player {
           break;
       }
 
-      // Ledge assist: if hitting side but upper 50% of player is above platform top,
-      // boost them up onto the platform instead of dying
+      // Edge bounce: if hitting side but at least 25% of player body is above platform edge,
+      // bounce them back and up to give a chance to recover with a well-timed jump
       if (collision === 'left') {
-        const playerMidpoint = this.y + this.height * 0.5;
+        const playerTop = this.y;
         const platformTop = bounds.y;
+        const overlapAbove = platformTop - playerTop; // How much of player is above platform
 
-        // If player's midpoint (50% of height) is above platform top, assist them up
-        if (playerMidpoint < platformTop) {
-          // Boost player up onto the platform
-          this.y = platformTop - this.height;
-          this.velocityY = 0;
-          this.isGrounded = true;
-          this.airJumpsRemaining = 2;
+        // If at least 25% of player height is above platform top, bounce back and up
+        if (overlapAbove >= this.height * 0.25) {
+          // Push back from the platform edge
+          this.x = bounds.x + bounds.width + 2;
+          // Give upward velocity - enough to potentially clear platform with a jump
+          // Use a fraction of jump force so player needs to time their jump
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
+          // Emit edge bounce event for visual feedback
+          this.edgeBounceEvent = { x: bounds.x + bounds.width, y: bounds.y, direction: 'left' };
+          // Don't consume air jumps - give player a chance to recover
           continue;
         }
 
@@ -331,15 +354,17 @@ export class Player {
       }
 
       if (collision === 'right') {
-        // Apply same ledge assist logic to right side
-        const playerMidpoint = this.y + this.height * 0.5;
+        const playerTop = this.y;
         const platformTop = bounds.y;
+        const overlapAbove = platformTop - playerTop;
 
-        if (playerMidpoint < platformTop) {
-          this.y = platformTop - this.height;
-          this.velocityY = 0;
-          this.isGrounded = true;
-          this.airJumpsRemaining = 2;
+        if (overlapAbove >= this.height * 0.25) {
+          // Push back from the platform edge
+          this.x = bounds.x - this.width - 2;
+          // Give upward velocity for recovery
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
+          // Emit edge bounce event for visual feedback
+          this.edgeBounceEvent = { x: bounds.x, y: bounds.y, direction: 'right' };
           continue;
         }
 

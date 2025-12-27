@@ -48,6 +48,14 @@ export class AudioManager {
   private currentStyle: MusicStyle = 'noir';
   private beatCallback: ((beat: number) => void) | null = null;
 
+  // Dynamic music state
+  private intensity = 0.5; // 0-1 scale of musical intensity
+  private targetIntensity = 0.5;
+  private dangerLevel = 0; // 0-1 scale for near-death tension
+  private playerSpeed = 0; // Normalized speed 0-1
+  private intensitySmoothingFactor = 0.05;
+  private enableDynamicMusic = true;
+
   // Music presets from Neon Pulse Engine
   private presets: Record<MusicStyle, MusicPreset> = {
     // Neon Noir (90 BPM) - D Minor Blues: smooth, jazzy
@@ -297,6 +305,12 @@ export class AudioManager {
       this.beatCallback(beatNumber);
     }
 
+    // Update intensity smoothing each beat
+    this.updateIntensity();
+
+    // Dynamic volume scaling based on intensity
+    const intensityVolume = 0.6 + this.intensity * 0.4;
+
     // --- KICK ---
     let playKick = false;
     if (p.drumStyle === 'distorted') {
@@ -307,12 +321,21 @@ export class AudioManager {
       if (beatNumber % 4 === 0) playKick = true;
     }
 
+    // Add extra kicks at high intensity
+    if (this.intensity > 0.7 && beatNumber % 4 === 2) {
+      playKick = true;
+    }
+
     if (playKick) {
-      this.playKick(time, p.drumStyle === 'distorted' ? 1.2 : 0.8);
+      this.playKick(time, (p.drumStyle === 'distorted' ? 1.2 : 0.8) * intensityVolume);
     }
 
     // --- SNARE ---
     if (beatNumber % 8 === 4) {
+      this.playSnare(time);
+    }
+    // Add ghost snares at high intensity
+    if (this.intensity > 0.8 && beatNumber % 8 === 0) {
       this.playSnare(time);
     }
 
@@ -320,6 +343,10 @@ export class AudioManager {
     if (p.drumStyle !== 'soft') {
       if (beatNumber % 2 === 0) this.playHiHat(time, 0.05);
       else this.playHiHat(time, 0.02);
+      // Add 16th note hats at high intensity
+      if (this.intensity > 0.6 && beatNumber % 2 === 1) {
+        this.playHiHat(time, 0.015);
+      }
     } else {
       if (beatNumber % 4 === 2) this.playHiHat(time, 0.1);
     }
@@ -328,20 +355,46 @@ export class AudioManager {
     if (p.drumStyle === 'distorted') {
       if (beatNumber === 0 || beatNumber === 10) {
         const freq = p.bassFreqs[Math.floor(Math.random() * p.bassFreqs.length)];
-        this.playBass(time, freq, 0.8);
+        this.playBass(time, freq, 0.8 * intensityVolume);
       }
     } else {
       if (beatNumber % 4 !== 0 || p.tempo > 110) {
         const freq = p.bassFreqs[Math.floor(Math.random() * p.bassFreqs.length)];
-        this.playBass(time, freq, 0.25);
+        this.playBass(time, freq, 0.25 * intensityVolume);
       }
     }
 
     // --- LEAD ---
-    if (p.arpPattern[beatNumber]) {
+    // Lead plays more frequently at higher intensity
+    const leadThreshold = this.intensity > 0.7 ? 0.7 : (this.intensity > 0.5 ? 0.85 : 1.0);
+    if (p.arpPattern[beatNumber] || (this.intensity > 0.5 && Math.random() > leadThreshold)) {
       const note = p.leadFreqs[Math.floor(Math.random() * p.leadFreqs.length)];
       this.playLead(time, note);
     }
+
+    // --- DANGER LAYER (at high danger) ---
+    if (this.dangerLevel > 0.7 && beatNumber % 4 === 0) {
+      this.playDangerPulse(time);
+    }
+  }
+
+  // Low danger pulse for tension
+  private playDangerPulse(time: number): void {
+    if (!this.audioContext || !this.musicGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(40, time);
+
+    gain.gain.setValueAtTime(this.dangerLevel * 0.15 * this.musicVolume, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+
+    osc.connect(gain);
+    gain.connect(this.musicGain);
+    osc.start(time);
+    osc.stop(time + 0.35);
   }
 
   // --- SYNTHESIZERS ---
@@ -703,5 +756,160 @@ export class AudioManager {
 
     this.musicGain.gain.setValueAtTime(0, currentTime);
     this.musicGain.gain.linearRampToValueAtTime(targetVolume, currentTime + duration / 1000);
+  }
+
+  // --- DYNAMIC MUSIC SYSTEM ---
+
+  // Enable/disable dynamic music reactions
+  setDynamicMusicEnabled(enabled: boolean): void {
+    this.enableDynamicMusic = enabled;
+    if (!enabled) {
+      this.intensity = 0.5;
+      this.targetIntensity = 0.5;
+      this.dangerLevel = 0;
+    }
+  }
+
+  isDynamicMusicEnabled(): boolean {
+    return this.enableDynamicMusic;
+  }
+
+  // Update player speed (normalized 0-1)
+  updatePlayerSpeed(speed: number): void {
+    this.playerSpeed = Math.max(0, Math.min(1, speed));
+    this.recalculateIntensity();
+  }
+
+  // Update danger level (0 = safe, 1 = near death)
+  updateDangerLevel(danger: number): void {
+    this.dangerLevel = Math.max(0, Math.min(1, danger));
+    this.recalculateIntensity();
+  }
+
+  // Recalculate target intensity based on game state
+  private recalculateIntensity(): void {
+    if (!this.enableDynamicMusic) return;
+
+    // Base intensity from speed
+    let newIntensity = 0.3 + this.playerSpeed * 0.4;
+
+    // Add danger factor (overrides if high)
+    if (this.dangerLevel > 0.5) {
+      newIntensity = Math.max(newIntensity, 0.7 + this.dangerLevel * 0.3);
+    }
+
+    this.targetIntensity = Math.max(0, Math.min(1, newIntensity));
+  }
+
+  // Smooth intensity updates (call each frame)
+  updateIntensity(): void {
+    if (!this.enableDynamicMusic) return;
+
+    // Smoothly move toward target intensity
+    this.intensity += (this.targetIntensity - this.intensity) * this.intensitySmoothingFactor;
+  }
+
+  // Get current intensity for external use (e.g., visual effects)
+  getIntensity(): number {
+    return this.intensity;
+  }
+
+  // Trigger a sudden intensity spike (e.g., near miss, combo)
+  pulseIntensity(amount: number = 0.3): void {
+    if (!this.enableDynamicMusic) return;
+    this.targetIntensity = Math.min(1, this.targetIntensity + amount);
+    // Quick spike then return to calculated value
+    setTimeout(() => this.recalculateIntensity(), 500);
+  }
+
+  // Play danger warning stinger
+  playDangerStinger(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Low rumble
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(55, time);
+    osc.frequency.setValueAtTime(58, time + 0.1);
+    osc.frequency.setValueAtTime(52, time + 0.2);
+
+    gain.gain.setValueAtTime(0.4, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc.stop(time + 0.45);
+  }
+
+  // Play near-miss sound (close call with hazard)
+  playNearMiss(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Quick whoosh with rising pitch
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    const filter = this.audioContext.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, time);
+    osc.frequency.exponentialRampToValueAtTime(800, time + 0.1);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(400, time);
+    filter.frequency.exponentialRampToValueAtTime(3000, time + 0.08);
+
+    gain.gain.setValueAtTime(0.2, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc.stop(time + 0.18);
+
+    // Pulse intensity on near miss
+    this.pulseIntensity(0.2);
+  }
+
+  // Play combo milestone sound
+  playComboMilestone(comboLevel: number): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+    const baseFreq = 440 + comboLevel * 50; // Higher pitch for higher combos
+
+    const notes = [baseFreq, baseFreq * 1.25, baseFreq * 1.5];
+
+    notes.forEach((freq, i) => {
+      const osc = this.audioContext!.createOscillator();
+      const gain = this.audioContext!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+
+      const startTime = time + i * 0.04;
+      gain.gain.setValueAtTime(0.25, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.25);
+    });
+
+    this.pulseIntensity(0.15 + comboLevel * 0.05);
   }
 }
