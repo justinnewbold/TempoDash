@@ -356,6 +356,10 @@ export class Game {
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
 
+    // Enable flying mode if level config specifies it
+    const levelConfig = this.level.getConfig();
+    this.player.setFlyingMode(levelConfig.flyingMode ?? false);
+
     // Set music style for this level
     this.audio.setStyleForLevel(levelId);
 

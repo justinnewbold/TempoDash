@@ -1394,6 +1394,14 @@ export class LevelEditor {
         particles: { count: 80, color: 'rgba(255, 100, 0, 0.6)', minSize: 2, maxSize: 6, speed: 50, direction: 'up' },
         effects: ['embers', 'pulse'],
       },
+      sky: {
+        type: 'sky',
+        primaryColor: '#87CEEB',
+        secondaryColor: '#E0F6FF',
+        accentColor: '#FFD700',
+        particles: { count: 40, color: 'rgba(255, 255, 255, 0.8)', minSize: 20, maxSize: 60, speed: 20, direction: 'down' },
+        effects: ['aurora'],
+      },
     };
 
     this.level.background = backgrounds[type];

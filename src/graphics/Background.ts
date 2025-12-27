@@ -453,6 +453,9 @@ export class Background {
       case 'inferno':
         this.drawInfernoBackground(ctx, cameraX);
         break;
+      case 'sky':
+        this.drawSkyBackground(ctx, cameraX);
+        break;
     }
 
     // Draw effects
@@ -1069,6 +1072,79 @@ export class Background {
       ctx.arc(cloudX, cloudY, cloudSize, 0, Math.PI * 2);
       ctx.arc(cloudX + cloudSize * 0.6, cloudY - 10, cloudSize * 0.7, 0, Math.PI * 2);
       ctx.arc(cloudX + cloudSize * 1.1, cloudY + 5, cloudSize * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawSkyBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const parallax = cameraX * 0.05;
+
+    // Beautiful sky gradient - light blue to white
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+    skyGradient.addColorStop(0, '#4A90D9');
+    skyGradient.addColorStop(0.3, '#87CEEB');
+    skyGradient.addColorStop(0.6, '#B0E0E6');
+    skyGradient.addColorStop(1, '#E0F6FF');
+    ctx.fillStyle = skyGradient;
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Sun in the corner
+    const sunX = GAME_WIDTH * 0.85 - parallax * 0.02;
+    const sunY = GAME_HEIGHT * 0.15;
+
+    // Sun glow
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 120);
+    sunGlow.addColorStop(0, 'rgba(255, 255, 200, 0.8)');
+    sunGlow.addColorStop(0.3, 'rgba(255, 240, 150, 0.4)');
+    sunGlow.addColorStop(1, 'rgba(255, 200, 100, 0)');
+    ctx.fillStyle = sunGlow;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sun body
+    ctx.fillStyle = '#FFE566';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cloud layers (fluffy clouds at different depths)
+    this.drawClouds(ctx, parallax * 0.3, GAME_HEIGHT * 0.15, 0.6, 80);
+    this.drawClouds(ctx, parallax * 0.5, GAME_HEIGHT * 0.35, 0.7, 100);
+    this.drawClouds(ctx, parallax * 0.8, GAME_HEIGHT * 0.55, 0.8, 120);
+    this.drawClouds(ctx, parallax * 1.0, GAME_HEIGHT * 0.75, 0.9, 100);
+
+    // Birds in the distance
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const birdX = ((i * 200 + 100 - parallax * 0.4 + this.time * 0.02) % (GAME_WIDTH + 200)) - 100;
+      const birdY = 80 + Math.sin(i * 2 + this.time * 0.003) * 30 + (i % 3) * 40;
+      const wingFlap = Math.sin(this.time * 0.01 + i * 2) * 8;
+
+      ctx.beginPath();
+      ctx.moveTo(birdX - 10, birdY + wingFlap);
+      ctx.quadraticCurveTo(birdX, birdY - 5, birdX + 10, birdY + wingFlap);
+      ctx.stroke();
+    }
+  }
+
+  private drawClouds(ctx: CanvasRenderingContext2D, parallax: number, baseY: number, opacity: number, size: number): void {
+    ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+
+    // Draw multiple clouds at this layer
+    for (let i = 0; i < 6; i++) {
+      const cloudX = ((i * 220 + 50 - parallax) % (GAME_WIDTH + 200)) - 100;
+      const cloudY = baseY + Math.sin(i * 1.5) * 30;
+      const cloudSize = size + Math.sin(i * 2.3) * 20;
+
+      // Fluffy cloud shape
+      ctx.beginPath();
+      ctx.arc(cloudX, cloudY, cloudSize * 0.6, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize * 0.5, cloudY - cloudSize * 0.2, cloudSize * 0.5, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize, cloudY, cloudSize * 0.55, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize * 0.3, cloudY + cloudSize * 0.2, cloudSize * 0.4, 0, Math.PI * 2);
+      ctx.arc(cloudX + cloudSize * 0.7, cloudY + cloudSize * 0.15, cloudSize * 0.45, 0, Math.PI * 2);
       ctx.fill();
     }
   }

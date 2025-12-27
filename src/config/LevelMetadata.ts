@@ -84,6 +84,24 @@ export const LEVEL_METADATA: LevelMeta[] = [
     unlockCost: 15000,
     description: 'Ascend the floating temple',
   },
+  {
+    id: 9,
+    name: 'The Chase',
+    color: '#ff4400',
+    difficulty: 5,
+    musicStyle: 'energetic',
+    unlockCost: 20000,
+    description: 'Escape the wall of death',
+  },
+  {
+    id: 10,
+    name: 'Sky Glider',
+    color: '#87CEEB',
+    difficulty: 3,
+    musicStyle: 'focus',
+    unlockCost: 12000,
+    description: 'Fly through the clouds and avoid obstacles',
+  },
 ];
 
 // Helper functions
