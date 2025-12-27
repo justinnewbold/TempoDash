@@ -835,6 +835,7 @@ export class CustomLevelManager {
     playerStart: Vector2;
     goal: Rectangle;
     background: BackgroundConfig;
+    flyingMode?: boolean;
   } {
     return {
       id: -1, // Custom levels use -1
@@ -844,6 +845,7 @@ export class CustomLevelManager {
       playerStart: level.playerStart,
       goal: level.goal,
       background: level.background,
+      flyingMode: level.flyingMode,
     };
   }
 

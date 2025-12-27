@@ -261,6 +261,7 @@ export interface CustomLevel {
   platforms: PlatformConfig[];
   coins: CoinConfig[];
   powerUps?: PowerUpConfig[];
+  flyingMode?: boolean;
 }
 
 export interface EditorState {
