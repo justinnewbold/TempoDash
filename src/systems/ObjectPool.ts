@@ -254,3 +254,69 @@ export function createDustParticle(): DustParticle {
     }
   };
 }
+
+// Burst particle (for edge bounce, bounce platforms, power-ups)
+export interface BurstParticle extends Poolable {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  color: string;
+  lifetime: number;
+  maxLifetime: number;
+  active: boolean;
+  reset(): void;
+}
+
+export function createBurstParticle(): BurstParticle {
+  return {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    size: 6,
+    alpha: 1,
+    color: '#ffff00',
+    lifetime: 0,
+    maxLifetime: 300,
+    active: false,
+    reset() {
+      this.lifetime = 0;
+      this.alpha = 1;
+    }
+  };
+}
+
+// Spark particle (for wall slides, friction effects)
+export interface SparkParticle extends Poolable {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  color: string;
+  lifetime: number;
+  active: boolean;
+  reset(): void;
+}
+
+export function createSparkParticle(): SparkParticle {
+  return {
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    size: 2,
+    alpha: 1,
+    color: '#ffaa00',
+    lifetime: 0,
+    active: false,
+    reset() {
+      this.lifetime = 0;
+      this.alpha = 1;
+    }
+  };
+}

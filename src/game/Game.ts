@@ -204,6 +204,9 @@ export class Game {
     this.save = new SaveManager();
     this.customLevelManager = new CustomLevelManager();
 
+    // Sync colorblind mode from settings
+    Platform.setColorblindMode(this.save.getColorblindMode() !== 'normal');
+
     // Initialize new systems
     this.particles = new ParticleEffects();
     this.transition = new ScreenTransition();
@@ -852,6 +855,7 @@ export class Game {
         const btnX = cbStartX + i * (cbBtnWidth + cbGap);
         if (x >= btnX && x <= btnX + cbBtnWidth) {
           this.save.setColorblindMode(modes[i].id);
+          Platform.setColorblindMode(modes[i].id !== 'normal');
           this.audio.playSelect();
           return;
         }
@@ -1599,6 +1603,44 @@ export class Game {
     } else {
       this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
     }
+
+    // Handle player particle events
+    if (this.player.edgeBounceEvent) {
+      this.particles.spawnEdgeBounce(
+        this.player.edgeBounceEvent.x,
+        this.player.edgeBounceEvent.y,
+        this.player.edgeBounceEvent.direction
+      );
+      this.particles.spawnFloatingText(
+        this.player.x + this.player.width / 2,
+        this.player.y - 10,
+        'SAVE!',
+        '#ffff00',
+        16
+      );
+    }
+    if (this.player.bounceEvent) {
+      this.particles.spawnBounceEffect(
+        this.player.bounceEvent.x,
+        this.player.bounceEvent.y,
+        this.player.bounceEvent.width
+      );
+    }
+    if (this.player.wallSlideEvent) {
+      this.particles.spawnWallSparks(
+        this.player.wallSlideEvent.x,
+        this.player.wallSlideEvent.y,
+        this.player.wallSlideEvent.side
+      );
+    }
+    if (this.player.gravityFlipEvent) {
+      this.particles.spawnGravityFlip(
+        this.player.gravityFlipEvent.x,
+        this.player.gravityFlipEvent.y,
+        this.player.gravityFlipEvent.flipped
+      );
+    }
+    this.player.clearEvents();
 
     // Trigger dash shake
     if (!wasDashing && this.player.isDashing) {
@@ -2422,6 +2464,29 @@ export class Game {
       if (this.level.getTotalCoins() > 0) muteY += 18;
       if (highScore > 0) muteY += 14;
       this.ctx.fillText('MUTED', GAME_WIDTH - 20, muteY);
+    }
+
+    // Speedrun timer (bottom-right corner with milliseconds)
+    this.ctx.textAlign = 'right';
+    this.ctx.font = 'bold 16px "Courier New", monospace';
+    const currentTime = this.formatSpeedrunTime(this.levelElapsedTime);
+    const bestTime = this.save.getBestTime(this.state.currentLevel) ?? 0;
+
+    // Current time - changes color based on comparison to best
+    if (bestTime > 0 && this.levelElapsedTime > bestTime) {
+      this.ctx.fillStyle = '#ff6666'; // Red if behind
+    } else if (bestTime > 0) {
+      this.ctx.fillStyle = '#00ff88'; // Green if ahead
+    } else {
+      this.ctx.fillStyle = '#ffffff'; // White if no best
+    }
+    this.ctx.fillText(currentTime, GAME_WIDTH - 20, GAME_HEIGHT - 20);
+
+    // Best time display (smaller, above current time)
+    if (bestTime > 0) {
+      this.ctx.font = '12px "Courier New", monospace';
+      this.ctx.fillStyle = 'rgba(255, 170, 0, 0.8)';
+      this.ctx.fillText(`Best: ${this.formatSpeedrunTime(bestTime)}`, GAME_WIDTH - 20, GAME_HEIGHT - 38);
     }
 
     // Combo counter and meter (center, when active)
@@ -4404,6 +4469,20 @@ export class Game {
       x: (Math.random() - 0.5) * currentIntensity * 2,
       y: (Math.random() - 0.5) * currentIntensity * 2,
     };
+  }
+
+  // Format time for speedrun display (mm:ss.mmm)
+  private formatSpeedrunTime(ms: number): string {
+    const totalSeconds = ms / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    const milliseconds = Math.floor(ms % 1000);
+
+    const minStr = minutes.toString().padStart(2, '0');
+    const secStr = seconds.toString().padStart(2, '0');
+    const msStr = milliseconds.toString().padStart(3, '0');
+
+    return `${minStr}:${secStr}.${msStr}`;
   }
 
   // ==================== LEVEL EDITOR METHODS ====================

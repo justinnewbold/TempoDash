@@ -10,6 +10,13 @@ export class Platform {
   movePattern?: MovePattern;
   color: string;
 
+  // Static colorblind mode setting
+  private static colorblindMode = false;
+
+  static setColorblindMode(enabled: boolean): void {
+    Platform.colorblindMode = enabled;
+  }
+
   private startX: number;
   private startY: number;
   private moveTime = 0;
@@ -598,5 +605,202 @@ export class Platform {
       ctx.lineWidth = 2;
       ctx.strokeRect(screenX, this.y, this.width, this.height);
     }
+
+    // Draw colorblind mode patterns/icons
+    if (Platform.colorblindMode) {
+      this.drawColorblindPattern(ctx, screenX);
+    }
+  }
+
+  // Draw distinctive patterns for colorblind accessibility
+  private drawColorblindPattern(ctx: CanvasRenderingContext2D, screenX: number): void {
+    const centerX = screenX + this.width / 2;
+    const centerY = this.y + this.height / 2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    switch (this.type) {
+      case 'spike':
+      case 'lava':
+        // Skull/danger icon - X pattern
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 8, centerY - 8);
+        ctx.lineTo(centerX + 8, centerY + 8);
+        ctx.moveTo(centerX + 8, centerY - 8);
+        ctx.lineTo(centerX - 8, centerY + 8);
+        ctx.stroke();
+        break;
+
+      case 'bounce':
+        // Up arrow (spring)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - 10);
+        ctx.lineTo(centerX - 8, centerY + 2);
+        ctx.lineTo(centerX - 3, centerY + 2);
+        ctx.lineTo(centerX - 3, centerY + 10);
+        ctx.lineTo(centerX + 3, centerY + 10);
+        ctx.lineTo(centerX + 3, centerY + 2);
+        ctx.lineTo(centerX + 8, centerY + 2);
+        ctx.closePath();
+        ctx.fill();
+        break;
+
+      case 'ice':
+        // Snowflake pattern - asterisk
+        ctx.strokeStyle = 'rgba(0, 0, 100, 0.8)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI / 3) * i;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(centerX + Math.cos(angle) * 10, centerY + Math.sin(angle) * 10);
+          ctx.stroke();
+        }
+        break;
+
+      case 'crumble':
+        // Broken/cracked - dashed lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(screenX + 5, this.y + 5, this.width - 10, this.height - 10);
+        ctx.setLineDash([]);
+        break;
+
+      case 'moving':
+        // Double-headed arrow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(centerX - 12, centerY);
+        ctx.lineTo(centerX - 5, centerY - 6);
+        ctx.lineTo(centerX - 5, centerY + 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(centerX + 12, centerY);
+        ctx.lineTo(centerX + 5, centerY - 6);
+        ctx.lineTo(centerX + 5, centerY + 6);
+        ctx.closePath();
+        ctx.fill();
+        break;
+
+      case 'phase':
+        // Ghost/dotted circle
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        break;
+
+      case 'conveyor':
+        // Triple chevrons
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.lineWidth = 2;
+        const dir = this.conveyorSpeed > 0 ? 1 : -1;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(centerX + i * 8 - 4 * dir, centerY - 6);
+          ctx.lineTo(centerX + i * 8 + 4 * dir, centerY);
+          ctx.lineTo(centerX + i * 8 - 4 * dir, centerY + 6);
+          ctx.stroke();
+        }
+        break;
+
+      case 'gravity':
+        // Up-down arrows
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        // Up arrow
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - 12);
+        ctx.lineTo(centerX - 6, centerY - 4);
+        ctx.lineTo(centerX + 6, centerY - 4);
+        ctx.closePath();
+        ctx.fill();
+        // Down arrow
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY + 12);
+        ctx.lineTo(centerX - 6, centerY + 4);
+        ctx.lineTo(centerX + 6, centerY + 4);
+        ctx.closePath();
+        ctx.fill();
+        break;
+
+      case 'sticky':
+        // Dots pattern (honey drops)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(centerX + (i - 1) * 12, centerY, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'glass':
+        // Diamond pattern
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - 10);
+        ctx.lineTo(centerX + 10, centerY);
+        ctx.lineTo(centerX, centerY + 10);
+        ctx.lineTo(centerX - 10, centerY);
+        ctx.closePath();
+        ctx.stroke();
+        break;
+
+      case 'slowmo':
+        // Clock icon
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX, centerY - 7);
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + 5, centerY);
+        ctx.stroke();
+        break;
+
+      case 'wall':
+        // Vertical bars
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 3;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(centerX + i * 6, centerY - 10);
+          ctx.lineTo(centerX + i * 6, centerY + 10);
+          ctx.stroke();
+        }
+        break;
+
+      case 'secret':
+        // Question mark
+        if (this.secretRevealed) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillText('?', centerX, centerY);
+        }
+        break;
+
+      case 'solid':
+      default:
+        // Simple square
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(centerX - 6, centerY - 6, 12, 12);
+        break;
+    }
+
+    ctx.restore();
   }
 }

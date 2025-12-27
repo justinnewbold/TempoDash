@@ -5,7 +5,9 @@ import {
   CoinParticle, createCoinParticle,
   FloatingText, createFloatingText,
   TrailParticle, createTrailParticle,
-  DustParticle, createDustParticle
+  DustParticle, createDustParticle,
+  BurstParticle, createBurstParticle,
+  SparkParticle, createSparkParticle
 } from './ObjectPool';
 import { GAME_WIDTH } from '../constants';
 
@@ -15,6 +17,8 @@ export class ParticleEffects {
   private floatingTexts: ObjectPool<FloatingText>;
   private trailParticles: ObjectPool<TrailParticle>;
   private dustParticles: ObjectPool<DustParticle>;
+  private burstParticles: ObjectPool<BurstParticle>;
+  private sparkParticles: ObjectPool<SparkParticle>;
 
   // Trail spawn timer
   private trailSpawnTimer = 0;
@@ -26,6 +30,8 @@ export class ParticleEffects {
     this.floatingTexts = new ObjectPool(createFloatingText, 10, 30);
     this.trailParticles = new ObjectPool(createTrailParticle, 30, 60);
     this.dustParticles = new ObjectPool(createDustParticle, 20, 40);
+    this.burstParticles = new ObjectPool(createBurstParticle, 30, 60);
+    this.sparkParticles = new ObjectPool(createSparkParticle, 40, 80);
   }
 
   // Spawn death explosion particles
@@ -142,6 +148,134 @@ export class ParticleEffects {
     }
   }
 
+  // Spawn edge bounce burst (when player bounces off platform corner)
+  spawnEdgeBounce(x: number, y: number, direction: 'left' | 'right'): void {
+    const particleCount = 12;
+    const baseAngle = direction === 'left' ? Math.PI * 0.75 : Math.PI * 0.25;
+
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.burstParticles.acquire();
+      if (!particle) break;
+
+      const angle = baseAngle + (Math.random() - 0.5) * Math.PI * 0.5;
+      const speed = 150 + Math.random() * 150;
+
+      particle.x = x;
+      particle.y = y;
+      particle.vx = Math.cos(angle) * speed;
+      particle.vy = Math.sin(angle) * speed - 100; // Bias upward
+      particle.size = 4 + Math.random() * 6;
+      particle.color = '#ffff00';
+      particle.alpha = 1;
+      particle.maxLifetime = 300 + Math.random() * 200;
+    }
+  }
+
+  // Spawn bounce platform effect
+  spawnBounceEffect(x: number, y: number, width: number): void {
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.burstParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + Math.random() * width;
+      particle.y = y;
+      particle.vx = (Math.random() - 0.5) * 100;
+      particle.vy = -150 - Math.random() * 100;
+      particle.size = 3 + Math.random() * 4;
+      particle.color = '#ff6b9d';
+      particle.alpha = 1;
+      particle.maxLifetime = 400;
+    }
+  }
+
+  // Spawn wall slide sparks
+  spawnWallSparks(x: number, y: number, side: 'left' | 'right'): void {
+    const particle = this.sparkParticles.acquire();
+    if (!particle) return;
+
+    particle.x = x;
+    particle.y = y;
+    particle.vx = (side === 'left' ? 1 : -1) * (30 + Math.random() * 50);
+    particle.vy = -20 + Math.random() * 40;
+    particle.size = 1 + Math.random() * 2;
+    particle.color = '#ffaa00';
+    particle.alpha = 1;
+  }
+
+  // Spawn power-up collect burst
+  spawnPowerUpCollect(x: number, y: number, color: string): void {
+    const particleCount = 15;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.burstParticles.acquire();
+      if (!particle) break;
+
+      const angle = (Math.PI * 2 / particleCount) * i;
+      const speed = 100 + Math.random() * 100;
+
+      particle.x = x;
+      particle.y = y;
+      particle.vx = Math.cos(angle) * speed;
+      particle.vy = Math.sin(angle) * speed;
+      particle.size = 5 + Math.random() * 5;
+      particle.color = color;
+      particle.alpha = 1;
+      particle.maxLifetime = 500;
+    }
+  }
+
+  // Spawn gravity flip effect
+  spawnGravityFlip(x: number, y: number, flipped: boolean): void {
+    const particleCount = 10;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.burstParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + (Math.random() - 0.5) * 40;
+      particle.y = y + (Math.random() - 0.5) * 40;
+      particle.vx = (Math.random() - 0.5) * 80;
+      particle.vy = (flipped ? 1 : -1) * (50 + Math.random() * 100);
+      particle.size = 4 + Math.random() * 4;
+      particle.color = '#ed64a6';
+      particle.alpha = 1;
+      particle.maxLifetime = 400;
+    }
+  }
+
+  // Spawn ice slide particles
+  spawnIceSlide(x: number, y: number): void {
+    const particle = this.sparkParticles.acquire();
+    if (!particle) return;
+
+    particle.x = x + (Math.random() - 0.5) * 20;
+    particle.y = y;
+    particle.vx = (Math.random() - 0.5) * 30;
+    particle.vy = -10 - Math.random() * 20;
+    particle.size = 2 + Math.random() * 2;
+    particle.color = '#88ddff';
+    particle.alpha = 0.8;
+  }
+
+  // Spawn crumble particles when platform breaks
+  spawnCrumble(x: number, y: number, width: number, height: number): void {
+    const particleCount = 12;
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.deathParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + Math.random() * width;
+      particle.y = y + Math.random() * height;
+      particle.vx = (Math.random() - 0.5) * 100;
+      particle.vy = 50 + Math.random() * 100;
+      particle.size = 4 + Math.random() * 8;
+      particle.color = '#aa8866';
+      particle.rotation = Math.random() * 360;
+      particle.rotationSpeed = (Math.random() - 0.5) * 360;
+      particle.alpha = 1;
+      particle.maxLifetime = 800;
+    }
+  }
+
   // Update trail spawning based on player movement
   updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean): void {
     if (!isMoving) return;
@@ -230,6 +364,35 @@ export class ParticleEffects {
       particle.alpha = 0.6 * (1 - particle.lifetime / 400);
       particle.size *= 0.98;
     });
+
+    // Update burst particles
+    this.burstParticles.forEach((particle) => {
+      particle.lifetime += deltaTime;
+      if (particle.lifetime >= particle.maxLifetime) {
+        this.burstParticles.release(particle);
+        return;
+      }
+
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vy += 300 * dt; // Gravity
+      particle.alpha = 1 - (particle.lifetime / particle.maxLifetime);
+      particle.size *= 0.97;
+    });
+
+    // Update spark particles
+    this.sparkParticles.forEach((particle) => {
+      particle.lifetime += deltaTime;
+      if (particle.lifetime >= 200) {
+        this.sparkParticles.release(particle);
+        return;
+      }
+
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vy += 200 * dt;
+      particle.alpha = 1 - (particle.lifetime / 200);
+    });
   }
 
   // Render all particles
@@ -311,6 +474,38 @@ export class ParticleEffects {
       ctx.fillText(text.text, screenX, text.y);
       ctx.restore();
     });
+
+    // Render burst particles
+    this.burstParticles.forEach((particle) => {
+      const screenX = particle.x - cameraX;
+      if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
+
+      ctx.save();
+      ctx.globalAlpha = particle.alpha;
+      ctx.fillStyle = particle.color;
+      ctx.shadowColor = particle.color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(screenX, particle.y, particle.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // Render spark particles
+    this.sparkParticles.forEach((particle) => {
+      const screenX = particle.x - cameraX;
+      if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
+
+      ctx.save();
+      ctx.globalAlpha = particle.alpha;
+      ctx.fillStyle = particle.color;
+      ctx.shadowColor = particle.color;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(screenX, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
   }
 
   // Get active particle count for debugging
@@ -319,7 +514,9 @@ export class ParticleEffects {
            this.coinParticles.getActiveCount() +
            this.floatingTexts.getActiveCount() +
            this.trailParticles.getActiveCount() +
-           this.dustParticles.getActiveCount();
+           this.dustParticles.getActiveCount() +
+           this.burstParticles.getActiveCount() +
+           this.sparkParticles.getActiveCount();
   }
 
   // Clear all particles (on level change)
@@ -329,5 +526,7 @@ export class ParticleEffects {
     this.floatingTexts.releaseAll();
     this.trailParticles.releaseAll();
     this.dustParticles.releaseAll();
+    this.burstParticles.releaseAll();
+    this.sparkParticles.releaseAll();
   }
 }
