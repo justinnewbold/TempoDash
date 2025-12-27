@@ -68,6 +68,11 @@ export class Player {
   // Slow-mo zone state
   isInSlowMo = false;
 
+  // Flying mode state
+  private flyingMode = false;
+  private static readonly FLYING_LIFT_FORCE = 800;  // Upward force when holding jump
+  private static readonly FLYING_GRAVITY = 600;     // Downward force when not holding
+
   // Particle effect events (cleared each frame after being read)
   edgeBounceEvent: { x: number; y: number; direction: 'left' | 'right' } | null = null;
   bounceEvent: { x: number; y: number; width: number } | null = null;
@@ -86,6 +91,14 @@ export class Player {
 
   setSkin(skin: PlayerSkin): void {
     this.skin = skin;
+  }
+
+  setFlyingMode(enabled: boolean): void {
+    this.flyingMode = enabled;
+  }
+
+  isFlyingMode(): boolean {
+    return this.flyingMode;
   }
 
   reset(position: Vector2): void {
@@ -169,40 +182,68 @@ export class Player {
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
     this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
 
-    // Handle jumping (auto-jump when holding - jump as soon as grounded)
-    if (input.jump && this.isGrounded && !this.isStuck) {
-      this.velocityY = -PLAYER.JUMP_FORCE;
-      this.isGrounded = false;
-      this.airJumpsRemaining = 2; // Reset air jumps on ground jump
-    } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
-      // Air jumps (double/triple) - each successive jump is weaker
-      // Disabled when "Grounded" modifier is active
-      const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
-      this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
+    // Flying mode: hold to fly up, release to fall
+    if (this.flyingMode) {
+      if (input.jump) {
+        // Apply lift force when holding jump
+        this.velocityY -= Player.FLYING_LIFT_FORCE * (deltaTime / 1000);
+        // Cap upward velocity
+        if (this.velocityY < -400) {
+          this.velocityY = -400;
+        }
+      } else {
+        // Apply gravity when not holding
+        this.velocityY += Player.FLYING_GRAVITY * (deltaTime / 1000);
+        // Cap downward velocity
+        if (this.velocityY > 400) {
+          this.velocityY = 400;
+        }
+      }
+      // Keep player within screen bounds vertically
+      if (this.y < 20) {
+        this.y = 20;
+        this.velocityY = Math.max(0, this.velocityY);
+      }
+      if (this.y > GAME_HEIGHT - this.height - 20) {
+        this.y = GAME_HEIGHT - this.height - 20;
+        this.velocityY = Math.min(0, this.velocityY);
+      }
+    } else {
+      // Normal mode: Handle jumping (auto-jump when holding - jump as soon as grounded)
+      if (input.jump && this.isGrounded && !this.isStuck) {
+        this.velocityY = -PLAYER.JUMP_FORCE;
+        this.isGrounded = false;
+        this.airJumpsRemaining = 2; // Reset air jumps on ground jump
+      } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
+        // Air jumps (double/triple) - each successive jump is weaker
+        // Disabled when "Grounded" modifier is active
+        const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
+        this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
 
-      // Triple jump (last air jump) triggers dash
-      if (this.airJumpsRemaining === 1) {
-        this.isDashing = true;
-        this.dashTimer = Player.DASH_DURATION;
+        // Triple jump (last air jump) triggers dash
+        if (this.airJumpsRemaining === 1) {
+          this.isDashing = true;
+          this.dashTimer = Player.DASH_DURATION;
+        }
+
+        this.airJumpsRemaining--;
       }
 
-      this.airJumpsRemaining--;
-    }
+      // Wall jump - can jump off walls even without air jumps
+      if (input.jumpPressed && this.isWallSliding && this.wallJumpCooldown <= 0) {
+        this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
+        this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
+        this.isWallSliding = false;
+        // Reset air jumps on wall jump
+        this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 1);
+      }
 
-    // Wall jump - can jump off walls even without air jumps
-    if (input.jumpPressed && this.isWallSliding && this.wallJumpCooldown <= 0) {
-      this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
-      this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
-      this.isWallSliding = false;
-      // Reset air jumps on wall jump
-      this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 1);
+      // Apply gravity (flipped if on gravity platform)
+      // Slow-mo zones reduce gravity effect
+      const slowMoMult = this.isInSlowMo ? 0.4 : 1;
+      const gravityDir = this.gravityFlipped ? -1 : 1;
+      this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
     }
-
-    // Apply gravity (flipped if on gravity platform)
-    // Slow-mo zones reduce gravity effect
-    const slowMoMult = this.isInSlowMo ? 0.4 : 1;
-    const gravityDir = this.gravityFlipped ? -1 : 1;
-    this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
 
     // Wall sliding reduces fall speed
     const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
@@ -211,8 +252,13 @@ export class Player {
     // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
 
-    // Handle rotation (spin in air like Geometry Dash)
-    if (!this.isGrounded) {
+    // Handle rotation
+    if (this.flyingMode) {
+      // In flying mode, tilt based on velocity (like a plane)
+      const targetTilt = (this.velocityY / 400) * 30; // Max 30 degrees tilt
+      this.rotation += (targetTilt - this.rotation) * 0.1; // Smooth interpolation
+    } else if (!this.isGrounded) {
+      // Normal mode: spin in air like Geometry Dash
       this.rotation += PLAYER.ROTATION_SPEED * (deltaTime / 1000);
     } else {
       // Snap to nearest 90 degrees when landing

@@ -87,6 +87,7 @@ export interface LevelConfig {
   checkpoints?: CheckpointConfig[];  // Mid-level checkpoints
   totalCoins?: number;  // For star calculation (auto-counted if not set)
   bpm?: number;  // Beats per minute for beat visualization
+  flyingMode?: boolean;  // Flying mode - player flies and avoids obstacles
 }
 
 export interface BackgroundConfig {
@@ -105,7 +106,8 @@ export type BackgroundType =
   | 'forest'     // Level 4 - Mystical forest
   | 'volcano'    // Level 5 - Volcanic cavern
   | 'ocean'      // Level 6 - Underwater
-  | 'inferno';   // Level 9 - Chase level (wall of death)
+  | 'inferno'    // Level 9 - Chase level (wall of death)
+  | 'sky';       // Level 10 - Flying level (sky clouds)
 
 export interface ParticleConfig {
   count: number;
@@ -259,6 +261,7 @@ export interface CustomLevel {
   platforms: PlatformConfig[];
   coins: CoinConfig[];
   powerUps?: PowerUpConfig[];
+  flyingMode?: boolean;
 }
 
 export interface EditorState {

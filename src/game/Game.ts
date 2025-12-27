@@ -88,6 +88,7 @@ export class Game {
   private customLevelManager: CustomLevelManager;
   private editor: LevelEditor | null = null;
   private editingLevel: CustomLevel | null = null;
+  private editorTestStartPosition: { x: number; y: number } | null = null;
   private customLevelScrollOffset = 0;
   private settingsScrollOffset = 0;
   private achievementsScrollOffset = 0;
@@ -355,6 +356,10 @@ export class Game {
     // Reset speed multiplier for new level
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+
+    // Enable flying mode if level config specifies it
+    const levelConfig = this.level.getConfig();
+    this.player.setFlyingMode(levelConfig.flyingMode ?? false);
 
     // Set music style for this level
     this.audio.setStyleForLevel(levelId);
@@ -1305,6 +1310,23 @@ export class Game {
   }
 
   private restartLevel(): void {
+    // Check if we're in editor test mode
+    if (this.state.gameStatus === 'editorTest' && this.editingLevel) {
+      // Restart editor test level
+      const config = this.customLevelManager.toLevelConfig(this.editingLevel);
+      this.level = new Level(config);
+      const startPosition = this.editorTestStartPosition || config.playerStart;
+      this.player = new Player(startPosition);
+      this.player.setSkin(this.save.getSelectedSkin());
+      this.player.setFlyingMode(config.flyingMode ?? false);
+      this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
+      this.attempts = 1;
+      this.levelScoreThisRun = 0;
+      this.state.gameStatus = 'editorTest';
+      this.audio.start();
+      return;
+    }
+
     // Restart current level from beginning
     this.loadLevel(this.state.currentLevel);
     this.attempts = 1;
@@ -1428,15 +1450,26 @@ export class Game {
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
 
-    if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
+    if (this.state.gameStatus === 'editorTest' && this.editingLevel) {
+      // Respawn in editor test mode - reload editor level
+      const config = this.customLevelManager.toLevelConfig(this.editingLevel);
+      this.level = new Level(config);
+      const startPosition = this.editorTestStartPosition || config.playerStart;
+      this.player = new Player(startPosition);
+      this.player.setSkin(this.save.getSelectedSkin());
+      this.player.setFlyingMode(config.flyingMode ?? false);
+      this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
+      this.state.gameStatus = 'editorTest';
+    } else if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
       this.cameraX = Math.max(0, this.checkpointX - 150);
+      this.state.gameStatus = 'practice';
     } else {
       // Normal respawn at level start
       this.loadLevel(this.state.currentLevel);
+      this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
     }
-    this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
   }
 
   start(): void {
@@ -5222,10 +5255,15 @@ export class Game {
     const config = this.customLevelManager.toLevelConfig(level);
     this.level = new Level(config);
 
+    // Enable flying mode if level config specifies it
+    const flyingMode = config.flyingMode ?? false;
+
     // Use test position if provided, otherwise use normal player start
     const startPosition = testPosition || config.playerStart;
+    this.editorTestStartPosition = startPosition; // Store for respawn
     this.player = new Player(startPosition);
     this.player.setSkin(this.save.getSelectedSkin());
+    this.player.setFlyingMode(flyingMode);
 
     // Set camera to center on test position
     this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
