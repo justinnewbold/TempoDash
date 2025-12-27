@@ -201,6 +201,9 @@ export class Game {
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
+
+    // Set up mobile UI exclusion zones and callback for button handling
+    this.setupMobileUIExclusions();
     this.audio = new AudioManager();
     this.save = new SaveManager();
     this.customLevelManager = new CustomLevelManager();
@@ -2686,6 +2689,40 @@ export class Game {
       this.ctx.textAlign = 'center';
       this.ctx.fillText('Left side: Flip gravity  |  Right side: Jump', GAME_WIDTH / 2, hintY);
     }
+  }
+
+  // Set up mobile UI exclusion zones so button taps don't trigger jumps
+  private setupMobileUIExclusions(): void {
+    const buttonSize = 44;
+    const buttonPadding = 12;
+    const topY = 55;
+
+    // Calculate button positions
+    const pauseX = GAME_WIDTH - buttonSize - buttonPadding;
+    const homeX = pauseX - buttonSize - buttonPadding;
+    const restartX = homeX - buttonSize - buttonPadding;
+
+    // Define exclusion zones for all three buttons
+    const zones = [
+      { x: restartX, y: topY, width: buttonSize, height: buttonSize },
+      { x: homeX, y: topY, width: buttonSize, height: buttonSize },
+      { x: pauseX, y: topY, width: buttonSize, height: buttonSize },
+    ];
+
+    this.input.setExclusionZones(zones);
+
+    // Set callback to handle button taps
+    this.input.setExcludedTouchCallback((x, y) => {
+      // Only handle during gameplay states
+      if (this.state.gameStatus === 'playing' ||
+          this.state.gameStatus === 'practice' ||
+          this.state.gameStatus === 'endless' ||
+          this.state.gameStatus === 'challengePlaying' ||
+          this.state.gameStatus === 'editorTest' ||
+          this.state.gameStatus === 'paused') {
+        this.handleMobileControlClick(x, y);
+      }
+    });
   }
 
   private handleMobileControlClick(x: number, y: number): boolean {
