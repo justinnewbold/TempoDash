@@ -225,16 +225,19 @@ export class ContextMenu {
       { id: 'paste', label: 'Paste', icon: '📋', disabled: !hasClipboard },
       { id: 'addPlatform', label: 'Add Platform', icon: '▬' },
       { id: 'addCoin', label: 'Add Coin', icon: '●' },
-      { id: 'testHere', label: 'Test from Here', icon: '▶️' },
+      { id: 'testFromHere', label: 'Test from Here', icon: '▶️' },
     ];
   }
 
   static getMultiSelectItems(): ContextMenuItem[] {
     return [
+      { id: 'group', label: 'Group', icon: '🔗' },
+      { id: 'ungroup', label: 'Ungroup', icon: '✂️' },
       { id: 'duplicate', label: 'Duplicate All', icon: '📋' },
       { id: 'alignLeft', label: 'Align Left', icon: '⬅️' },
-      { id: 'alignCenter', label: 'Align Center', icon: '↔️' },
-      { id: 'distribute', label: 'Distribute', icon: '⇔' },
+      { id: 'alignTop', label: 'Align Top', icon: '⬆️' },
+      { id: 'distribute', label: 'Distribute H', icon: '↔️' },
+      { id: 'distributeV', label: 'Distribute V', icon: '↕️' },
       { id: 'delete', label: 'Delete All', icon: '🗑️', danger: true },
     ];
   }

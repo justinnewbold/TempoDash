@@ -3,7 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
-import { CustomLevelManager } from '../systems/CustomLevelManager';
+import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
@@ -171,6 +171,7 @@ export class Game {
   // Level sharing state
   private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
   private pendingImportLevel: import('../types').CustomLevel | null = null;
+  private showingTemplateSelect = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -4495,7 +4496,7 @@ export class Game {
     }
     this.editor = new LevelEditor(this.editingLevel);
     this.editor.setOnSave(() => this.saveCurrentLevel());
-    this.editor.setOnPlay(() => this.testLevel());
+    this.editor.setOnPlay((pos) => this.testLevel(pos));
     this.state.gameStatus = 'editor';
 
     // Resize canvas for editor (needs more space for UI) with high-DPI support
@@ -4592,12 +4593,52 @@ export class Game {
       }
     }
 
-    // Create New Level button
+    // Create New Level button - show template selection
     if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 + 100 &&
         y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 40) {
       this.audio.playSelect();
-      this.openEditor();
+      this.showingTemplateSelect = true;
       return;
+    }
+
+    // Template selection modal
+    if (this.showingTemplateSelect) {
+      const templates = CustomLevelManager.getTemplates();
+      const modalWidth = 400;
+      const modalHeight = 280;
+      const modalX = (GAME_WIDTH - modalWidth) / 2;
+      const modalY = (GAME_HEIGHT - modalHeight) / 2;
+      const templateHeight = 45;
+      const startY = modalY + 50;
+
+      // Check template buttons
+      for (let i = 0; i < templates.length; i++) {
+        const btnY = startY + i * (templateHeight + 10);
+        if (x >= modalX + 20 && x <= modalX + modalWidth - 20 &&
+            y >= btnY && y <= btnY + templateHeight) {
+          this.audio.playSelect();
+          this.showingTemplateSelect = false;
+          const newLevel = this.customLevelManager.createFromTemplate(templates[i].id as LevelTemplate);
+          this.openEditor(newLevel);
+          return;
+        }
+      }
+
+      // Cancel button
+      if (x >= modalX + modalWidth / 2 - 50 && x <= modalX + modalWidth / 2 + 50 &&
+          y >= modalY + modalHeight - 45 && y <= modalY + modalHeight - 15) {
+        this.audio.playSelect();
+        this.showingTemplateSelect = false;
+        return;
+      }
+
+      // Click outside modal - close it
+      if (x < modalX || x > modalX + modalWidth || y < modalY || y > modalY + modalHeight) {
+        this.audio.playSelect();
+        this.showingTemplateSelect = false;
+        return;
+      }
+      return; // Consume click when template select is showing
     }
 
     // Import from Code button
@@ -4917,6 +4958,81 @@ export class Game {
       this.ctx.fillText('CANCEL', GAME_WIDTH / 2 + 60, promptY + 65);
     }
 
+    // Template selection modal
+    if (this.showingTemplateSelect) {
+      // Darken background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+      const templates = CustomLevelManager.getTemplates();
+      const modalWidth = 400;
+      const modalHeight = 280;
+      const modalX = (GAME_WIDTH - modalWidth) / 2;
+      const modalY = (GAME_HEIGHT - modalHeight) / 2;
+
+      // Modal background
+      this.ctx.fillStyle = 'rgba(30, 30, 50, 0.98)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(modalX, modalY, modalWidth, modalHeight, 15);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#ff00ff';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Title
+      this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ff00ff';
+      this.ctx.textAlign = 'center';
+      this.ctx.shadowColor = '#ff00ff';
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText('Choose a Template', GAME_WIDTH / 2, modalY + 35);
+      this.ctx.shadowBlur = 0;
+
+      // Template options
+      const templateHeight = 45;
+      const startY = modalY + 50;
+
+      for (let i = 0; i < templates.length; i++) {
+        const template = templates[i];
+        const btnY = startY + i * (templateHeight + 10);
+
+        // Button background
+        this.ctx.fillStyle = 'rgba(60, 60, 90, 0.8)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(modalX + 20, btnY, modalWidth - 40, templateHeight, 8);
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+
+        // Icon
+        this.ctx.font = '24px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(template.icon, modalX + 35, btnY + 32);
+
+        // Name
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(template.name, modalX + 75, btnY + 22);
+
+        // Description
+        this.ctx.font = '12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#aaaaaa';
+        this.ctx.fillText(template.description, modalX + 75, btnY + 38);
+      }
+
+      // Cancel button
+      this.ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(modalX + modalWidth / 2 - 50, modalY + modalHeight - 45, 100, 30, 6);
+      this.ctx.fill();
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('Cancel', GAME_WIDTH / 2, modalY + modalHeight - 25);
+    }
+
     // Scroll indicator (show if there are more levels than visible)
     if (levels.length > 6) { // More than 2 rows
       const rows = Math.ceil(levels.length / 3);
@@ -5056,7 +5172,7 @@ export class Game {
     }
   }
 
-  private testLevel(): void {
+  private testLevel(testPosition?: { x: number; y: number }): void {
     if (!this.editor) return;
 
     // Save first
@@ -5068,9 +5184,14 @@ export class Game {
     // Play the level in test mode
     const config = this.customLevelManager.toLevelConfig(level);
     this.level = new Level(config);
-    this.player = new Player(config.playerStart);
+
+    // Use test position if provided, otherwise use normal player start
+    const startPosition = testPosition || config.playerStart;
+    this.player = new Player(startPosition);
     this.player.setSkin(this.save.getSelectedSkin());
-    this.cameraX = 0;
+
+    // Set camera to center on test position
+    this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
     this.attempts = 0;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing
@@ -5099,7 +5220,7 @@ export class Game {
       this.setupCrispRendering();
       this.editor = new LevelEditor(this.editingLevel);
       this.editor.setOnSave(() => this.saveCurrentLevel());
-      this.editor.setOnPlay(() => this.testLevel());
+      this.editor.setOnPlay((pos) => this.testLevel(pos));
       this.state.gameStatus = 'editor';
       this.audio.stop();
 

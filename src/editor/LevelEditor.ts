@@ -92,12 +92,18 @@ export class LevelEditor {
   private alignmentGuides: { type: 'horizontal' | 'vertical'; position: number; start: number; end: number }[] = [];
   private snapThreshold = 10; // Distance in pixels to trigger snap
 
+  // Platform groups (stored as sets of platform indices)
+  private platformGroups: Set<number>[] = [];
+
   // Canvas reference for touch handling
   private canvas: HTMLCanvasElement | null = null;
 
   // Callbacks for external actions
   private onSaveCallback: (() => void) | null = null;
-  private onPlayCallback: (() => void) | null = null;
+  private onPlayCallback: ((testPosition?: Vector2) => void) | null = null;
+
+  // Test from cursor position
+  private testStartPosition: Vector2 | null = null;
 
   constructor(level: CustomLevel) {
     this.level = level;
@@ -758,6 +764,36 @@ export class LevelEditor {
       case 'addCoin':
         this.setTool('coin');
         break;
+      case 'testFromHere':
+        this.testFromCursor();
+        break;
+      case 'alignLeft':
+        this.alignLeft();
+        break;
+      case 'alignRight':
+        this.alignRight();
+        break;
+      case 'alignCenter':
+        this.alignCenter();
+        break;
+      case 'alignTop':
+        this.alignTop();
+        break;
+      case 'alignBottom':
+        this.alignBottom();
+        break;
+      case 'distribute':
+        this.distributeHorizontally();
+        break;
+      case 'distributeV':
+        this.distributeVertically();
+        break;
+      case 'group':
+        this.groupSelected();
+        break;
+      case 'ungroup':
+        this.ungroupSelected();
+        break;
     }
   }
 
@@ -990,6 +1026,224 @@ export class LevelEditor {
     this.saveUndoState();
   }
 
+  // Group selected platforms together
+  groupSelected(): void {
+    const platformIndices = this.selectedElements
+      .filter(el => el.type === 'platform')
+      .map(el => el.index);
+
+    if (platformIndices.length < 2) return;
+
+    // Remove these platforms from any existing groups
+    for (const group of this.platformGroups) {
+      for (const idx of platformIndices) {
+        group.delete(idx);
+      }
+    }
+    // Remove empty groups
+    this.platformGroups = this.platformGroups.filter(g => g.size > 0);
+
+    // Create new group
+    this.platformGroups.push(new Set(platformIndices));
+  }
+
+  // Ungroup selected platforms
+  ungroupSelected(): void {
+    const platformIndices = new Set(
+      this.selectedElements
+        .filter(el => el.type === 'platform')
+        .map(el => el.index)
+    );
+
+    // Remove these platforms from all groups
+    for (const group of this.platformGroups) {
+      for (const idx of platformIndices) {
+        group.delete(idx);
+      }
+    }
+    // Remove empty groups
+    this.platformGroups = this.platformGroups.filter(g => g.size > 0);
+  }
+
+  // Find group containing a platform
+  private findGroupForPlatform(index: number): Set<number> | null {
+    for (const group of this.platformGroups) {
+      if (group.has(index)) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  // Select entire group when clicking on grouped platform
+  selectGroup(platformIndex: number): void {
+    const group = this.findGroupForPlatform(platformIndex);
+    if (!group) return;
+
+    this.selectedElements = [];
+    for (const idx of group) {
+      this.selectedElements.push({ type: 'platform', index: idx });
+    }
+    if (this.selectedElements.length > 0) {
+      this.state.selectedElement = this.selectedElements[0];
+    }
+  }
+
+  // Align selected platforms to left edge
+  alignLeft(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 2) return;
+
+    let minX = Infinity;
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p && p.x < minX) minX = p.x;
+    }
+
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) p.x = minX;
+    }
+    this.saveUndoState();
+  }
+
+  // Align selected platforms to right edge
+  alignRight(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 2) return;
+
+    let maxRight = -Infinity;
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) {
+        const right = p.x + p.width;
+        if (right > maxRight) maxRight = right;
+      }
+    }
+
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) p.x = maxRight - p.width;
+    }
+    this.saveUndoState();
+  }
+
+  // Align selected platforms to vertical center
+  alignCenter(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 2) return;
+
+    // Calculate the center of the bounding box
+    let minX = Infinity, maxRight = -Infinity;
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) {
+        if (p.x < minX) minX = p.x;
+        if (p.x + p.width > maxRight) maxRight = p.x + p.width;
+      }
+    }
+    const centerX = (minX + maxRight) / 2;
+
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) p.x = centerX - p.width / 2;
+    }
+    this.saveUndoState();
+  }
+
+  // Align selected platforms to top edge
+  alignTop(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 2) return;
+
+    let minY = Infinity;
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p && p.y < minY) minY = p.y;
+    }
+
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) p.y = minY;
+    }
+    this.saveUndoState();
+  }
+
+  // Align selected platforms to bottom edge
+  alignBottom(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 2) return;
+
+    let maxBottom = -Infinity;
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) {
+        const bottom = p.y + p.height;
+        if (bottom > maxBottom) maxBottom = bottom;
+      }
+    }
+
+    for (const el of platforms) {
+      const p = this.level.platforms[el.index];
+      if (p) p.y = maxBottom - p.height;
+    }
+    this.saveUndoState();
+  }
+
+  // Distribute selected platforms evenly horizontally
+  distributeHorizontally(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 3) return;
+
+    // Sort by x position
+    const sorted = platforms
+      .map(el => ({ el, p: this.level.platforms[el.index] }))
+      .filter(item => item.p !== undefined)
+      .sort((a, b) => a.p!.x - b.p!.x);
+
+    if (sorted.length < 3) return;
+
+    const first = sorted[0].p!;
+    const last = sorted[sorted.length - 1].p!;
+    const totalWidth = (last.x + last.width) - first.x;
+    const platformsWidth = sorted.reduce((sum, item) => sum + item.p!.width, 0);
+    const gap = (totalWidth - platformsWidth) / (sorted.length - 1);
+
+    let currentX = first.x;
+    for (const item of sorted) {
+      item.p!.x = currentX;
+      currentX += item.p!.width + gap;
+    }
+    this.saveUndoState();
+  }
+
+  // Distribute selected platforms evenly vertically
+  distributeVertically(): void {
+    const platforms = this.selectedElements.filter(el => el.type === 'platform');
+    if (platforms.length < 3) return;
+
+    // Sort by y position
+    const sorted = platforms
+      .map(el => ({ el, p: this.level.platforms[el.index] }))
+      .filter(item => item.p !== undefined)
+      .sort((a, b) => a.p!.y - b.p!.y);
+
+    if (sorted.length < 3) return;
+
+    const first = sorted[0].p!;
+    const last = sorted[sorted.length - 1].p!;
+    const totalHeight = (last.y + last.height) - first.y;
+    const platformsHeight = sorted.reduce((sum, item) => sum + item.p!.height, 0);
+    const gap = (totalHeight - platformsHeight) / (sorted.length - 1);
+
+    let currentY = first.y;
+    for (const item of sorted) {
+      item.p!.y = currentY;
+      currentY += item.p!.height + gap;
+    }
+    this.saveUndoState();
+  }
+
   // Minimap navigation
   private handleMiniMapNavigation(worldX: number): void {
     const viewportWidth = (this.canvas?.width || GAME_WIDTH) - this.getEditorOffsetX();
@@ -1043,8 +1297,32 @@ export class LevelEditor {
   }
 
   // Set callback for play/test action
-  setOnPlay(callback: () => void): void {
+  setOnPlay(callback: (testPosition?: Vector2) => void): void {
     this.onPlayCallback = callback;
+  }
+
+  // Set test start position (for testing from a specific location)
+  setTestPosition(position: Vector2 | null): void {
+    this.testStartPosition = position;
+  }
+
+  // Get test start position
+  getTestPosition(): Vector2 | null {
+    return this.testStartPosition;
+  }
+
+  // Test from current mouse position
+  testFromCursor(): void {
+    if (this.onPlayCallback) {
+      this.onPlayCallback({ x: this.mouseWorldX, y: this.mouseWorldY });
+    }
+  }
+
+  // Test from normal start
+  testFromStart(): void {
+    if (this.onPlayCallback) {
+      this.onPlayCallback();
+    }
   }
 
   // Update level name
@@ -1626,6 +1904,10 @@ export class LevelEditor {
         break;
       case '5':
         this.setTool('pan');
+        break;
+      case 't':
+      case 'T':
+        this.testFromCursor();
         break;
     }
   }
