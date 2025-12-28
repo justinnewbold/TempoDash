@@ -242,6 +242,11 @@ export interface GameSettings {
   reduceFlash: boolean;  // Reduce screen flash effects (death/power-up)
   showGhost: boolean;    // Show ghost replay in levels
   highContrast: boolean; // High contrast mode for better visibility
+  // Performance options
+  performanceMode: boolean;  // Disable weather, particles, and effects for low-end devices
+  // Touch control options
+  touchButtonScale: number;    // Scale factor for touch buttons (0.5-2.0)
+  touchButtonOpacity: number;  // Opacity for touch buttons (0.2-1.0)
 }
 
 export interface PlayerSkin {

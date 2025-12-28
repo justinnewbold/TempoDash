@@ -306,6 +306,10 @@ export class Game {
     this.audio.setSfxVolume(settings.sfxVolume);
     this.showGhost = this.save.isShowGhostEnabled();
 
+    // Apply touch control settings
+    this.touchControls.setScale(this.save.getTouchButtonScale());
+    this.touchControls.setOpacity(this.save.getTouchButtonOpacity());
+
     this.loadLevel(1);
 
     // Setup keyboard
@@ -1038,8 +1042,33 @@ export class Game {
       this.audio.playSelect();
     }
 
-    // Export data button (right column)
-    if (x >= rightColX - 100 && x <= rightColX && y >= 485 && y <= 515) {
+    // Performance mode toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 490 && y <= 525) {
+      this.save.setPerformanceMode(!this.save.isPerformanceModeEnabled());
+      this.audio.playSelect();
+    }
+
+    // Touch button scale slider (left column - MOBILE section)
+    const leftSliderX = leftColX - sliderWidth / 2 - 15;
+    if (x >= leftSliderX && x <= leftSliderX + sliderWidth && y >= 525 && y <= 555) {
+      const normalized = Math.max(0, Math.min(1, (x - leftSliderX) / sliderWidth));
+      const scale = 0.5 + normalized * 1.5; // Map 0-1 to 0.5-2.0
+      this.save.setTouchButtonScale(scale);
+      this.touchControls.setScale(scale);
+      this.audio.playSelect();
+    }
+
+    // Touch button opacity slider (left column - MOBILE section)
+    if (x >= leftSliderX && x <= leftSliderX + sliderWidth && y >= 590 && y <= 620) {
+      const normalized = Math.max(0, Math.min(1, (x - leftSliderX) / sliderWidth));
+      const opacity = 0.2 + normalized * 0.8; // Map 0-1 to 0.2-1.0
+      this.save.setTouchButtonOpacity(opacity);
+      this.touchControls.setOpacity(opacity);
+      this.audio.playSelect();
+    }
+
+    // Export data button (right column - moved down)
+    if (x >= rightColX - 100 && x <= rightColX && y >= 565 && y <= 595) {
       // Export save data to clipboard
       const exportedData = this.save.exportData();
       navigator.clipboard.writeText(exportedData).then(() => {
@@ -1056,8 +1085,8 @@ export class Game {
       });
     }
 
-    // Import data button (right column)
-    if (x >= rightColX && x <= rightColX + 100 && y >= 485 && y <= 515) {
+    // Import data button (right column - moved down)
+    if (x >= rightColX && x <= rightColX + 100 && y >= 565 && y <= 595) {
       // Import save data from clipboard
       navigator.clipboard.readText().then((text) => {
         const result = this.save.importData(text);
@@ -1071,8 +1100,8 @@ export class Game {
       });
     }
 
-    // Reset all button (right column)
-    if (x >= rightColX - 45 && x <= rightColX + 45 && y >= 530 && y <= 560) {
+    // Reset all button (right column - moved down)
+    if (x >= rightColX - 45 && x <= rightColX + 45 && y >= 610 && y <= 640) {
       // Confirm before resetting
       if (confirm('Are you sure you want to reset all data? This cannot be undone.')) {
         this.save.resetAllData();
@@ -1722,9 +1751,12 @@ export class Game {
     // Update debug frame timing
     this.debug.beginUpdate();
 
-    // Update new systems
-    this.particles.update(deltaTime);
-    this.weather.update(deltaTime, this.cameraX);
+    // Update new systems (skip particles/weather in performance mode)
+    const performanceMode = this.save.isPerformanceModeEnabled();
+    if (!performanceMode) {
+      this.particles.update(deltaTime);
+      this.weather.update(deltaTime, this.cameraX);
+    }
     this.transition.update(deltaTime);
     this.beatMapper.update(deltaTime, this.player?.x || 0);
     this.levelIntro.update(deltaTime);
@@ -2269,6 +2301,15 @@ export class Game {
           // Game over in endless mode
           this.save.setEndlessHighScore(this.endlessDistance);
 
+          // Add leaderboard entry for endless mode
+          this.leaderboard.addEndlessEntry({
+            playerName: 'Player',
+            time: this.levelElapsedTime,
+            score: this.endlessDistance,
+            deaths: 1,
+            maxCombo: this.save.getLongestCombo(),
+          });
+
           // Check endless mode achievements
           if (this.endlessDistance >= 50) {
             this.tryUnlockAchievement('endless_50');
@@ -2353,6 +2394,15 @@ export class Game {
       } else {
         this.ghostManager.stopRecording();
       }
+
+      // Add leaderboard entry for this level completion
+      this.leaderboard.addLevelEntry(this.state.currentLevel, {
+        playerName: 'Player',
+        time: completionTime,
+        score: this.levelScoreThisRun,
+        deaths: this.levelDeathCount,
+        maxCombo: this.save.getLongestCombo(),
+      });
 
       this.state.gameStatus = 'levelComplete';
       this.audio.fadeOut(300); // Smooth fade out
@@ -2443,33 +2493,38 @@ export class Game {
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+    // Performance mode skips particles and weather effects
+    const perfMode = this.save.isPerformanceModeEnabled();
+
     if (this.state.gameStatus === 'endless') {
       // Render endless mode
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
-      this.particles.render(this.ctx, this.cameraX);
+      if (!perfMode) this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
     } else if (this.state.gameStatus === 'challengePlaying') {
       // Render challenge mode (similar to endless but with challenge UI)
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
       this.player.render(this.ctx, this.cameraX);
-      this.particles.render(this.ctx, this.cameraX);
+      if (!perfMode) this.particles.render(this.ctx, this.cameraX);
       this.renderChallengeUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
       this.level.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
-      this.particles.render(this.ctx, this.cameraX);
-      this.weather.render(this.ctx, this.cameraX);
+      if (!perfMode) {
+        this.particles.render(this.ctx, this.cameraX);
+        this.weather.render(this.ctx, this.cameraX);
+      }
       this.renderPlayingUI();
       this.renderEditorTestUI();
     } else if (this.state.gameStatus === 'bossRush') {
       // Render boss rush mode
       this.level.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
-      this.particles.render(this.ctx, this.cameraX);
+      if (!perfMode) this.particles.render(this.ctx, this.cameraX);
       this.bossRush.render(this.ctx, this.cameraX);
       this.renderBossRushUI();
       this.renderPlayingUI();
@@ -2478,7 +2533,7 @@ export class Game {
       this.level.render(this.ctx, this.cameraX);
       this.ghostRace.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
-      this.particles.render(this.ctx, this.cameraX);
+      if (!perfMode) this.particles.render(this.ctx, this.cameraX);
       this.ghostRace.renderRaceUI(this.ctx);
       this.renderPlayingUI();
     } else {
@@ -2505,8 +2560,10 @@ export class Game {
           playerBounds.height
         );
 
-        this.particles.render(this.ctx, this.cameraX);
-        this.weather.render(this.ctx, this.cameraX);
+        if (!perfMode) {
+          this.particles.render(this.ctx, this.cameraX);
+          this.weather.render(this.ctx, this.cameraX);
+        }
 
         // Render chase mode wall of death
         this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
@@ -3341,12 +3398,51 @@ export class Game {
     this.ctx.restore();
   }
 
-  private handleSkillTreeClick(_x: number, _y: number): void {
-    // The skill tree handles its own rendering
-    // For now, just back button check
-    // (Full skill tree interaction would need more detailed hit detection)
-    this.audio.playSelect();
-    this.state.gameStatus = 'mainMenu';
+  private handleSkillTreeClick(x: number, y: number): void {
+    // Back button area (top-left corner)
+    if (x <= 100 && y <= 50) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Skill tree click detection
+    const trees = [
+      { skills: ['jump_height', 'jump_height_2', 'dash_speed', 'dash_recovery', 'dash_distance'], x: 80 },
+      { skills: ['shield_duration', 'shield_recharge', 'checkpoint_save', 'respawn_shield'], x: 240 },
+      { skills: ['coin_magnet', 'double_coins', 'coin_value'], x: 400 },
+      { skills: ['speed_cap', 'acceleration', 'combo_duration', 'combo_multiplier'], x: 560 },
+    ];
+
+    const startY = 130;
+    const skillGap = 70;
+    const nodeSize = 50;
+
+    for (const tree of trees) {
+      for (let i = 0; i < tree.skills.length; i++) {
+        const skillId = tree.skills[i];
+        const skillY = startY + i * skillGap;
+        const nodeX = tree.x - nodeSize / 2;
+        const nodeY = skillY - nodeSize / 2;
+
+        if (x >= nodeX && x <= nodeX + nodeSize && y >= nodeY && y <= nodeY + nodeSize) {
+          // Clicked on a skill node
+          if (this.selectedSkill === skillId) {
+            // Try to purchase if clicking the same skill again
+            if (this.skillTree.purchaseSkill(skillId as SkillId)) {
+              this.audio.playUnlock();
+            } else {
+              this.audio.playSelect();
+            }
+          } else {
+            // Select this skill
+            this.selectedSkill = skillId as SkillId;
+            this.audio.playSelect();
+          }
+          return;
+        }
+      }
+    }
   }
 
   private handleReplayTheaterClick(x: number, y: number): void {
@@ -4092,18 +4188,39 @@ export class Game {
     // Haptic feedback toggle
     this.ctx.fillText('Haptic Feedback', rightColX, 405);
     this.renderToggle(rightColX, 430, this.save.isHapticFeedbackEnabled());
+
+    // Performance mode toggle
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Performance Mode', rightColX, 475);
+    this.renderToggle(rightColX, 500, this.save.isPerformanceModeEnabled());
     this.ctx.font = '10px "Segoe UI", sans-serif';
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.fillText('(mobile only)', rightColX, 465);
+    this.ctx.fillText('(disables effects)', rightColX, 535);
 
-    // Export/Import buttons
+    // === MOBILE SECTION ===
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffaa00';
+    this.ctx.fillText('MOBILE', leftColX, 480);
+
+    // Touch button scale
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Button Size', leftColX, 510);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 525, sliderWidth, (this.save.getTouchButtonScale() - 0.5) / 1.5);
+
+    // Touch button opacity
+    this.ctx.fillText('Button Opacity', leftColX, 575);
+    this.renderSlider(leftColX - sliderWidth / 2 - 15, 590, sliderWidth, (this.save.getTouchButtonOpacity() - 0.2) / 0.8);
+
+    // Export/Import buttons (moved down)
     this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    this.renderSettingsButton('Export Data', rightColX - 55, 495, '#00ffaa');
-    this.renderSettingsButton('Import Data', rightColX + 55, 495, '#00aaff');
+    this.renderSettingsButton('Export Data', rightColX - 55, 575, '#00ffaa');
+    this.renderSettingsButton('Import Data', rightColX + 55, 575, '#00aaff');
 
     // Reset button
     this.ctx.fillStyle = '#ff4444';
-    this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
+    this.renderSettingsButton('Reset All', rightColX, 620, '#ff4444');
 
     this.ctx.restore();
   }
@@ -5133,6 +5250,8 @@ export class Game {
   }
 
   private getShakeOffset(): { x: number; y: number } {
+    // Skip screen shake in performance mode
+    if (this.save.isPerformanceModeEnabled()) return { x: 0, y: 0 };
     if (this.shakeTimer <= 0) return { x: 0, y: 0 };
 
     const progress = this.shakeTimer / this.shakeDuration;

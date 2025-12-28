@@ -92,6 +92,11 @@ const DEFAULT_SETTINGS: GameSettings = {
   reduceFlash: false,
   showGhost: true,
   highContrast: false,
+  // Performance options
+  performanceMode: false,
+  // Touch control options
+  touchButtonScale: 1.0,
+  touchButtonOpacity: 0.7,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -578,6 +583,37 @@ export class SaveManager {
 
   setHighContrast(enabled: boolean): void {
     this.data.settings.highContrast = enabled;
+    this.save();
+  }
+
+  // --- PERFORMANCE SETTINGS ---
+
+  isPerformanceModeEnabled(): boolean {
+    return this.data.settings.performanceMode ?? false;
+  }
+
+  setPerformanceMode(enabled: boolean): void {
+    this.data.settings.performanceMode = enabled;
+    this.save();
+  }
+
+  // --- TOUCH CONTROL SETTINGS ---
+
+  getTouchButtonScale(): number {
+    return this.data.settings.touchButtonScale ?? 1.0;
+  }
+
+  setTouchButtonScale(scale: number): void {
+    this.data.settings.touchButtonScale = Math.max(0.5, Math.min(2.0, scale));
+    this.save();
+  }
+
+  getTouchButtonOpacity(): number {
+    return this.data.settings.touchButtonOpacity ?? 0.7;
+  }
+
+  setTouchButtonOpacity(opacity: number): void {
+    this.data.settings.touchButtonOpacity = Math.max(0.2, Math.min(1.0, opacity));
     this.save();
   }
 
