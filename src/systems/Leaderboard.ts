@@ -51,8 +51,9 @@ export class LeaderboardManager {
 
     this.save();
 
-    // Return rank (1-indexed)
-    return leaderboard.entries.findIndex(e => e === fullEntry) + 1;
+    // Return rank (1-indexed), or -1 if not in top entries
+    const index = leaderboard.entries.findIndex(e => e === fullEntry);
+    return index >= 0 ? index + 1 : -1;
   }
 
   // Add a new entry to endless leaderboard
@@ -72,8 +73,9 @@ export class LeaderboardManager {
 
     this.save();
 
-    // Return rank (1-indexed)
-    return this.endlessLeaderboard.findIndex(e => e === fullEntry) + 1;
+    // Return rank (1-indexed), or -1 if not in top entries
+    const index = this.endlessLeaderboard.findIndex(e => e === fullEntry);
+    return index >= 0 ? index + 1 : -1;
   }
 
   // Get leaderboard for a level

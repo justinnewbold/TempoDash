@@ -34,16 +34,18 @@ export class TouchControls {
   }
 
   private setupButtons(): void {
-    const btnSize = 70;
-    const padding = 20;
+    const baseBtnSize = 70;
+    const basePadding = 20;
+    const btnSize = baseBtnSize * this.scale;
+    const padding = basePadding;
 
-    // Jump button (right side, bottom)
+    // Jump button (right side, bottom) - anchor to bottom-right
     this.buttons.set('jump', {
       id: 'jump',
       x: GAME_WIDTH - btnSize - padding,
       y: GAME_HEIGHT - btnSize - padding,
-      width: btnSize,
-      height: btnSize,
+      width: baseBtnSize,
+      height: baseBtnSize,
       label: 'JUMP',
       icon: '⬆',
       color: '#00ffff',
@@ -51,13 +53,13 @@ export class TouchControls {
       opacity: this.opacity,
     });
 
-    // Dash button (right side, above jump)
+    // Dash button (right side, above jump) - anchor to bottom-right
     this.buttons.set('dash', {
       id: 'dash',
       x: GAME_WIDTH - btnSize - padding,
       y: GAME_HEIGHT - btnSize * 2 - padding * 2,
-      width: btnSize,
-      height: btnSize,
+      width: baseBtnSize,
+      height: baseBtnSize,
       label: 'DASH',
       icon: '➡',
       color: '#ff00ff',
@@ -65,10 +67,11 @@ export class TouchControls {
       opacity: this.opacity,
     });
 
-    // Pause button (top right)
+    // Pause button (top right) - smaller, fixed size
+    const pauseSize = 50 * this.scale;
     this.buttons.set('pause', {
       id: 'pause',
-      x: GAME_WIDTH - 50 - padding,
+      x: GAME_WIDTH - pauseSize - padding,
       y: padding,
       width: 50,
       height: 50,
