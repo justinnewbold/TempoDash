@@ -197,7 +197,7 @@ export class GhostManager {
 
     // Draw ghost player (semi-transparent cube)
     ctx.translate(screenX + 15, screenY + 15);
-    ctx.rotate(this.ghostRotation);
+    ctx.rotate((this.ghostRotation * Math.PI) / 180);  // Convert degrees to radians
 
     // Ghost body
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
