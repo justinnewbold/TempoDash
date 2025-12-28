@@ -27,6 +27,9 @@ import { ProceduralMusicSystem } from '../systems/ProceduralMusic';
 import { BeatMapper } from '../systems/BeatMapper';
 import { SkillTreeManager, SkillId } from '../systems/SkillTree';
 import { ReplaySystem } from '../systems/ReplaySystem';
+import { TouchControls } from '../systems/TouchControls';
+import { LeaderboardManager } from '../systems/Leaderboard';
+import { LevelIntroManager } from '../systems/LevelIntro';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -183,6 +186,15 @@ export class Game {
   // Replay System
   private replaySystem: ReplaySystem;
 
+  // Touch Controls
+  private touchControls: TouchControls;
+
+  // Leaderboard
+  private leaderboard: LeaderboardManager;
+
+  // Level Intro
+  private levelIntro: LevelIntroManager;
+
   // Level timing and stats
   private levelStartTime = 0;
   private levelElapsedTime = 0;
@@ -204,6 +216,21 @@ export class Game {
   private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
   private pendingImportLevel: import('../types').CustomLevel | null = null;
   private showingTemplateSelect = false;
+
+  // Check if game is in an active gameplay state
+  private isGameplayState(): boolean {
+    return this.state.gameStatus === 'playing' ||
+           this.state.gameStatus === 'practice' ||
+           this.state.gameStatus === 'endless' ||
+           this.state.gameStatus === 'bossRush' ||
+           this.state.gameStatus === 'ghostRace' ||
+           this.state.gameStatus === 'challengePlaying';
+  }
+
+  // Get leaderboard manager for external access
+  getLeaderboard(): LeaderboardManager {
+    return this.leaderboard;
+  }
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -260,6 +287,9 @@ export class Game {
     this.beatMapper = new BeatMapper();
     this.skillTree = new SkillTreeManager();
     this.replaySystem = new ReplaySystem();
+    this.touchControls = new TouchControls();
+    this.leaderboard = new LeaderboardManager();
+    this.levelIntro = new LevelIntroManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -287,20 +317,36 @@ export class Game {
 
     // Touch support for scrolling
     canvas.addEventListener('touchstart', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const scaleX = GAME_WIDTH / rect.width;
+      const scaleY = GAME_HEIGHT / rect.height;
+
+      // Handle touch controls during gameplay
+      if (this.isGameplayState()) {
+        this.touchControls.handleTouchStart(e.touches, rect, scaleX, scaleY);
+      }
+
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        this.touchStartY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        this.touchStartY = (touch.clientY - rect.top) * scaleY;
         this.lastTouchY = this.touchStartY;
         this.isTouchScrolling = false;
       }
     }, { passive: true });
 
     canvas.addEventListener('touchmove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const scaleX = GAME_WIDTH / rect.width;
+      const scaleY = GAME_HEIGHT / rect.height;
+
+      // Handle touch controls during gameplay
+      if (this.isGameplayState()) {
+        this.touchControls.handleTouchMove(e.touches, rect, scaleX, scaleY);
+      }
+
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        const currentY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const currentY = (touch.clientY - rect.top) * scaleY;
         const deltaY = this.lastTouchY - currentY;
 
         // Check if we've moved enough to consider this a scroll
@@ -319,6 +365,11 @@ export class Game {
 
     // Touch support for menu navigation (click events unreliable on mobile)
     canvas.addEventListener('touchend', (e) => {
+      // Handle touch controls during gameplay
+      if (this.isGameplayState()) {
+        this.touchControls.handleTouchEnd(e.changedTouches);
+      }
+
       // If we were scrolling, don't handle as a click
       const wasScrolling = this.isTouchScrolling;
       this.isTouchScrolling = false;
@@ -1210,7 +1261,6 @@ export class Game {
       case 'endless':
       case 'challengePlaying':
       case 'bossRush':
-      case 'ghostRace':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
@@ -1677,6 +1727,7 @@ export class Game {
     this.weather.update(deltaTime, this.cameraX);
     this.transition.update(deltaTime);
     this.beatMapper.update(deltaTime, this.player?.x || 0);
+    this.levelIntro.update(deltaTime);
 
     // Handle quick restart (hold R key)
     if (this.quickRestartHeld) {
@@ -2537,6 +2588,17 @@ export class Game {
 
     // Achievement notification (always on top)
     this.renderAchievementNotification();
+
+    // Touch controls overlay (mobile only)
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' ||
+        this.state.gameStatus === 'endless' || this.state.gameStatus === 'bossRush') {
+      this.touchControls.render(this.ctx);
+    }
+
+    // Level intro animation
+    if (this.levelIntro.isShowing()) {
+      this.levelIntro.render(this.ctx);
+    }
 
     // Quick restart progress indicator
     if (this.quickRestartHeld && this.quickRestartTimer > 0) {
