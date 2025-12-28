@@ -162,6 +162,8 @@ export type MenuState =
   | 'challengePlaying'
   | 'bossRush'
   | 'ghostRace'
+  | 'skillTree'
+  | 'replayTheater'
   | 'paused'
   | 'levelComplete'
   | 'gameOver'

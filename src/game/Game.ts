@@ -24,6 +24,9 @@ import { GhostManager } from '../systems/GhostManager';
 import { BossRushManager } from '../systems/BossSystem';
 import { MultiplayerGhostRace, GhostRaceData } from '../systems/MultiplayerGhost';
 import { ProceduralMusicSystem } from '../systems/ProceduralMusic';
+import { BeatMapper } from '../systems/BeatMapper';
+import { SkillTreeManager, SkillId } from '../systems/SkillTree';
+import { ReplaySystem } from '../systems/ReplaySystem';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -170,6 +173,16 @@ export class Game {
   // Procedural Music
   private proceduralMusic: ProceduralMusicSystem;
 
+  // Beat Mapping
+  private beatMapper: BeatMapper;
+
+  // Skill Tree
+  private skillTree: SkillTreeManager;
+  private selectedSkill: SkillId | null = null;
+
+  // Replay System
+  private replaySystem: ReplaySystem;
+
   // Level timing and stats
   private levelStartTime = 0;
   private levelElapsedTime = 0;
@@ -244,6 +257,9 @@ export class Game {
     this.bossRush = new BossRushManager();
     this.ghostRace = new MultiplayerGhostRace();
     this.proceduralMusic = new ProceduralMusicSystem();
+    this.beatMapper = new BeatMapper();
+    this.skillTree = new SkillTreeManager();
+    this.replaySystem = new ReplaySystem();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -493,6 +509,12 @@ export class Game {
       case 'ghostRace':
         this.handleGhostRaceClick(x, y);
         break;
+      case 'skillTree':
+        this.handleSkillTreeClick(x, y);
+        break;
+      case 'replayTheater':
+        this.handleReplayTheaterClick(x, y);
+        break;
       case 'paused':
         this.handlePausedClick(x, y);
         break;
@@ -547,6 +569,12 @@ export class Game {
         break;
       case 'ghostRace':
         this.handleGhostRaceClick(x, y);
+        break;
+      case 'skillTree':
+        this.handleSkillTreeClick(x, y);
+        break;
+      case 'replayTheater':
+        this.handleReplayTheaterClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -638,7 +666,20 @@ export class Game {
       return;
     }
 
-    // Settings button (y=545)
+    // Row 5 (y=545): Skills and Replays
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'skillTree';
+      return;
+    }
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'replayTheater';
+      return;
+    }
+
+    // Settings button (y=600)
     rowY += rowHeight;
     if (inButton(centerX, rowY, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
@@ -1121,6 +1162,21 @@ export class Game {
       case 'ghostRace':
         if (e.code === 'Escape') {
           this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'skillTree':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'replayTheater':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.replaySystem.stop();
           this.state.gameStatus = 'mainMenu';
         }
         break;
@@ -1620,6 +1676,7 @@ export class Game {
     this.particles.update(deltaTime);
     this.weather.update(deltaTime, this.cameraX);
     this.transition.update(deltaTime);
+    this.beatMapper.update(deltaTime, this.player?.x || 0);
 
     // Handle quick restart (hold R key)
     if (this.quickRestartHeld) {
@@ -2461,6 +2518,12 @@ export class Game {
       case 'ghostRace':
         this.renderGhostRaceMenu();
         break;
+      case 'skillTree':
+        this.renderSkillTree();
+        break;
+      case 'replayTheater':
+        this.renderReplayTheater();
+        break;
       case 'paused':
         this.renderPaused();
         break;
@@ -3174,6 +3237,65 @@ export class Game {
     this.ctx.restore();
   }
 
+  private renderSkillTree(): void {
+    this.skillTree.render(this.ctx, this.selectedSkill);
+  }
+
+  private renderReplayTheater(): void {
+    this.renderOverlay();
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.shadowColor = '#00ff88';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('REPLAY THEATER', GAME_WIDTH / 2, 80);
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888';
+    this.ctx.fillText('Watch your best runs and share highlights!', GAME_WIDTH / 2, 120);
+
+    // Placeholder for saved replays list
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#666';
+    this.ctx.fillText('Complete levels to save replays here.', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    this.ctx.fillText('Replays will automatically detect highlights!', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 30);
+
+    // Back button
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    this.ctx.strokeStyle = '#888';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 - 75, GAME_HEIGHT - 80, 150, 45, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillText('BACK', GAME_WIDTH / 2, GAME_HEIGHT - 52);
+
+    this.ctx.restore();
+  }
+
+  private handleSkillTreeClick(_x: number, _y: number): void {
+    // The skill tree handles its own rendering
+    // For now, just back button check
+    // (Full skill tree interaction would need more detailed hit detection)
+    this.audio.playSelect();
+    this.state.gameStatus = 'mainMenu';
+  }
+
+  private handleReplayTheaterClick(x: number, y: number): void {
+    // Back button
+    if (x >= GAME_WIDTH / 2 - 75 && x <= GAME_WIDTH / 2 + 75 &&
+        y >= GAME_HEIGHT - 80 && y <= GAME_HEIGHT - 35) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+    }
+  }
+
   private renderMainMenu(): void {
     this.renderOverlay();
 
@@ -3237,6 +3359,12 @@ export class Game {
     rowY += rowHeight;
     this.renderSmallMenuButton('BOSS', GAME_WIDTH / 2 - colOffset, rowY, '#ff0044');
     this.renderSmallMenuButton('RACE', GAME_WIDTH / 2 + colOffset, rowY, '#00aaff');
+
+    // Row 5: Skills and Replays
+    rowY += rowHeight;
+    const skillPoints = this.skillTree.getSkillPoints();
+    this.renderSmallMenuButton(`SKILLS${skillPoints > 0 ? ` (${skillPoints})` : ''}`, GAME_WIDTH / 2 - colOffset, rowY, '#aa00ff');
+    this.renderSmallMenuButton('REPLAYS', GAME_WIDTH / 2 + colOffset, rowY, '#00ff88');
 
     // Settings button
     rowY += rowHeight;
