@@ -21,6 +21,9 @@ import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challen
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
 import { GhostManager } from '../systems/GhostManager';
+import { BossRushManager } from '../systems/BossSystem';
+import { MultiplayerGhostRace, GhostRaceData } from '../systems/MultiplayerGhost';
+import { ProceduralMusicSystem } from '../systems/ProceduralMusic';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -156,6 +159,17 @@ export class Game {
   private ghostManager: GhostManager;
   private showGhost = true;
 
+  // Boss Rush Mode
+  private bossRush: BossRushManager;
+  private isBossRushMode = false;
+
+  // Multiplayer Ghost Race
+  private ghostRace: MultiplayerGhostRace;
+  private isGhostRaceMode = false;
+
+  // Procedural Music
+  private proceduralMusic: ProceduralMusicSystem;
+
   // Level timing and stats
   private levelStartTime = 0;
   private levelElapsedTime = 0;
@@ -227,6 +241,9 @@ export class Game {
     this.chaseMode = new ChaseModeManager();
     this.ghostManager = new GhostManager();
     this.weather = new WeatherSystem();
+    this.bossRush = new BossRushManager();
+    this.ghostRace = new MultiplayerGhostRace();
+    this.proceduralMusic = new ProceduralMusicSystem();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -473,6 +490,9 @@ export class Game {
       case 'challenges':
         this.handleChallengesClick(x, y);
         break;
+      case 'ghostRace':
+        this.handleGhostRaceClick(x, y);
+        break;
       case 'paused':
         this.handlePausedClick(x, y);
         break;
@@ -524,6 +544,9 @@ export class Game {
         break;
       case 'challenges':
         this.handleChallengesClick(x, y);
+        break;
+      case 'ghostRace':
+        this.handleGhostRaceClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -602,7 +625,20 @@ export class Game {
       return;
     }
 
-    // Settings button (y=490)
+    // Row 4 (y=490): Boss Rush and Ghost Race
+    rowY += rowHeight;
+    if (inButton(centerX - colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
+      this.audio.playSelect();
+      this.startBossRushMode();
+      return;
+    }
+    if (inButton(centerX + colOffset, rowY, smallButtonWidth, smallButtonHeight)) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'ghostRace';
+      return;
+    }
+
+    // Settings button (y=545)
     rowY += rowHeight;
     if (inButton(centerX, rowY, buttonWidth, buttonHeight)) {
       this.audio.playSelect();
@@ -1082,6 +1118,13 @@ export class Game {
         }
         break;
 
+      case 'ghostRace':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
       case 'customLevels':
         if (e.code === 'Escape') {
           this.audio.playSelect();
@@ -1110,9 +1153,12 @@ export class Game {
       case 'practice':
       case 'endless':
       case 'challengePlaying':
+      case 'bossRush':
+      case 'ghostRace':
         if (e.code === 'Escape') {
           this.state.gameStatus = 'paused';
           this.audio.stop();
+          this.proceduralMusic.stop();
         } else if (e.code === 'KeyR') {
           // Quick restart (hold R key)
           this.quickRestartHeld = true;
@@ -1451,6 +1497,67 @@ export class Game {
     }
   }
 
+  private startBossRushMode(): void {
+    // Initialize boss rush mode
+    this.isBossRushMode = true;
+    this.isEndlessMode = false;
+    this.isPracticeMode = false;
+    this.cameraX = 0;
+    this.attempts = 1;
+
+    // Load a level for the arena
+    this.loadLevel(1);
+    this.player.setSkin(this.save.getSelectedSkin());
+
+    // Start boss rush
+    this.bossRush = new BossRushManager();
+    this.bossRush.start();
+
+    this.state.gameStatus = 'bossRush';
+    this.audio.start();
+
+    // Start procedural music with intense setting
+    this.proceduralMusic.start();
+    this.proceduralMusic.setIntensity('intense');
+  }
+
+  private startGhostRace(levelId: number, ghostData?: GhostRaceData): void {
+    // Initialize ghost race mode
+    this.isGhostRaceMode = true;
+    this.isBossRushMode = false;
+    this.isEndlessMode = false;
+    this.isPracticeMode = false;
+
+    // Load the level
+    this.loadLevel(levelId);
+    this.player.setSkin(this.save.getSelectedSkin());
+
+    // Setup ghost race
+    this.ghostRace = new MultiplayerGhostRace();
+
+    // Add player's own ghost if available
+    const playerGhost = this.save.getGhostRun(levelId);
+    if (playerGhost) {
+      this.ghostRace.addGhost({
+        id: 'player-best',
+        playerName: 'Your Best',
+        levelId,
+        frames: playerGhost,
+        completionTime: playerGhost[playerGhost.length - 1]?.time || 0,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Add imported ghost if provided
+    if (ghostData) {
+      this.ghostRace.addGhost(ghostData);
+    }
+
+    this.ghostRace.startRace();
+    this.state.gameStatus = 'ghostRace';
+    this.audio.start();
+  }
+
   private respawnPlayer(): void {
     this.attempts++;
 
@@ -1582,7 +1689,7 @@ export class Game {
       return;
     }
 
-    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'challengePlaying' && this.state.gameStatus !== 'editorTest') {
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice' && this.state.gameStatus !== 'endless' && this.state.gameStatus !== 'challengePlaying' && this.state.gameStatus !== 'editorTest' && this.state.gameStatus !== 'bossRush' && this.state.gameStatus !== 'ghostRace') {
       this.level.update(deltaTime);
       return;
     }
@@ -1718,7 +1825,7 @@ export class Game {
     );
 
     // Update chase mode (wall of death)
-    if (!this.isEndlessMode) {
+    if (!this.isEndlessMode && !this.isBossRushMode) {
       const basePlayerSpeed = 350; // Base player speed in px/s
       this.chaseMode.update(deltaTime, this.player.x, basePlayerSpeed * effectiveSpeedMultiplier);
 
@@ -1727,6 +1834,43 @@ export class Game {
         this.player.isDead = true;
         this.triggerShake(15, 400); // Strong shake for wall death
       }
+    }
+
+    // Update boss rush mode
+    if (this.isBossRushMode && this.state.gameStatus === 'bossRush') {
+      this.bossRush.update(deltaTime, this.player.x, this.player.y, this.cameraX);
+
+      // Check if boss projectile hit player
+      if (this.bossRush.checkPlayerCollision(this.player.getBounds()) && !this.player.isDead) {
+        this.player.isDead = true;
+        this.triggerShake(12, 300);
+      }
+
+      // Check if player damaged boss (by jumping on top or dashing into it)
+      if (this.player.isDashing || prevVelocityY > 0) {
+        const damaged = this.bossRush.tryDamageBoss(this.player.getBounds(), this.player.isDashing);
+        if (damaged) {
+          this.audio.playCoinCollect();
+          this.particles.spawnCoinCollect(this.player.x, this.player.y);
+        }
+      }
+
+      // Update procedural music intensity
+      const boss = this.bossRush.getCurrentBoss();
+      if (boss) {
+        const healthPercent = boss.health / boss.maxHealth;
+        if (healthPercent < 0.3) {
+          this.proceduralMusic.setIntensity('danger');
+        } else if (healthPercent < 0.6) {
+          this.proceduralMusic.setIntensity('intense');
+        }
+      }
+      this.proceduralMusic.update(deltaTime);
+    }
+
+    // Update ghost race mode
+    if (this.isGhostRaceMode && this.state.gameStatus === 'ghostRace') {
+      this.ghostRace.update(deltaTime);
     }
 
     // Update level timing
@@ -2213,6 +2357,22 @@ export class Game {
       this.weather.render(this.ctx, this.cameraX);
       this.renderPlayingUI();
       this.renderEditorTestUI();
+    } else if (this.state.gameStatus === 'bossRush') {
+      // Render boss rush mode
+      this.level.render(this.ctx, this.cameraX);
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
+      this.bossRush.render(this.ctx, this.cameraX);
+      this.renderBossRushUI();
+      this.renderPlayingUI();
+    } else if (this.state.gameStatus === 'ghostRace') {
+      // Render ghost race mode
+      this.level.render(this.ctx, this.cameraX);
+      this.ghostRace.render(this.ctx, this.cameraX);
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
+      this.ghostRace.renderRaceUI(this.ctx);
+      this.renderPlayingUI();
     } else {
       this.level.render(this.ctx, this.cameraX);
 
@@ -2297,6 +2457,9 @@ export class Game {
         break;
       case 'challenges':
         this.renderChallenges();
+        break;
+      case 'ghostRace':
+        this.renderGhostRaceMenu();
         break;
       case 'paused':
         this.renderPaused();
@@ -2889,6 +3052,128 @@ export class Game {
     }
   }
 
+  private renderBossRushUI(): void {
+    this.ctx.save();
+
+    // Boss health bar at top
+    const boss = this.bossRush.getCurrentBoss();
+    if (boss) {
+      const barWidth = 300;
+      const barHeight = 20;
+      const barX = (GAME_WIDTH - barWidth) / 2;
+      const barY = 30;
+
+      // Background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      this.ctx.fillRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10);
+
+      // Health bar background
+      this.ctx.fillStyle = '#333';
+      this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+      // Health bar fill
+      const healthPercent = boss.health / boss.maxHealth;
+      const healthColor = healthPercent > 0.5 ? '#ff0044' : healthPercent > 0.25 ? '#ff6600' : '#ff0000';
+      this.ctx.fillStyle = healthColor;
+      this.ctx.shadowColor = healthColor;
+      this.ctx.shadowBlur = 10;
+      this.ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+
+      // Boss name
+      this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.shadowBlur = 5;
+      this.ctx.fillText(boss.name, GAME_WIDTH / 2, barY - 10);
+
+      // Phase indicator
+      this.ctx.font = '14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.fillText(`Phase ${boss.phase}/3`, GAME_WIDTH / 2, barY + barHeight + 20);
+    }
+
+    // Boss count
+    const bossCount = this.bossRush.getBossCount();
+    const currentBossIndex = this.bossRush.getCurrentBossIndex();
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.shadowColor = '#00ffaa';
+    this.ctx.shadowBlur = 5;
+    this.ctx.fillText(`Boss ${currentBossIndex + 1}/${bossCount}`, GAME_WIDTH - 20, 30);
+
+    this.ctx.restore();
+  }
+
+  private renderGhostRaceMenu(): void {
+    this.renderOverlay();
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.shadowColor = '#00aaff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('GHOST RACE', GAME_WIDTH / 2, 100);
+
+    // Instructions
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('Race against ghost recordings!', GAME_WIDTH / 2, 140);
+
+    // Level selection
+    this.ctx.fillText('Select a level to race:', GAME_WIDTH / 2, 200);
+
+    // Level buttons
+    const btnWidth = 150;
+    const btnHeight = 45;
+    const cols = 4;
+    const gap = 20;
+    const startX = (GAME_WIDTH - (cols * btnWidth + (cols - 1) * gap)) / 2;
+    const startY = 240;
+
+    for (let i = 0; i < Math.min(12, TOTAL_LEVELS); i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * (btnWidth + gap);
+      const y = startY + row * (btnHeight + gap);
+
+      const isUnlocked = this.save.isLevelUnlocked(i + 1);
+
+      this.ctx.fillStyle = isUnlocked ? 'rgba(0, 170, 255, 0.2)' : 'rgba(100, 100, 100, 0.2)';
+      this.ctx.strokeStyle = isUnlocked ? '#00aaff' : '#666';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(x, y, btnWidth, btnHeight, 8);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isUnlocked ? '#ffffff' : '#666';
+      this.ctx.fillText(`Level ${i + 1}`, x + btnWidth / 2, y + btnHeight / 2 + 5);
+    }
+
+    // Import code area
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888';
+    this.ctx.fillText('Enter a friend\'s ghost code to race against them!', GAME_WIDTH / 2, 420);
+
+    // Back button
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    this.ctx.strokeStyle = '#888';
+    this.ctx.beginPath();
+    this.ctx.roundRect(GAME_WIDTH / 2 - 75, 480, 150, 45, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillText('BACK', GAME_WIDTH / 2, 508);
+
+    this.ctx.restore();
+  }
+
   private renderMainMenu(): void {
     this.renderOverlay();
 
@@ -2947,6 +3232,11 @@ export class Game {
     const achieveProgress = this.save.getAchievementProgress();
     this.renderSmallMenuButton('SKINS', GAME_WIDTH / 2 - colOffset, rowY, '#ffd700');
     this.renderSmallMenuButton(`BADGES ${achieveProgress.unlocked}/${achieveProgress.total}`, GAME_WIDTH / 2 + colOffset, rowY, '#ff6600');
+
+    // Row 4: Boss Rush and Ghost Race
+    rowY += rowHeight;
+    this.renderSmallMenuButton('BOSS', GAME_WIDTH / 2 - colOffset, rowY, '#ff0044');
+    this.renderSmallMenuButton('RACE', GAME_WIDTH / 2 + colOffset, rowY, '#00aaff');
 
     // Settings button
     rowY += rowHeight;
@@ -4069,6 +4359,39 @@ export class Game {
         this.audio.playSelect();
         this.startChallenge(challenge);
         return;
+      }
+    }
+  }
+
+  private handleGhostRaceClick(x: number, y: number): void {
+    // Back button
+    if (x >= GAME_WIDTH / 2 - 75 && x <= GAME_WIDTH / 2 + 75 && y >= 480 && y <= 525) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'mainMenu';
+      return;
+    }
+
+    // Level buttons
+    const btnWidth = 150;
+    const btnHeight = 45;
+    const cols = 4;
+    const gap = 20;
+    const startX = (GAME_WIDTH - (cols * btnWidth + (cols - 1) * gap)) / 2;
+    const startY = 240;
+
+    for (let i = 0; i < Math.min(12, TOTAL_LEVELS); i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const btnX = startX + col * (btnWidth + gap);
+      const btnY = startY + row * (btnHeight + gap);
+
+      if (x >= btnX && x <= btnX + btnWidth && y >= btnY && y <= btnY + btnHeight) {
+        const levelId = i + 1;
+        if (this.save.isLevelUnlocked(levelId)) {
+          this.audio.playSelect();
+          this.startGhostRace(levelId);
+          return;
+        }
       }
     }
   }

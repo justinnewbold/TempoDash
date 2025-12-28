@@ -160,6 +160,8 @@ export type MenuState =
   | 'practice'
   | 'endless'
   | 'challengePlaying'
+  | 'bossRush'
+  | 'ghostRace'
   | 'paused'
   | 'levelComplete'
   | 'gameOver'
