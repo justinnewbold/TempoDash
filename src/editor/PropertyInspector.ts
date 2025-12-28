@@ -20,7 +20,7 @@ export interface PropertyChange {
 
 export type PropertyChangeCallback = (change: PropertyChange) => void;
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret'];
+const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'portal', 'wind', 'water'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
@@ -38,6 +38,9 @@ const PLATFORM_COLORS: Record<PlatformType, string> = {
   slowmo: '#00c8ff',
   wall: '#718096',
   secret: '#ffd700',
+  portal: '#8a2be2',
+  wind: '#b0e0e6',
+  water: '#0066cc',
 };
 
 export class PropertyInspector {

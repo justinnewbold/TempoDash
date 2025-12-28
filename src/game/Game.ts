@@ -16,6 +16,7 @@ import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
 import { PowerUpManager } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
+import { WeatherSystem } from '../systems/WeatherSystem';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
@@ -77,6 +78,8 @@ export class Game {
   private checkpointY = 0;
   private lastCheckpointProgress = 0;
   private checkpointFeedbackTimer = 0; // Visual feedback for checkpoint
+  private practiceSlowMo = false;  // Slow motion toggle for practice mode
+  private practiceInvincible = false;  // Invincibility toggle for practice mode
 
   // Endless mode
   private isEndlessMode = false;
@@ -133,6 +136,7 @@ export class Game {
   private powerUps: PowerUpManager;
   private modifiers: ModifierManager;
   private challengeManager: ChallengeManager;
+  private weather: WeatherSystem;
 
   // Modifier UI state
   private showModifierPanel = false;
@@ -222,6 +226,7 @@ export class Game {
     this.challengeManager = new ChallengeManager();
     this.chaseMode = new ChaseModeManager();
     this.ghostManager = new GhostManager();
+    this.weather = new WeatherSystem();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -357,9 +362,17 @@ export class Game {
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
 
-    // Enable flying mode if level config specifies it
+    // Enable special level modes if config specifies them
     const levelConfig = this.level.getConfig();
     this.player.setFlyingMode(levelConfig.flyingMode ?? false);
+    this.player.setUnderwaterMode(levelConfig.underwaterMode ?? false);
+
+    // Set weather effect based on level config
+    const weatherEffect = levelConfig.weatherEffect ?? 'none';
+    this.weather.setWeather(weatherEffect);
+    if (weatherEffect === 'wind') {
+      this.weather.setWindStrength(1.5);  // Strong wind for wind levels
+    }
 
     // Set music style for this level
     this.audio.setStyleForLevel(levelId);
@@ -1213,6 +1226,8 @@ export class Game {
     this.attempts = 1;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = practiceMode;
+    this.practiceSlowMo = false;
+    this.practiceInvincible = false;
     this.checkpointX = this.level.playerStart.x;
     this.checkpointY = this.level.playerStart.y;
     this.lastCheckpointProgress = 0;
@@ -1319,6 +1334,7 @@ export class Game {
       this.player = new Player(startPosition);
       this.player.setSkin(this.save.getSelectedSkin());
       this.player.setFlyingMode(config.flyingMode ?? false);
+      this.player.setUnderwaterMode(config.underwaterMode ?? false);
       this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
       this.attempts = 1;
       this.levelScoreThisRun = 0;
@@ -1458,6 +1474,7 @@ export class Game {
       this.player = new Player(startPosition);
       this.player.setSkin(this.save.getSelectedSkin());
       this.player.setFlyingMode(config.flyingMode ?? false);
+      this.player.setUnderwaterMode(config.underwaterMode ?? false);
       this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
       this.state.gameStatus = 'editorTest';
     } else if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
@@ -1494,6 +1511,7 @@ export class Game {
 
     // Update new systems
     this.particles.update(deltaTime);
+    this.weather.update(deltaTime, this.cameraX);
     this.transition.update(deltaTime);
 
     // Handle quick restart (hold R key)
@@ -1617,10 +1635,12 @@ export class Game {
       this.player.isDead = true; // Time's up!
     }
 
-    // Apply slowmo effect from power-ups and speed demon modifier
+    // Apply slowmo effect from power-ups, modifiers, and practice mode
+    const practiceSlowMoMult = (this.isPracticeMode && this.practiceSlowMo) ? 0.5 : 1;
     const effectiveSpeedMultiplier = this.speedMultiplier *
       this.powerUps.getSlowMoMultiplier() *
-      this.modifiers.getSpeedMultiplier();
+      this.modifiers.getSpeedMultiplier() *
+      practiceSlowMoMult;
 
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
@@ -1903,8 +1923,15 @@ export class Game {
     }
 
     if (wasAliveBefore && this.player.isDead) {
+      // Practice mode invincibility - auto-revive
+      if (this.isPracticeMode && this.practiceInvincible) {
+        this.player.revive();
+        this.audio.playCoinCollect();
+        this.triggerShake(4, 100);
+        // Don't count as death in invincible practice mode
+      }
       // Check if shield can save the player (disabled by fragile modifier)
-      if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
+      else if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
         // Shield consumed! Revive the player
         this.player.revive();
         this.audio.playCoinCollect(); // Play a positive sound
@@ -2183,6 +2210,7 @@ export class Game {
       this.level.render(this.ctx, this.cameraX);
       this.player.render(this.ctx, this.cameraX);
       this.particles.render(this.ctx, this.cameraX);
+      this.weather.render(this.ctx, this.cameraX);
       this.renderPlayingUI();
       this.renderEditorTestUI();
     } else {
@@ -2210,6 +2238,7 @@ export class Game {
         );
 
         this.particles.render(this.ctx, this.cameraX);
+        this.weather.render(this.ctx, this.cameraX);
 
         // Render chase mode wall of death
         this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
@@ -2804,6 +2833,28 @@ export class Game {
     // Check mobile control buttons first
     if (this.input.isMobileDevice() && this.handleMobileControlClick(x, y)) {
       return;
+    }
+
+    // Check practice mode toggles (if in practice mode)
+    if (this.isPracticeMode) {
+      const toggleX = 80;
+      const toggleY = GAME_HEIGHT / 2 - 20;
+      const toggleWidth = 140;
+      const toggleHeight = 36;
+
+      // Slow-Mo toggle
+      if (x >= toggleX && x <= toggleX + toggleWidth && y >= toggleY && y <= toggleY + toggleHeight) {
+        this.audio.playSelect();
+        this.practiceSlowMo = !this.practiceSlowMo;
+        return;
+      }
+
+      // Invincibility toggle
+      if (x >= toggleX && x <= toggleX + toggleWidth && y >= toggleY + 45 && y <= toggleY + 45 + toggleHeight) {
+        this.audio.playSelect();
+        this.practiceInvincible = !this.practiceInvincible;
+        return;
+      }
     }
 
     // Check pause menu buttons (matching renderPaused layout)
@@ -4160,6 +4211,44 @@ export class Game {
     this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
     this.ctx.fillText('PAUSED', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80);
 
+    // Practice mode toggles (shown on the left side)
+    if (this.isPracticeMode) {
+      const toggleX = 80;
+      const toggleY = GAME_HEIGHT / 2 - 20;
+      const toggleWidth = 140;
+      const toggleHeight = 36;
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffaa00';
+      this.ctx.shadowBlur = 0;
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('PRACTICE OPTIONS', toggleX + toggleWidth / 2, toggleY - 15);
+
+      // Slow-Mo toggle
+      const slowMoColor = this.practiceSlowMo ? '#00ff88' : 'rgba(100, 100, 100, 0.6)';
+      this.ctx.fillStyle = slowMoColor;
+      this.ctx.strokeStyle = this.practiceSlowMo ? '#00ff88' : 'rgba(150, 150, 150, 0.5)';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(toggleX, toggleY, toggleWidth, toggleHeight, 6);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.fillStyle = this.practiceSlowMo ? '#000' : '#fff';
+      this.ctx.font = 'bold 13px "Segoe UI", sans-serif';
+      this.ctx.fillText(this.practiceSlowMo ? '⏱ SLOW-MO: ON' : '⏱ SLOW-MO: OFF', toggleX + toggleWidth / 2, toggleY + 23);
+
+      // Invincibility toggle
+      const invincColor = this.practiceInvincible ? '#00ff88' : 'rgba(100, 100, 100, 0.6)';
+      this.ctx.fillStyle = invincColor;
+      this.ctx.strokeStyle = this.practiceInvincible ? '#00ff88' : 'rgba(150, 150, 150, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(toggleX, toggleY + 45, toggleWidth, toggleHeight, 6);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.fillStyle = this.practiceInvincible ? '#000' : '#fff';
+      this.ctx.fillText(this.practiceInvincible ? '🛡 INVINCIBLE: ON' : '🛡 INVINCIBLE: OFF', toggleX + toggleWidth / 2, toggleY + 68);
+    }
+
     // Controls reminder box
     const boxY = GAME_HEIGHT / 2 - 30;
     const boxWidth = 320;
@@ -5255,8 +5344,9 @@ export class Game {
     const config = this.customLevelManager.toLevelConfig(level);
     this.level = new Level(config);
 
-    // Enable flying mode if level config specifies it
+    // Enable special modes if level config specifies them
     const flyingMode = config.flyingMode ?? false;
+    const underwaterMode = config.underwaterMode ?? false;
 
     // Use test position if provided, otherwise use normal player start
     const startPosition = testPosition || config.playerStart;
@@ -5264,6 +5354,7 @@ export class Game {
     this.player = new Player(startPosition);
     this.player.setSkin(this.save.getSelectedSkin());
     this.player.setFlyingMode(flyingMode);
+    this.player.setUnderwaterMode(underwaterMode);
 
     // Set camera to center on test position
     this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);

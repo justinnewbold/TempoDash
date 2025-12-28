@@ -40,6 +40,17 @@ export class Platform {
   // Beat visualization (pulse effect)
   private beatPulse = 0;
 
+  // Wind platform properties
+  windDirection: 'up' | 'down' | 'left' | 'right' = 'up';
+  windStrength = 1;
+
+  // Portal platform properties
+  portalTarget: { x: number; y: number } | null = null;
+  private portalAnimTime = 0;
+
+  // Water platform properties
+  private waterAnimTime = 0;
+
   constructor(config: PlatformConfig) {
     this.x = config.x;
     this.y = config.y;
@@ -60,14 +71,37 @@ export class Platform {
     if (config.conveyorSpeed !== undefined) {
       this.conveyorSpeed = config.conveyorSpeed;
     }
+
+    // Wind properties
+    if (config.windDirection) {
+      this.windDirection = config.windDirection;
+    }
+    if (config.windStrength !== undefined) {
+      this.windStrength = config.windStrength;
+    }
+
+    // Portal target
+    if (config.portalTarget) {
+      this.portalTarget = config.portalTarget;
+    }
   }
 
   update(deltaTime: number): void {
     if (this.isDestroyed) return;
 
-    // Handle movement
-    if (this.movePattern && this.type === 'moving') {
+    // Handle movement (moving platforms AND moving spikes)
+    if (this.movePattern && (this.type === 'moving' || this.type === 'spike')) {
       this.updateMovement(deltaTime);
+    }
+
+    // Update portal animation
+    if (this.type === 'portal') {
+      this.portalAnimTime += deltaTime * 0.003;
+    }
+
+    // Update water animation
+    if (this.type === 'water') {
+      this.waterAnimTime += deltaTime * 0.002;
     }
 
     // Handle crumbling
@@ -124,6 +158,31 @@ export class Platform {
 
   getBeatPulse(): number {
     return this.beatPulse;
+  }
+
+  // Get the glow color for beat pulse based on platform type
+  private getBeatPulseColor(): string {
+    switch (this.type) {
+      case 'spike':
+      case 'lava':
+        return '#ff4444';  // Red glow for dangerous
+      case 'bounce':
+        return '#ffaa00';  // Orange for bounce
+      case 'ice':
+        return '#88ddff';  // Light blue for ice
+      case 'gravity':
+        return '#ff00ff';  // Magenta for gravity
+      case 'portal':
+        return '#aa44ff';  // Purple for portal
+      case 'wind':
+        return '#aaddff';  // Light blue for wind
+      case 'water':
+        return '#00aaff';  // Blue for water
+      case 'phase':
+        return '#aa88ff';  // Purple for phase
+      default:
+        return '#00ffaa';  // Cyan for normal platforms
+    }
   }
 
   // Check if player is near and should reveal secret
@@ -230,6 +289,22 @@ export class Platform {
         (Math.random() - 0.5) * shake
       );
       ctx.globalAlpha = 1 - this.crumbleProgress;
+    }
+
+    // Beat pulse glow effect
+    if (this.beatPulse > 0 && this.type !== 'secret') {
+      const screenX = this.x - cameraX;
+      const pulseIntensity = this.beatPulse * 0.5;  // Subtle glow
+      ctx.shadowColor = this.getBeatPulseColor();
+      ctx.shadowBlur = 15 * this.beatPulse;
+
+      // Draw subtle glow outline
+      ctx.strokeStyle = this.getBeatPulseColor();
+      ctx.lineWidth = 2 + this.beatPulse * 2;
+      ctx.globalAlpha = pulseIntensity;
+      ctx.strokeRect(screenX - 2, this.y - 2, this.width + 4, this.height + 4);
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
     }
 
     // Draw platform base with camera offset
@@ -585,6 +660,99 @@ export class Platform {
             ctx.fillText('SECRET', screenX + this.width / 2, this.y + this.height / 2 + 4);
           }
           ctx.globalAlpha = 1;
+        }
+        break;
+
+      case 'portal':
+        // Swirling purple portal
+        const portalGradient = ctx.createRadialGradient(
+          screenX + this.width / 2, this.y + this.height / 2, 0,
+          screenX + this.width / 2, this.y + this.height / 2, Math.max(this.width, this.height) / 2
+        );
+        portalGradient.addColorStop(0, 'rgba(138, 43, 226, 0.9)');
+        portalGradient.addColorStop(0.5, 'rgba(75, 0, 130, 0.7)');
+        portalGradient.addColorStop(1, 'rgba(138, 43, 226, 0.3)');
+        ctx.fillStyle = portalGradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Swirl effect
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        const portalCX = screenX + this.width / 2;
+        const portalCY = this.y + this.height / 2;
+        for (let i = 0; i < 3; i++) {
+          const angle = this.portalAnimTime * 2 + (i * Math.PI * 2 / 3);
+          const radius = 10 + i * 5;
+          ctx.beginPath();
+          ctx.arc(portalCX + Math.cos(angle) * radius * 0.5, portalCY + Math.sin(angle) * radius * 0.3, 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+
+      case 'wind':
+        // Semi-transparent wind zone with flowing lines
+        ctx.fillStyle = 'rgba(200, 230, 255, 0.3)';
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Wind lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        const windTime = Date.now() * 0.003;
+        for (let i = 0; i < 5; i++) {
+          const lineOffset = (windTime * 50 + i * 30) % (this.width + 40) - 20;
+          let startX, startY, endX, endY;
+          if (this.windDirection === 'right' || this.windDirection === 'left') {
+            const dir = this.windDirection === 'right' ? 1 : -1;
+            startX = screenX + (dir > 0 ? lineOffset : this.width - lineOffset);
+            startY = this.y + (this.height / 6) * (i + 1);
+            endX = startX + 20 * dir;
+            endY = startY;
+          } else {
+            const dir = this.windDirection === 'down' ? 1 : -1;
+            startX = screenX + (this.width / 6) * (i + 1);
+            startY = this.y + (dir > 0 ? lineOffset : this.height - lineOffset);
+            endX = startX;
+            endY = startY + 20 * dir;
+          }
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+        // Dashed border
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = 'rgba(100, 180, 255, 0.5)';
+        ctx.strokeRect(screenX, this.y, this.width, this.height);
+        ctx.setLineDash([]);
+        break;
+
+      case 'water':
+        // Blue water zone with wave effect
+        const waterGradient = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
+        waterGradient.addColorStop(0, 'rgba(0, 100, 200, 0.5)');
+        waterGradient.addColorStop(0.5, 'rgba(0, 150, 220, 0.4)');
+        waterGradient.addColorStop(1, 'rgba(0, 80, 180, 0.6)');
+        ctx.fillStyle = waterGradient;
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+        // Wavy top surface
+        ctx.strokeStyle = 'rgba(150, 220, 255, 0.7)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let wx = 0; wx <= this.width; wx += 5) {
+          const waveY = this.y + Math.sin(this.waterAnimTime * 3 + wx * 0.05) * 4;
+          if (wx === 0) {
+            ctx.moveTo(screenX + wx, waveY);
+          } else {
+            ctx.lineTo(screenX + wx, waveY);
+          }
+        }
+        ctx.stroke();
+        // Bubbles
+        ctx.fillStyle = 'rgba(200, 230, 255, 0.5)';
+        for (let i = 0; i < 4; i++) {
+          const bubbleX = screenX + (this.width / 5) * (i + 1);
+          const bubbleY = this.y + this.height / 2 + Math.sin(this.waterAnimTime * 2 + i * 2) * (this.height * 0.3);
+          ctx.beginPath();
+          ctx.arc(bubbleX, bubbleY, 3 + Math.sin(this.waterAnimTime + i) * 1, 0, Math.PI * 2);
+          ctx.fill();
         }
         break;
 

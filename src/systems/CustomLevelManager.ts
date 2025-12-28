@@ -836,6 +836,8 @@ export class CustomLevelManager {
     goal: Rectangle;
     background: BackgroundConfig;
     flyingMode?: boolean;
+    underwaterMode?: boolean;
+    gravityFlipMode?: boolean;
   } {
     return {
       id: -1, // Custom levels use -1
@@ -846,6 +848,8 @@ export class CustomLevelManager {
       goal: level.goal,
       background: level.background,
       flyingMode: level.flyingMode,
+      underwaterMode: (level as { underwaterMode?: boolean }).underwaterMode,
+      gravityFlipMode: (level as { gravityFlipMode?: boolean }).gravityFlipMode,
     };
   }
 

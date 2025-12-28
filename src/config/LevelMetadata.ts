@@ -102,6 +102,24 @@ export const LEVEL_METADATA: LevelMeta[] = [
     unlockCost: 12000,
     description: 'Fly through the clouds and avoid obstacles',
   },
+  {
+    id: 11,
+    name: 'Ocean Deep',
+    color: '#0066cc',
+    difficulty: 3,
+    musicStyle: 'hazard',
+    unlockCost: 14000,
+    description: 'Navigate the depths with floaty underwater physics',
+  },
+  {
+    id: 12,
+    name: 'Gravity Shift',
+    color: '#ff00ff',
+    difficulty: 4,
+    musicStyle: 'energetic',
+    unlockCost: 18000,
+    description: 'Master gravity flipping in the anti-gravity lab',
+  },
 ];
 
 // Helper functions
