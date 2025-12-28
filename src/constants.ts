@@ -40,6 +40,9 @@ export const COLORS = {
     slowmo: '#00c8ff',     // Cyan - time warp
     wall: '#718096',       // Dark gray - metallic wall
     secret: '#ffd700',     // Gold - hidden treasure
+    portal: '#8a2be2',     // Purple - teleportation
+    wind: '#b0e0e6',       // Light blue - air current
+    water: '#0066cc',      // Deep blue - underwater
   },
 
   // Level 1 - City Night

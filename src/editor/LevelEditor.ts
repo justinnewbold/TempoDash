@@ -17,7 +17,7 @@ import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyI
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret'];
+const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'portal', 'wind', 'water'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
@@ -35,9 +35,12 @@ const PLATFORM_COLORS: Record<PlatformType, string> = {
   slowmo: '#00c8ff',
   wall: '#718096',
   secret: '#ffd700',
+  portal: '#8a2be2',
+  wind: '#b0e0e6',
+  water: '#0066cc',
 };
 
-const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean'];
+const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean', 'sky', 'gradient', 'grid'];
 
 export class LevelEditor {
   private level: CustomLevel;
@@ -1401,6 +1404,22 @@ export class LevelEditor {
         accentColor: '#FFD700',
         particles: { count: 40, color: 'rgba(255, 255, 255, 0.8)', minSize: 20, maxSize: 60, speed: 20, direction: 'down' },
         effects: ['aurora'],
+      },
+      gradient: {
+        type: 'gradient',
+        primaryColor: '#001830',
+        secondaryColor: '#003366',
+        accentColor: '#00ffaa',
+        particles: { count: 60, color: 'rgba(100, 200, 255, 0.5)', minSize: 3, maxSize: 10, speed: 30, direction: 'up' },
+        effects: ['bubbles', 'pulse'],
+      },
+      grid: {
+        type: 'grid',
+        primaryColor: '#0a0a1a',
+        secondaryColor: '#1a1a3a',
+        accentColor: '#ff00ff',
+        particles: { count: 30, color: 'rgba(255, 0, 255, 0.4)', minSize: 2, maxSize: 6, speed: 40, direction: 'up' },
+        effects: ['grid', 'pulse'],
       },
     };
 

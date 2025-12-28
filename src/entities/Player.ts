@@ -73,6 +73,19 @@ export class Player {
   private static readonly FLYING_LIFT_FORCE = 800;  // Upward force when holding jump
   private static readonly FLYING_GRAVITY = 600;     // Downward force when not holding
 
+  // Underwater mode state
+  private underwaterMode = false;
+  isInWater = false;  // Currently in a water zone
+  private static readonly WATER_GRAVITY_MULT = 0.35;  // Reduced gravity in water
+  private static readonly WATER_SPEED_MULT = 0.7;     // Slower movement in water
+  private static readonly WATER_JUMP_MULT = 0.8;      // Weaker jumps in water
+
+  // Wind effect state
+  windForce = { x: 0, y: 0 };  // Current wind force being applied
+
+  // Portal teleportation event
+  portalEvent: { x: number; y: number } | null = null;
+
   // Particle effect events (cleared each frame after being read)
   edgeBounceEvent: { x: number; y: number; direction: 'left' | 'right' } | null = null;
   bounceEvent: { x: number; y: number; width: number } | null = null;
@@ -101,6 +114,14 @@ export class Player {
     return this.flyingMode;
   }
 
+  setUnderwaterMode(enabled: boolean): void {
+    this.underwaterMode = enabled;
+  }
+
+  isUnderwaterMode(): boolean {
+    return this.underwaterMode;
+  }
+
   reset(position: Vector2): void {
     this.x = position.x;
     this.y = position.y;
@@ -124,6 +145,9 @@ export class Player {
     this.isWallSliding = false;
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
+    this.isInWater = false;
+    this.windForce = { x: 0, y: 0 };
+    this.portalEvent = null;
     this.clearEvents();
   }
 
@@ -151,6 +175,9 @@ export class Player {
     this.onConveyor = null;
     this.isWallSliding = false;
     this.isInSlowMo = false;
+    this.isInWater = false;
+    this.windForce = { x: 0, y: 0 };
+    this.portalEvent = null;
 
     // Update wall jump cooldown
     if (this.wallJumpCooldown > 0) {
@@ -178,9 +205,11 @@ export class Player {
 
     // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
     // Sticky platforms slow/stop forward movement
+    // Water slows horizontal movement
     const stickySlow = this.isStuck ? 0.3 : 1;
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
-    this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
+    const waterSpeedMult = (this.underwaterMode || this.isInWater) ? Player.WATER_SPEED_MULT : 1;
+    this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * waterSpeedMult * (deltaTime / 1000);
 
     // Flying mode: hold to fly up, release to fall
     if (this.flyingMode) {
@@ -209,16 +238,19 @@ export class Player {
         this.velocityY = Math.min(0, this.velocityY);
       }
     } else {
+      // Water affects jump force
+      const waterJumpMult = (this.underwaterMode || this.isInWater) ? Player.WATER_JUMP_MULT : 1;
+
       // Normal mode: Handle jumping (auto-jump when holding - jump as soon as grounded)
       if (input.jump && this.isGrounded && !this.isStuck) {
-        this.velocityY = -PLAYER.JUMP_FORCE;
+        this.velocityY = -PLAYER.JUMP_FORCE * waterJumpMult;
         this.isGrounded = false;
         this.airJumpsRemaining = 2; // Reset air jumps on ground jump
       } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
         // Air jumps (double/triple) - each successive jump is weaker
         // Disabled when "Grounded" modifier is active
         const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
-        this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
+        this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier * waterJumpMult;
 
         // Triple jump (last air jump) triggers dash
         if (this.airJumpsRemaining === 1) {
@@ -240,13 +272,25 @@ export class Player {
 
       // Apply gravity (flipped if on gravity platform)
       // Slow-mo zones reduce gravity effect
+      // Underwater mode reduces gravity significantly
       const slowMoMult = this.isInSlowMo ? 0.4 : 1;
+      const waterMult = (this.underwaterMode || this.isInWater) ? Player.WATER_GRAVITY_MULT : 1;
       const gravityDir = this.gravityFlipped ? -1 : 1;
-      this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
+      this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * waterMult * (deltaTime / 1000);
+    }
+
+    // Apply wind force
+    if (this.windForce.x !== 0 || this.windForce.y !== 0) {
+      this.x += this.windForce.x * (deltaTime / 1000);
+      this.velocityY += this.windForce.y * 2 * (deltaTime / 1000);
     }
 
     // Wall sliding reduces fall speed
-    const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
+    // Water also reduces max fall speed
+    let maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
+    if (this.underwaterMode || this.isInWater) {
+      maxFall *= 0.5;  // Slower falling in water
+    }
     this.velocityY = Math.min(Math.abs(this.velocityY), maxFall) * Math.sign(this.velocityY);
 
     // Apply vertical velocity
@@ -366,6 +410,34 @@ export class Player {
           // Slow-mo zones affect player regardless of collision direction
           this.isInSlowMo = true;
           // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'water':
+          // Water zones give floaty physics
+          this.isInWater = true;
+          // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'wind':
+          // Wind zones push the player
+          const windStrength = platform.windStrength * 200;
+          switch (platform.windDirection) {
+            case 'up': this.windForce.y = -windStrength; break;
+            case 'down': this.windForce.y = windStrength; break;
+            case 'left': this.windForce.x = -windStrength; break;
+            case 'right': this.windForce.x = windStrength; break;
+          }
+          // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'portal':
+          // Teleport player to portal target
+          if (platform.portalTarget && !this.portalEvent) {
+            this.portalEvent = { x: platform.portalTarget.x, y: platform.portalTarget.y };
+            this.x = platform.portalTarget.x;
+            this.y = platform.portalTarget.y;
+          }
+          // Don't resolve collision - it's a teleporter
           continue;
 
         case 'secret':

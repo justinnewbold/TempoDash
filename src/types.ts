@@ -21,6 +21,9 @@ export interface PlatformConfig {
   phaseGroup?: number;
   color?: string;
   conveyorSpeed?: number;  // Speed for conveyor (-1 to 1, negative = left)
+  windDirection?: 'up' | 'down' | 'left' | 'right';  // Direction for wind platform
+  windStrength?: number;  // Wind force multiplier (default 1)
+  portalTarget?: { x: number; y: number };  // Target location for portal
 }
 
 export type PlatformType =
@@ -38,7 +41,10 @@ export type PlatformType =
   | 'glass'      // Breaks after 2nd landing
   | 'slowmo'     // Slows down time while player is in zone
   | 'wall'       // Vertical wall for wall-jumping
-  | 'secret';    // Hidden platform revealed on proximity
+  | 'secret'     // Hidden platform revealed on proximity
+  | 'portal'     // Teleports player to linked portal
+  | 'wind'       // Pushes player in a direction
+  | 'water';     // Underwater zone with floaty physics
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -88,6 +94,9 @@ export interface LevelConfig {
   totalCoins?: number;  // For star calculation (auto-counted if not set)
   bpm?: number;  // Beats per minute for beat visualization
   flyingMode?: boolean;  // Flying mode - player flies and avoids obstacles
+  underwaterMode?: boolean;  // Underwater mode - floaty physics
+  gravityFlipMode?: boolean;  // Gravity constantly flips throughout level
+  weatherEffect?: 'rain' | 'snow' | 'wind' | 'none';  // Dynamic weather
 }
 
 export interface BackgroundConfig {
@@ -107,7 +116,9 @@ export type BackgroundType =
   | 'volcano'    // Level 5 - Volcanic cavern
   | 'ocean'      // Level 6 - Underwater
   | 'inferno'    // Level 9 - Chase level (wall of death)
-  | 'sky';       // Level 10 - Flying level (sky clouds)
+  | 'sky'        // Level 10 - Flying level (sky clouds)
+  | 'gradient'   // Level 11 - Ocean/underwater gradient
+  | 'grid';      // Level 12 - Grid-based (anti-gravity lab)
 
 export interface ParticleConfig {
   count: number;
