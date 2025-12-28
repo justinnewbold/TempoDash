@@ -104,8 +104,8 @@ export class Boss {
     // Smooth vertical movement
     this.y += (this.targetY - this.y) * 0.05;
 
-    // Update projectiles
-    this.updateProjectiles(deltaTime);
+    // Update projectiles (pass cameraX for proper screen boundary checking)
+    this.updateProjectiles(deltaTime, cameraX);
 
     // Decay visual effects
     if (this.damageFlash > 0) this.damageFlash -= deltaTime * 0.005;
@@ -160,7 +160,7 @@ export class Boss {
     }, delay * 1000);
   }
 
-  private updateProjectiles(deltaTime: number): void {
+  private updateProjectiles(deltaTime: number, cameraX: number): void {
     const dt = deltaTime / 1000;
 
     for (const proj of this.projectiles) {
@@ -169,8 +169,9 @@ export class Boss {
       proj.x += proj.vx * dt;
       proj.y += proj.vy * dt;
 
-      // Deactivate if off screen
-      if (proj.x < -50 || proj.x > GAME_WIDTH + 50 ||
+      // Deactivate if off screen (convert world coords to screen coords)
+      const projScreenX = proj.x - cameraX;
+      if (projScreenX < -50 || projScreenX > GAME_WIDTH + 50 ||
           proj.y < -50 || proj.y > GAME_HEIGHT + 50) {
         proj.active = false;
       }
