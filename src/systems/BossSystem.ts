@@ -195,11 +195,11 @@ export class Boss {
       return true;
     }
 
-    // Check projectile collisions
+    // Check projectile collisions (convert to screen coords)
     for (const proj of this.projectiles) {
       if (!proj.active) continue;
 
-      const projScreenX = proj.x;
+      const projScreenX = proj.x - cameraX;
       if (playerX + playerWidth > projScreenX - proj.size &&
           playerX < projScreenX + proj.size &&
           playerY + playerHeight > proj.y - proj.size &&
@@ -285,14 +285,14 @@ export class Boss {
         break;
     }
 
-    // Render projectiles
+    // Render projectiles (convert to screen coords)
     ctx.shadowBlur = 10;
     ctx.shadowColor = '#ff0000';
     ctx.fillStyle = '#ff4444';
     for (const proj of this.projectiles) {
       if (!proj.active) continue;
       ctx.beginPath();
-      ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
+      ctx.arc(proj.x - cameraX, proj.y, proj.size, 0, Math.PI * 2);
       ctx.fill();
     }
 

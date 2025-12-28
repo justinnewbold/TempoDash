@@ -259,9 +259,9 @@ export class SkillTreeManager {
   // Get skill effect value (combined multiplier for stacking skills)
   getSkillEffect(skillId: SkillId): number {
     const level = this.getSkillLevel(skillId);
-    if (level === 0) return skillId.includes('multiplier') ? 1 : 0;
-
     const skill = SKILLS[skillId];
+    // Always call effect function - it returns appropriate default at level 0
+    // (1 for multipliers like "1 + level * 0.05", 0 for additive like "level * 0.05")
     return skill.effect(level);
   }
 
