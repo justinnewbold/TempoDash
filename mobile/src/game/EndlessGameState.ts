@@ -11,6 +11,7 @@ export class EndlessGameEngine {
   coins: Coin[] = [];
   cameraY = 0;
   generator: EndlessGenerator;
+  coinCollectedThisFrame = false;
 
   state: GameState = {
     score: 0,
@@ -97,6 +98,9 @@ export class EndlessGameEngine {
   }
 
   update(deltaTime: number): void {
+    // Reset per-frame flags
+    this.coinCollectedThisFrame = false;
+
     if (!this.state.isPlaying || this.state.isDead) {
       return;
     }
@@ -139,6 +143,7 @@ export class EndlessGameEngine {
         coin.collect();
         this.state.coinsCollected++;
         this.state.score += 5;
+        this.coinCollectedThisFrame = true;
       }
     }
   }

@@ -32,9 +32,13 @@
       "versionCode": 1,
       "edgeToEdgeEnabled": true
     },
+    "assetBundlePatterns": [
+      "assets/**/*"
+    ],
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-av",
       [
         "expo-screen-orientation",
         {
@@ -44,6 +48,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "tempodash-mobile"
+      }
     }
   }
 }

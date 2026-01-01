@@ -5,10 +5,18 @@ import { StyleSheet } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useEffect } from 'react';
 
+import { AudioManager } from '../src/systems/AudioManager';
+import { SaveManager } from '../src/systems/SaveManager';
+
 export default function RootLayout() {
   useEffect(() => {
     // Lock to portrait mode
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+
+    // Initialize audio and load save data
+    AudioManager.initialize();
+    AudioManager.loadSounds();
+    SaveManager.load();
   }, []);
 
   return (

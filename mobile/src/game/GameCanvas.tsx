@@ -26,6 +26,7 @@ import { LevelConfig } from '../types';
 import { COLORS, PLAYER, GAME } from '../constants';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
+import { AudioManager } from '../systems/AudioManager';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -71,18 +72,25 @@ export function GameCanvas({
       const engine = engineRef.current;
       engine.update(deltaTime);
 
-      // Handle events for haptics
+      // Handle events for haptics and audio
       if (engine.player.jumpEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        AudioManager.playSound('jump');
       }
       if (engine.player.bounceEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        AudioManager.playSound('bounce');
       }
       if (engine.player.landEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        AudioManager.playSound('land');
       }
       if (engine.player.deathEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        AudioManager.playSound('death');
+      }
+      if (engine.coinCollectedThisFrame) {
+        AudioManager.playSound('coin');
       }
 
       // Check game state
@@ -93,6 +101,7 @@ export function GameCanvas({
       if (engine.state.isComplete && !completeCalledRef.current) {
         completeCalledRef.current = true;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        AudioManager.playSound('complete');
         setTimeout(
           () => onLevelComplete(engine.state.score, engine.state.coinsCollected),
           500

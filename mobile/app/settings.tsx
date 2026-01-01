@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Switch,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,26 +15,84 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 
+import { AudioManager } from '../src/systems/AudioManager';
+import { SaveManager } from '../src/systems/SaveManager';
+
 export default function Settings() {
   const insets = useSafeAreaInsets();
 
-  // Settings state (would be persisted in real app)
-  const [musicVolume, setMusicVolume] = useState(0.8);
+  // Settings state loaded from SaveManager
+  const [musicVolume, setMusicVolume] = useState(0.7);
   const [sfxVolume, setSfxVolume] = useState(1.0);
   const [haptics, setHaptics] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
+
+  // Load settings on mount
+  useEffect(() => {
+    const settings = SaveManager.getSettings();
+    setMusicVolume(settings.musicVolume);
+    setSfxVolume(settings.sfxVolume);
+    setHaptics(settings.hapticFeedback);
+    setReducedMotion(settings.reducedMotion);
+  }, []);
+
+  // Update music volume
+  const handleMusicVolumeChange = useCallback((value: number) => {
+    setMusicVolume(value);
+    AudioManager.setMusicVolume(value);
+  }, []);
+
+  const handleMusicVolumeComplete = useCallback((value: number) => {
+    SaveManager.updateSettings({ musicVolume: value });
+  }, []);
+
+  // Update SFX volume
+  const handleSfxVolumeChange = useCallback((value: number) => {
+    setSfxVolume(value);
+    AudioManager.setSfxVolume(value);
+  }, []);
+
+  const handleSfxVolumeComplete = useCallback((value: number) => {
+    SaveManager.updateSettings({ sfxVolume: value });
+    // Play a test sound
+    AudioManager.playSound('button');
+  }, []);
 
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.back();
   };
 
-  const handleHapticsToggle = (value: boolean) => {
+  const handleHapticsToggle = useCallback((value: boolean) => {
     if (value) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setHaptics(value);
-  };
+    SaveManager.updateSettings({ hapticFeedback: value });
+  }, []);
+
+  const handleReducedMotionToggle = useCallback((value: boolean) => {
+    setReducedMotion(value);
+    SaveManager.updateSettings({ reducedMotion: value });
+  }, []);
+
+  const handleResetProgress = useCallback(() => {
+    Alert.alert(
+      'Reset Progress',
+      'Are you sure you want to reset all progress? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await SaveManager.reset();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  }, []);
 
   return (
     <LinearGradient colors={['#0a0a1a', '#1a1a2e', '#16213e']} style={styles.container}>
@@ -62,7 +121,8 @@ export default function Settings() {
             minimumValue={0}
             maximumValue={1}
             value={musicVolume}
-            onValueChange={setMusicVolume}
+            onValueChange={handleMusicVolumeChange}
+            onSlidingComplete={handleMusicVolumeComplete}
             minimumTrackTintColor="#00ffaa"
             maximumTrackTintColor="rgba(255, 255, 255, 0.2)"
             thumbTintColor="#00ffaa"
@@ -80,7 +140,8 @@ export default function Settings() {
             minimumValue={0}
             maximumValue={1}
             value={sfxVolume}
-            onValueChange={setSfxVolume}
+            onValueChange={handleSfxVolumeChange}
+            onSlidingComplete={handleSfxVolumeComplete}
             minimumTrackTintColor="#00ffaa"
             maximumTrackTintColor="rgba(255, 255, 255, 0.2)"
             thumbTintColor="#00ffaa"
@@ -118,7 +179,7 @@ export default function Settings() {
             </View>
             <Switch
               value={reducedMotion}
-              onValueChange={setReducedMotion}
+              onValueChange={handleReducedMotionToggle}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: 'rgba(0,255,170,0.4)' }}
               thumbColor={reducedMotion ? '#00ffaa' : '#888'}
             />
@@ -140,7 +201,7 @@ export default function Settings() {
         </View>
 
         {/* Reset Button */}
-        <TouchableOpacity style={styles.resetButton}>
+        <TouchableOpacity style={styles.resetButton} onPress={handleResetProgress}>
           <Ionicons name="trash-outline" size={20} color="#ff4757" />
           <Text style={styles.resetButtonText}>Reset Progress</Text>
         </TouchableOpacity>

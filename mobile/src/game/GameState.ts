@@ -9,6 +9,7 @@ export class GameEngine {
   platforms: Platform[] = [];
   coins: Coin[] = [];
   cameraY = 0;
+  coinCollectedThisFrame = false;
 
   state: GameState = {
     score: 0,
@@ -50,6 +51,9 @@ export class GameEngine {
   }
 
   update(deltaTime: number): void {
+    // Reset per-frame flags
+    this.coinCollectedThisFrame = false;
+
     if (!this.state.isPlaying || this.state.isDead || this.state.isComplete) {
       return;
     }
@@ -84,6 +88,7 @@ export class GameEngine {
         coin.collect();
         this.state.coinsCollected++;
         this.state.score += 10;
+        this.coinCollectedThisFrame = true;
       }
     }
 
