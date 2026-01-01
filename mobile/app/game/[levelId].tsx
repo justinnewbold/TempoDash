@@ -14,8 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GameCanvas } from '../../src/game/GameCanvas';
+import { EndlessCanvas } from '../../src/game/EndlessCanvas';
 import { getLevel, LEVELS } from '../../src/levels';
-import { COLORS } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,7 +28,8 @@ export default function GameScreen() {
   const [isComplete, setIsComplete] = useState(false);
   const [score, setScore] = useState(0);
   const [coins, setCoins] = useState(0);
-  const [key, setKey] = useState(0); // For restarting the game
+  const [distance, setDistance] = useState(0);
+  const [key, setKey] = useState(0);
 
   const isEndless = levelId === 'endless';
   const level = isEndless ? null : getLevel(parseInt(levelId || '1', 10));
@@ -50,6 +51,7 @@ export default function GameScreen() {
     setIsComplete(false);
     setScore(0);
     setCoins(0);
+    setDistance(0);
     setKey((k) => k + 1);
   }, []);
 
@@ -78,6 +80,16 @@ export default function GameScreen() {
     setIsGameOver(true);
   }, []);
 
+  const handleEndlessGameOver = useCallback(
+    (finalScore: number, finalDistance: number, finalCoins: number) => {
+      setScore(finalScore);
+      setDistance(finalDistance);
+      setCoins(finalCoins);
+      setIsGameOver(true);
+    },
+    []
+  );
+
   const handleLevelComplete = useCallback((finalScore: number, totalCoins: number) => {
     setScore(finalScore);
     setCoins(totalCoins);
@@ -95,25 +107,97 @@ export default function GameScreen() {
     );
   }
 
-  // TODO: Implement endless mode
+  // Endless Mode
   if (isEndless) {
     return (
-      <LinearGradient colors={['#0a0a1a', '#1a1a2e']} style={styles.container}>
-        <View style={styles.comingSoon}>
-          <Ionicons name="infinite" size={60} color="#ff6b6b" />
-          <Text style={styles.comingSoonText}>Endless Mode</Text>
-          <Text style={styles.comingSoonSubtext}>Coming Soon!</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={handleQuit}>
-            <Text style={styles.backBtnText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
+      <View style={styles.container}>
+        <EndlessCanvas key={key} onGameOver={handleEndlessGameOver} />
+
+        {/* Pause Button */}
+        <TouchableOpacity
+          style={[styles.pauseButton, { top: insets.top + 10, right: 20 }]}
+          onPress={handlePause}
+        >
+          <Ionicons name="pause" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Pause Modal */}
+        <Modal visible={isPaused} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>PAUSED</Text>
+
+              <TouchableOpacity style={styles.modalButton} onPress={handleResume}>
+                <Ionicons name="play" size={24} color="#0a0a1a" />
+                <Text style={styles.modalButtonText}>Resume</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={handleRestart}
+              >
+                <Ionicons name="refresh" size={24} color="#fff" />
+                <Text style={styles.modalButtonTextSecondary}>Restart</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonDanger]}
+                onPress={handleQuit}
+              >
+                <Ionicons name="exit-outline" size={24} color="#fff" />
+                <Text style={styles.modalButtonTextSecondary}>Quit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Game Over Modal (Endless) */}
+        <Modal visible={isGameOver} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Ionicons name="infinite" size={48} color="#ff6b6b" />
+              <Text style={styles.modalTitle}>RUN OVER</Text>
+
+              <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                  <Ionicons name="navigate" size={24} color="#ff6b6b" />
+                  <Text style={styles.statValue}>{distance}m</Text>
+                  <Text style={styles.statLabel}>Distance</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Ionicons name="star" size={24} color="#ffd700" />
+                  <Text style={styles.statValue}>{coins}</Text>
+                  <Text style={styles.statLabel}>Coins</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Ionicons name="medal" size={24} color="#00ffaa" />
+                  <Text style={styles.statValue}>{score}</Text>
+                  <Text style={styles.statLabel}>Score</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.modalButtonEndless} onPress={handleRestart}>
+                <Ionicons name="refresh" size={24} color="#fff" />
+                <Text style={styles.modalButtonTextSecondary}>Try Again</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={handleQuit}
+              >
+                <Ionicons name="exit-outline" size={24} color="#fff" />
+                <Text style={styles.modalButtonTextSecondary}>Quit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
     );
   }
 
+  // Campaign Mode
   return (
     <View style={styles.container}>
-      {/* Game Canvas */}
       <GameCanvas
         key={key}
         level={level!}
@@ -288,7 +372,7 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 40,
+    gap: 30,
     marginVertical: 20,
   },
   statItem: {
@@ -316,6 +400,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#00ffaa',
     marginTop: 12,
   },
+  modalButtonEndless: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: '#ff6b6b',
+    marginTop: 12,
+  },
   modalButtonText: {
     fontSize: 18,
     fontWeight: '600',
@@ -331,31 +426,5 @@ const styles = StyleSheet.create({
   },
   modalButtonDanger: {
     backgroundColor: 'rgba(255, 71, 87, 0.3)',
-  },
-  comingSoon: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  comingSoonText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  comingSoonSubtext: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  backBtn: {
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  backBtnText: {
-    fontSize: 16,
-    color: '#fff',
   },
 });
