@@ -37,7 +37,7 @@ export class Game {
 
   private player!: Player;
   private level!: Level;
-  private cameraY = 0;
+  private cameraX = 0;
   private attempts = 0;
 
   private lastTime = 0;
@@ -352,7 +352,7 @@ export class Game {
     this.player = new Player(this.level.playerStart);
     this.player.setSkin(this.save.getSelectedSkin());
     this.state.currentLevel = levelId;
-    this.cameraY = 0;
+    this.cameraX = 0;
     // Reset speed multiplier for new level
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
@@ -1181,7 +1181,7 @@ export class Game {
       this.endlessDistance = 0;
       this.endlessPlatforms = [];
       this.nextPlatformX = 0;
-      this.cameraY = 0;
+      this.cameraX = 0;
       this.loadLevel(1);
       this.player.setSkin(this.save.getSelectedSkin());
       this.generateEndlessPlatforms(1500);
@@ -1266,7 +1266,7 @@ export class Game {
       this.player.velocityY = 0;
       this.checkpointX = checkpoint.x;
       this.checkpointY = checkpoint.y;
-      this.cameraY = Math.max(0, checkpoint.x - GAME_WIDTH / 3);
+      this.cameraX = Math.max(0, checkpoint.x - GAME_WIDTH / 3);
       this.lastCheckpointProgress = (sectionIndex / (checkpoints.length + 1)) * 100;
     } else {
       // Start from beginning
@@ -1319,7 +1319,7 @@ export class Game {
       this.player = new Player(startPosition);
       this.player.setSkin(this.save.getSelectedSkin());
       this.player.setFlyingMode(config.flyingMode ?? false);
-      this.cameraY = Math.max(0, startPosition.x - GAME_WIDTH / 3);
+      this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
       this.attempts = 1;
       this.levelScoreThisRun = 0;
       this.state.gameStatus = 'editorTest';
@@ -1344,7 +1344,7 @@ export class Game {
     this.endlessDistance = 0;
     this.endlessPlatforms = [];
     this.nextPlatformX = 0;
-    this.cameraY = 0;
+    this.cameraX = 0;
     this.attempts = 1;
 
     // Load level 1 as base but we'll use procedural platforms
@@ -1458,12 +1458,12 @@ export class Game {
       this.player = new Player(startPosition);
       this.player.setSkin(this.save.getSelectedSkin());
       this.player.setFlyingMode(config.flyingMode ?? false);
-      this.cameraY = Math.max(0, startPosition.x - GAME_WIDTH / 3);
+      this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
       this.state.gameStatus = 'editorTest';
     } else if (this.isPracticeMode && this.lastCheckpointProgress > 0) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
-      this.cameraY = Math.max(0, this.checkpointX - 150);
+      this.cameraX = Math.max(0, this.checkpointX - 150);
       this.state.gameStatus = 'practice';
     } else {
       // Normal respawn at level start
@@ -1633,10 +1633,10 @@ export class Game {
       this.endlessDistance = Math.max(this.endlessDistance, Math.floor(this.player.x / 10));
 
       // Generate more platforms ahead
-      this.generateEndlessPlatforms(this.cameraY + 1500);
+      this.generateEndlessPlatforms(this.cameraX + 1500);
 
       // Clean up platforms behind camera
-      this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraY - 200);
+      this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
     } else {
       this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
     }
@@ -1945,9 +1945,9 @@ export class Game {
       this.checkpointFeedbackTimer -= deltaTime;
     }
 
-    // Vertical scrolling: keep player near bottom of screen as they climb up
-    const targetCameraY = this.player.y - (GAME_HEIGHT - 200);
-    this.cameraY = targetCameraY;
+    /// Horizontal scrolling: keep player near left of screen as they run right
+    const targetCameraX = this.player.x - 150;
+    this.cameraX = Math.max(0, targetCameraX);
 
     // Update checkpoints in practice mode (every 25% progress)
     if (this.isPracticeMode) {
@@ -2169,52 +2169,52 @@ export class Game {
       // Render endless mode
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
-      this.player.render(this.ctx, this.cameraY);
-      this.particles.render(this.ctx, this.cameraY);
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderEndlessUI();
     } else if (this.state.gameStatus === 'challengePlaying') {
       // Render challenge mode (similar to endless but with challenge UI)
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
-      this.player.render(this.ctx, this.cameraY);
-      this.particles.render(this.ctx, this.cameraY);
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderChallengeUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
-      this.level.render(this.ctx, this.cameraY);
-      this.player.render(this.ctx, this.cameraY);
-      this.particles.render(this.ctx, this.cameraY);
+      this.level.render(this.ctx, this.cameraX);
+      this.player.render(this.ctx, this.cameraX);
+      this.particles.render(this.ctx, this.cameraX);
       this.renderPlayingUI();
       this.renderEditorTestUI();
     } else {
-      this.level.render(this.ctx, this.cameraY);
+      this.level.render(this.ctx, this.cameraX);
 
       if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') {
         // Render power-ups before player so they appear behind
-        this.powerUps.render(this.ctx, this.cameraY);
+        this.powerUps.render(this.ctx, this.cameraX);
 
         // Render ghost before player so player appears on top
         if (this.showGhost) {
-          this.ghostManager.render(this.ctx, this.cameraY);
+          this.ghostManager.render(this.ctx, this.cameraX);
         }
 
-        this.player.render(this.ctx, this.cameraY);
+        this.player.render(this.ctx, this.cameraX);
 
         // Render shield effect around player if active
         const playerBounds = this.player.getBounds();
         this.powerUps.renderShieldEffect(
           this.ctx,
-          playerBounds.x - this.cameraY,
+          playerBounds.x - this.cameraX,
           playerBounds.y,
           playerBounds.width,
           playerBounds.height
         );
 
-        this.particles.render(this.ctx, this.cameraY);
+        this.particles.render(this.ctx, this.cameraX);
 
         // Render chase mode wall of death
-        this.chaseMode.render(this.ctx, this.cameraY, GAME_HEIGHT);
-        this.chaseMode.renderWarning(this.ctx, this.player.x, this.cameraY, GAME_WIDTH);
+        this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
+        this.chaseMode.renderWarning(this.ctx, this.player.x, this.cameraX, GAME_WIDTH);
 
         this.renderPlayingUI();
 
@@ -2295,7 +2295,7 @@ export class Game {
     }
 
     // Debug overlay (F3 to toggle)
-    this.debug.render(this.ctx, this.cameraY);
+    this.debug.render(this.ctx, this.cameraX);
 
     // Screen transition effect (always on top)
     this.transition.render(this.ctx);
@@ -4052,7 +4052,7 @@ export class Game {
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
-    this.cameraY = 0;
+    this.cameraX = 0;
     this.attempts++;
 
     // Start music
@@ -4088,7 +4088,7 @@ export class Game {
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
-    this.cameraY = 0;
+    this.cameraX = 0;
     this.attempts++;
   }
 
@@ -4368,7 +4368,7 @@ export class Game {
     this.ctx.lineWidth = 1;
 
     const gridSize = 50;
-    const offsetX = (-this.cameraY * 0.3) % gridSize;
+    const offsetX = (-this.cameraX * 0.3) % gridSize;
 
     for (let x = offsetX; x < GAME_WIDTH; x += gridSize) {
       this.ctx.beginPath();
@@ -4388,7 +4388,7 @@ export class Game {
   private renderEndlessPlatforms(): void {
     // Use the Platform's built-in render method
     for (const platform of this.endlessPlatforms) {
-      platform.render(this.ctx, this.cameraY);
+      platform.render(this.ctx, this.cameraX);
     }
   }
 
@@ -4812,7 +4812,7 @@ export class Game {
     this.level = new Level(config);
     this.player = new Player(config.playerStart);
     this.player.setSkin(this.save.getSelectedSkin());
-    this.cameraY = 0;
+    this.cameraX = 0;
     this.attempts = 0;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = false;
@@ -5267,7 +5267,7 @@ export class Game {
     this.player.setFlyingMode(flyingMode);
 
     // Set camera to center on test position
-    this.cameraY = Math.max(0, startPosition.x - GAME_WIDTH / 3);
+    this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
     this.attempts = 0;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing

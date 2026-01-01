@@ -1,5 +1,5 @@
 import { CoinConfig, Rectangle } from '../types';
-import { GAME_HEIGHT } from '../constants';
+import { GAME_WIDTH } from '../constants';
 
 export class Coin {
   x: number;
@@ -70,12 +70,11 @@ export class Coin {
     );
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraY: number): void {
-    const screenX = this.x;
-    const screenY = this.y - cameraY;
+  render(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    const screenX = this.x - cameraX;
 
-    // Skip if off screen (use logical game height for vertical scrolling)
-    if (screenY < -50 || screenY > GAME_HEIGHT + 50) return;
+    // Skip if off screen (use logical game width)
+    if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
     // Collection animation
     if (this.collected) {
@@ -84,7 +83,7 @@ export class Coin {
       ctx.save();
       ctx.globalAlpha = 1 - this.collectAnimation;
       const scale = 1 + this.collectAnimation * 0.5;
-      ctx.translate(screenX, screenY - this.collectAnimation * 30);
+      ctx.translate(screenX, this.y - this.collectAnimation * 30);
       ctx.scale(scale, scale);
       this.drawCoin(ctx, 0, 0);
       ctx.restore();
@@ -96,7 +95,7 @@ export class Coin {
     const rotation = Math.sin(this.animationTime * 0.003) * 0.3;
 
     ctx.save();
-    ctx.translate(screenX, screenY + floatOffset);
+    ctx.translate(screenX, this.y + floatOffset);
     ctx.rotate(rotation);
     this.drawCoin(ctx, 0, 0);
     ctx.restore();

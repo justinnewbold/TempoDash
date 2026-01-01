@@ -426,40 +426,40 @@ export class Background {
     }
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraY: number = 0): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     // Draw base gradient
     this.drawBaseGradient(ctx);
 
-    // Draw type-specific background with parallax (using cameraY for vertical scrolling)
+    // Draw type-specific background with parallax
     switch (this.config.type) {
       case 'city':
-        this.drawCityBackground(ctx, cameraY);
+        this.drawCityBackground(ctx, cameraX);
         break;
       case 'neon':
-        this.drawNeonBackground(ctx, cameraY);
+        this.drawNeonBackground(ctx, cameraX);
         break;
       case 'space':
         this.drawSpaceBackground(ctx);
         break;
       case 'forest':
-        this.drawForestBackground(ctx, cameraY);
+        this.drawForestBackground(ctx, cameraX);
         break;
       case 'volcano':
-        this.drawVolcanoBackground(ctx, cameraY);
+        this.drawVolcanoBackground(ctx, cameraX);
         break;
       case 'ocean':
-        this.drawOceanBackground(ctx, cameraY);
+        this.drawOceanBackground(ctx, cameraX);
         break;
       case 'inferno':
-        this.drawInfernoBackground(ctx, cameraY);
+        this.drawInfernoBackground(ctx, cameraX);
         break;
       case 'sky':
-        this.drawSkyBackground(ctx, cameraY);
+        this.drawSkyBackground(ctx, cameraX);
         break;
     }
 
     // Draw effects
-    this.renderEffects(ctx, cameraY);
+    this.renderEffects(ctx, cameraX);
   }
 
   private drawBaseGradient(ctx: CanvasRenderingContext2D): void {
@@ -1149,11 +1149,11 @@ export class Background {
     }
   }
 
-  private renderEffects(ctx: CanvasRenderingContext2D, cameraY: number): void {
+  private renderEffects(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const effects = this.config.effects || [];
 
     if (effects.includes('stars')) {
-      this.renderStars(ctx, cameraY);
+      this.renderStars(ctx, cameraX);
     }
 
     if (this.config.particles) {
@@ -1181,9 +1181,9 @@ export class Background {
     }
   }
 
-  private renderStars(ctx: CanvasRenderingContext2D, cameraY: number): void {
-    // Stars have very slow parallax (vertical)
-    const parallax = cameraY * 0.03;
+  private renderStars(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Stars have very slow parallax
+    const parallax = cameraX * 0.03;
 
     for (const star of this.stars) {
       const twinkle = Math.sin(this.time * star.twinkleSpeed) * 0.5 + 0.5;
