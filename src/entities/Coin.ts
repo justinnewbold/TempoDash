@@ -73,7 +73,7 @@ export class Coin {
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const screenX = this.x - cameraX;
 
-    // Skip if off screen (use logical game width, not canvas pixel width for high-DPI support)
+    // Skip if off screen (use logical game width)
     if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
     // Collection animation

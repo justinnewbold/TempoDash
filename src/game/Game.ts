@@ -1945,6 +1945,7 @@ export class Game {
       this.checkpointFeedbackTimer -= deltaTime;
     }
 
+    /// Horizontal scrolling: keep player near left of screen as they run right
     const targetCameraX = this.player.x - 150;
     this.cameraX = Math.max(0, targetCameraX);
 

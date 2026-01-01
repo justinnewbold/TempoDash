@@ -205,7 +205,7 @@ export class Platform {
     return true;
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraX: number = 0, gameWidth: number = 960): void {
+  render(ctx: CanvasRenderingContext2D, cameraX: number = 0, gameWidth: number = 540): void {
     if (this.isDestroyed) return;
 
     // Skip rendering if off-screen (use logical game width, not canvas pixel width)
@@ -233,13 +233,12 @@ export class Platform {
     }
 
     // Draw platform base with camera offset
-    this.drawPlatform(ctx, cameraX);
+    this.drawPlatform(ctx, screenX);
 
     ctx.restore();
   }
 
-  private drawPlatform(ctx: CanvasRenderingContext2D, cameraX: number): void {
-    const screenX = this.x - cameraX;
+  private drawPlatform(ctx: CanvasRenderingContext2D, screenX: number): void {
     const gradient = ctx.createLinearGradient(
       screenX,
       this.y,
