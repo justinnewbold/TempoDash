@@ -53,6 +53,7 @@ export class AudioManager {
   private targetIntensity = 0.5;
   private dangerLevel = 0; // 0-1 scale for near-death tension
   private playerSpeed = 0; // Normalized speed 0-1
+  private gameSpeedMultiplier = 1.0; // Speed multiplier from jumps (affects tempo)
   private intensitySmoothingFactor = 0.05;
   private enableDynamicMusic = true;
 
@@ -287,7 +288,9 @@ export class AudioManager {
   }
 
   private nextNote(): void {
-    const secondsPerBeat = 60.0 / this.currentPreset.tempo;
+    // Apply game speed multiplier to tempo (faster gameplay = faster music)
+    const effectiveTempo = this.currentPreset.tempo * this.gameSpeedMultiplier;
+    const secondsPerBeat = 60.0 / effectiveTempo;
     this.nextNoteTime += 0.25 * secondsPerBeat;
     this.noteIndex++;
     if (this.noteIndex === 16) {
@@ -778,6 +781,16 @@ export class AudioManager {
   updatePlayerSpeed(speed: number): void {
     this.playerSpeed = Math.max(0, Math.min(1, speed));
     this.recalculateIntensity();
+  }
+
+  // Update game speed multiplier (affects music tempo)
+  setGameSpeedMultiplier(multiplier: number): void {
+    this.gameSpeedMultiplier = Math.max(0.5, Math.min(3.0, multiplier)); // Clamp between 0.5x and 3x
+  }
+
+  // Reset speed multiplier (call on level start/restart)
+  resetGameSpeed(): void {
+    this.gameSpeedMultiplier = 1.0;
   }
 
   // Update danger level (0 = safe, 1 = near death)

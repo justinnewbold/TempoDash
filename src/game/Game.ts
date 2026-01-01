@@ -356,6 +356,7 @@ export class Game {
     // Reset speed multiplier for new level
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.audio.resetGameSpeed();
 
     // Enable flying mode if level config specifies it
     const levelConfig = this.level.getConfig();
@@ -1188,6 +1189,7 @@ export class Game {
       this.attempts = 1;
       this.speedMultiplier = 1.0;
       this.jumpCount = 0;
+      this.audio.resetGameSpeed();
     } else {
       // Restart current level
       this.loadLevel(this.state.currentLevel);
@@ -1449,6 +1451,7 @@ export class Game {
     // Reset speed multiplier on death
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.audio.resetGameSpeed();
 
     if (this.state.gameStatus === 'editorTest' && this.editingLevel) {
       // Respawn in editor test mode - reload editor level
@@ -1875,9 +1878,11 @@ export class Game {
 
     if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
       this.audio.playJump();
-      // Increase speed by 0.25% per jump (compound growth)
+      // Increase speed by 1% per jump (compound growth)
       this.jumpCount++;
       this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
+      // Sync music tempo with game speed
+      this.audio.setGameSpeedMultiplier(this.speedMultiplier);
 
       // Spawn jump dust particles
       const jumpX = this.player.x + this.player.width / 2;
@@ -4032,6 +4037,7 @@ export class Game {
     this.endlessDistance = 0;
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.audio.resetGameSpeed();
 
     // Generate procedural platforms using the challenge seed
     this.endlessPlatforms = [];
@@ -4068,6 +4074,7 @@ export class Game {
     this.endlessDistance = 0;
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
     this.endlessPlatforms = [];
