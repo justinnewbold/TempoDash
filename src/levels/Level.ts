@@ -3,7 +3,7 @@ import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
-import { COLORS, GAME_WIDTH } from '../constants';
+import { COLORS, GAME_WIDTH, GAME_HEIGHT } from '../constants';
 
 export class Level {
   id: number;
@@ -117,29 +117,30 @@ export class Level {
     );
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
+  render(ctx: CanvasRenderingContext2D, cameraY: number = 0): void {
     // Draw background (with parallax effect)
-    this.background.render(ctx, cameraX);
+    this.background.render(ctx, cameraY);
 
     // Draw platforms
     for (const platform of this.platforms) {
-      platform.render(ctx, cameraX, GAME_WIDTH);
+      platform.render(ctx, cameraY, GAME_WIDTH);
     }
 
     // Draw coins
     for (const coin of this.coins) {
-      coin.render(ctx, cameraX);
+      coin.render(ctx, cameraY);
     }
 
     // Draw goal
-    this.renderGoal(ctx, cameraX);
+    this.renderGoal(ctx, cameraY);
   }
 
-  private renderGoal(ctx: CanvasRenderingContext2D, cameraX: number): void {
-    const screenX = this.goal.x - cameraX;
+  private renderGoal(ctx: CanvasRenderingContext2D, cameraY: number): void {
+    const screenX = this.goal.x;
+    const screenY = this.goal.y - cameraY;
 
-    // Skip if off screen (use logical game width)
-    if (screenX + this.goal.width < -50 || screenX > GAME_WIDTH + 50) {
+    // Skip if off screen
+    if (screenY + this.goal.height < -50 || screenY > GAME_HEIGHT + 50) {
       return;
     }
 
@@ -153,21 +154,21 @@ export class Level {
     // Goal gradient
     const gradient = ctx.createLinearGradient(
       screenX,
-      this.goal.y,
+      screenY,
       screenX,
-      this.goal.y + this.goal.height
+      screenY + this.goal.height
     );
     gradient.addColorStop(0, '#ffd700');
     gradient.addColorStop(0.5, '#ffed4a');
     gradient.addColorStop(1, '#ffd700');
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(screenX, this.goal.y, this.goal.width, this.goal.height);
+    ctx.fillRect(screenX, screenY, this.goal.width, this.goal.height);
 
     // Star icon in center
     ctx.fillStyle = '#fff';
     const centerX = screenX + this.goal.width / 2;
-    const centerY = this.goal.y + this.goal.height / 2;
+    const centerY = screenY + this.goal.height / 2;
     this.drawStar(ctx, centerX, centerY, 12 * pulse, 5);
 
     ctx.shadowBlur = 0;

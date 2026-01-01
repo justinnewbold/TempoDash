@@ -176,11 +176,11 @@ export class Player {
       this.isGrounded = false;
     }
 
-    // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
-    // Sticky platforms slow/stop forward movement
+    // Auto-move upward at constant speed (faster when dashing, affected by speed multiplier)
+    // Sticky platforms slow/stop upward movement
     const stickySlow = this.isStuck ? 0.3 : 1;
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
-    this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
+    this.y -= PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
 
     // Flying mode: hold to fly up, release to fall
     if (this.flyingMode) {
@@ -529,9 +529,9 @@ export class Player {
     return this.isWallSliding;
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
-    const screenX = this.x - cameraX;
-    const screenY = this.y;
+  render(ctx: CanvasRenderingContext2D, cameraY: number = 0): void {
+    const screenX = this.x;
+    const screenY = this.y - cameraY;
 
     // Get skin colors (handle rainbow skin with cycling colors)
     let primaryColor = this.skin.primaryColor;
@@ -550,9 +550,9 @@ export class Player {
       const point = this.trailBuffer[i];
       if (!point.active) continue;
 
-      const trailScreenX = point.x - cameraX;
+      const trailScreenY = point.y - cameraY;
       ctx.save();
-      ctx.translate(trailScreenX, point.y);
+      ctx.translate(point.x, trailScreenY);
       ctx.rotate((point.rotation * Math.PI) / 180);
       const trailColor = this.colorWithAlpha(this.skin.trailColor, point.alpha * 0.3);
       ctx.fillStyle = trailColor;

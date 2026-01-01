@@ -205,12 +205,13 @@ export class Platform {
     return true;
   }
 
-  render(ctx: CanvasRenderingContext2D, cameraX: number = 0, gameWidth: number = 960): void {
+  render(ctx: CanvasRenderingContext2D, cameraY: number = 0, gameHeight: number = 960): void {
     if (this.isDestroyed) return;
 
-    // Skip rendering if off-screen (use logical game width, not canvas pixel width)
-    const screenX = this.x - cameraX;
-    if (screenX + this.width < -100 || screenX > gameWidth + 100) {
+    // Skip rendering if off-screen (use logical game height, not canvas pixel height)
+    const screenX = this.x;
+    const screenY = this.y - cameraY;
+    if (screenY + this.height < -100 || screenY > gameHeight + 100) {
       return;
     }
 
@@ -233,18 +234,17 @@ export class Platform {
     }
 
     // Draw platform base with camera offset
-    this.drawPlatform(ctx, cameraX);
+    this.drawPlatform(ctx, screenX, screenY);
 
     ctx.restore();
   }
 
-  private drawPlatform(ctx: CanvasRenderingContext2D, cameraX: number): void {
-    const screenX = this.x - cameraX;
+  private drawPlatform(ctx: CanvasRenderingContext2D, screenX: number, screenY: number): void {
     const gradient = ctx.createLinearGradient(
       screenX,
-      this.y,
+      screenY,
       screenX,
-      this.y + this.height
+      screenY + this.height
     );
 
     switch (this.type) {
@@ -257,9 +257,9 @@ export class Platform {
         const spikeWidth = this.width / spikeCount;
         for (let i = 0; i < spikeCount; i++) {
           ctx.beginPath();
-          ctx.moveTo(screenX + i * spikeWidth, this.y + this.height);
-          ctx.lineTo(screenX + i * spikeWidth + spikeWidth / 2, this.y);
-          ctx.lineTo(screenX + (i + 1) * spikeWidth, this.y + this.height);
+          ctx.moveTo(screenX + i * spikeWidth, screenY + this.height);
+          ctx.lineTo(screenX + i * spikeWidth + spikeWidth / 2, screenY);
+          ctx.lineTo(screenX + (i + 1) * spikeWidth, screenY + this.height);
           ctx.closePath();
           ctx.fill();
         }
@@ -270,16 +270,16 @@ export class Platform {
         gradient.addColorStop(0, '#ffc107');
         gradient.addColorStop(1, '#ff9800');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Bounce indicator lines
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         for (let i = 0; i < 3; i++) {
           const lineX = screenX + (this.width / 4) * (i + 1);
           ctx.beginPath();
-          ctx.moveTo(lineX - 5, this.y + this.height / 2);
-          ctx.lineTo(lineX, this.y + 5);
-          ctx.lineTo(lineX + 5, this.y + this.height / 2);
+          ctx.moveTo(lineX - 5, screenY + this.height / 2);
+          ctx.lineTo(lineX, screenY + 5);
+          ctx.lineTo(lineX + 5, screenY + this.height / 2);
           ctx.stroke();
         }
         break;
@@ -288,10 +288,10 @@ export class Platform {
         gradient.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
         gradient.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Ice shine effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillRect(screenX + 5, this.y + 3, this.width * 0.3, 4);
+        ctx.fillRect(screenX + 5, screenY + 3, this.width * 0.3, 4);
         break;
 
       case 'lava':
@@ -299,13 +299,13 @@ export class Platform {
         gradient.addColorStop(0.5, '#ff6600');
         gradient.addColorStop(1, '#ff2200');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Lava bubbles
         ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
         const time = Date.now() * 0.003;
         for (let i = 0; i < 3; i++) {
           const bubbleX = screenX + (this.width / 4) * (i + 1);
-          const bubbleY = this.y + 5 + Math.sin(time + i) * 3;
+          const bubbleY = screenY + 5 + Math.sin(time + i) * 3;
           ctx.beginPath();
           ctx.arc(bubbleX, bubbleY, 4, 0, Math.PI * 2);
           ctx.fill();
@@ -316,15 +316,15 @@ export class Platform {
         gradient.addColorStop(0, '#a0522d');
         gradient.addColorStop(1, '#8b4513');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Crack lines
         ctx.strokeStyle = '#654321';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(screenX + this.width * 0.3, this.y);
-        ctx.lineTo(screenX + this.width * 0.4, this.y + this.height);
-        ctx.moveTo(screenX + this.width * 0.7, this.y);
-        ctx.lineTo(screenX + this.width * 0.6, this.y + this.height);
+        ctx.moveTo(screenX + this.width * 0.3, screenY);
+        ctx.lineTo(screenX + this.width * 0.4, screenY + this.height);
+        ctx.moveTo(screenX + this.width * 0.7, screenY);
+        ctx.lineTo(screenX + this.width * 0.6, screenY + this.height);
         ctx.stroke();
         break;
 
@@ -332,39 +332,39 @@ export class Platform {
         gradient.addColorStop(0, '#4fc3f7');
         gradient.addColorStop(1, '#0288d1');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Movement arrows
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.beginPath();
-        ctx.moveTo(screenX + 10, this.y + this.height / 2);
-        ctx.lineTo(screenX + 20, this.y + this.height / 2 - 5);
-        ctx.lineTo(screenX + 20, this.y + this.height / 2 + 5);
+        ctx.moveTo(screenX + 10, screenY + this.height / 2);
+        ctx.lineTo(screenX + 20, screenY + this.height / 2 - 5);
+        ctx.lineTo(screenX + 20, screenY + this.height / 2 + 5);
         ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(screenX + this.width - 10, this.y + this.height / 2);
-        ctx.lineTo(screenX + this.width - 20, this.y + this.height / 2 - 5);
-        ctx.lineTo(screenX + this.width - 20, this.y + this.height / 2 + 5);
+        ctx.moveTo(screenX + this.width - 10, screenY + this.height / 2);
+        ctx.lineTo(screenX + this.width - 20, screenY + this.height / 2 - 5);
+        ctx.lineTo(screenX + this.width - 20, screenY + this.height / 2 + 5);
         ctx.fill();
         break;
 
       case 'phase':
         const phaseGradient = ctx.createLinearGradient(
           screenX,
-          this.y,
+          screenY,
           screenX + this.width,
-          this.y
+          screenY
         );
         phaseGradient.addColorStop(0, '#9c27b0');
         phaseGradient.addColorStop(0.5, '#e040fb');
         phaseGradient.addColorStop(1, '#9c27b0');
         ctx.fillStyle = phaseGradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Phase particles
         ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
         const phaseTime = Date.now() * 0.005;
         for (let i = 0; i < 5; i++) {
           const px = screenX + (this.width / 6) * (i + 1);
-          const py = this.y + this.height / 2 + Math.sin(phaseTime + i) * 5;
+          const py = screenY + this.height / 2 + Math.sin(phaseTime + i) * 5;
           ctx.beginPath();
           ctx.arc(px, py, 2, 0, Math.PI * 2);
           ctx.fill();
@@ -376,7 +376,7 @@ export class Platform {
         gradient.addColorStop(0, '#38a169');
         gradient.addColorStop(1, '#276749');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Animated conveyor lines
         ctx.strokeStyle = '#2d3748';
         ctx.lineWidth = 3;
@@ -384,8 +384,8 @@ export class Platform {
         const offset = (this.conveyorAnimTime * 50) % lineSpacing;
         for (let lx = -lineSpacing + offset; lx < this.width + lineSpacing; lx += lineSpacing) {
           ctx.beginPath();
-          ctx.moveTo(screenX + lx, this.y);
-          ctx.lineTo(screenX + lx + 10, this.y + this.height);
+          ctx.moveTo(screenX + lx, screenY);
+          ctx.lineTo(screenX + lx + 10, screenY + this.height);
           ctx.stroke();
         }
         // Direction arrows
@@ -394,27 +394,27 @@ export class Platform {
         for (let i = 0; i < 3; i++) {
           const ax = screenX + (this.width / 4) * (i + 1);
           ctx.beginPath();
-          ctx.moveTo(ax - 5 * arrowDir, this.y + this.height / 2 - 3);
-          ctx.lineTo(ax + 5 * arrowDir, this.y + this.height / 2);
-          ctx.lineTo(ax - 5 * arrowDir, this.y + this.height / 2 + 3);
+          ctx.moveTo(ax - 5 * arrowDir, screenY + this.height / 2 - 3);
+          ctx.lineTo(ax + 5 * arrowDir, screenY + this.height / 2);
+          ctx.lineTo(ax - 5 * arrowDir, screenY + this.height / 2 + 3);
           ctx.fill();
         }
         break;
 
       case 'gravity':
         // Magical pink/purple gradient
-        const gravGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y + this.height);
+        const gravGradient = ctx.createLinearGradient(screenX, screenY, screenX + this.width, screenY + this.height);
         gravGradient.addColorStop(0, '#d53f8c');
         gravGradient.addColorStop(0.5, '#805ad5');
         gravGradient.addColorStop(1, '#d53f8c');
         ctx.fillStyle = gravGradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Floating particles effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
         const gravTime = Date.now() * 0.003;
         for (let i = 0; i < 4; i++) {
           const gx = screenX + (this.width / 5) * (i + 1);
-          const gy = this.y + this.height / 2 + Math.sin(gravTime + i * 0.8) * 8;
+          const gy = screenY + this.height / 2 + Math.sin(gravTime + i * 0.8) * 8;
           ctx.beginPath();
           ctx.arc(gx, gy, 3, 0, Math.PI * 2);
           ctx.fill();
@@ -422,7 +422,7 @@ export class Platform {
         // Up/down arrows
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
         ctx.lineWidth = 2;
-        const arrowY = this.y + this.height / 2;
+        const arrowY = screenY + this.height / 2;
         ctx.beginPath();
         ctx.moveTo(screenX + this.width / 2, arrowY - 6);
         ctx.lineTo(screenX + this.width / 2 - 4, arrowY);
@@ -442,19 +442,19 @@ export class Platform {
         gradient.addColorStop(0, '#ecc94b');
         gradient.addColorStop(1, '#d69e2e');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Dripping honey effect
         ctx.fillStyle = '#d69e2e';
         for (let i = 0; i < 4; i++) {
           const dx = screenX + (this.width / 5) * (i + 1);
           const dripHeight = 5 + Math.sin(Date.now() * 0.002 + i) * 3;
           ctx.beginPath();
-          ctx.ellipse(dx, this.y + this.height + dripHeight / 2, 4, dripHeight, 0, 0, Math.PI * 2);
+          ctx.ellipse(dx, screenY + this.height + dripHeight / 2, 4, dripHeight, 0, 0, Math.PI * 2);
           ctx.fill();
         }
         // Shine
         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.fillRect(screenX + 5, this.y + 3, this.width * 0.4, 4);
+        ctx.fillRect(screenX + 5, screenY + 3, this.width * 0.4, 4);
         break;
 
       case 'glass':
@@ -462,17 +462,17 @@ export class Platform {
         ctx.fillStyle = this.glassHits === 0
           ? 'rgba(226, 232, 240, 0.6)'
           : 'rgba(226, 232, 240, 0.4)';
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Reflection shine
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillRect(screenX + 5, this.y + 2, this.width * 0.6, 3);
+        ctx.fillRect(screenX + 5, screenY + 2, this.width * 0.6, 3);
         // Cracks if hit once
         if (this.glassHits >= 1) {
           ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
           ctx.lineWidth = 1;
           // Draw crack pattern
           const cx = screenX + this.width / 2;
-          const cy = this.y + this.height / 2;
+          const cy = screenY + this.height / 2;
           ctx.beginPath();
           ctx.moveTo(cx, cy);
           ctx.lineTo(cx - 15, cy - 8);
@@ -487,26 +487,26 @@ export class Platform {
         // Border
         ctx.strokeStyle = 'rgba(200, 220, 240, 0.8)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(screenX, this.y, this.width, this.height);
+        ctx.strokeRect(screenX, screenY, this.width, this.height);
         break;
 
       case 'slowmo':
         // Cyan/blue time-warp zone
         const slowmoGradient = ctx.createRadialGradient(
-          screenX + this.width / 2, this.y + this.height / 2, 0,
-          screenX + this.width / 2, this.y + this.height / 2, Math.max(this.width, this.height)
+          screenX + this.width / 2, screenY + this.height / 2, 0,
+          screenX + this.width / 2, screenY + this.height / 2, Math.max(this.width, this.height)
         );
         slowmoGradient.addColorStop(0, 'rgba(0, 200, 255, 0.4)');
         slowmoGradient.addColorStop(0.5, 'rgba(0, 150, 255, 0.2)');
         slowmoGradient.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
         ctx.fillStyle = slowmoGradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Clock/time particles
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 2;
         const slowTime = Date.now() * 0.001; // Slow animation
         const clockX = screenX + this.width / 2;
-        const clockY = this.y + this.height / 2;
+        const clockY = screenY + this.height / 2;
         ctx.beginPath();
         ctx.arc(clockX, clockY, 15, 0, Math.PI * 2);
         ctx.stroke();
@@ -518,22 +518,22 @@ export class Platform {
         // Dashed border
         ctx.setLineDash([5, 5]);
         ctx.strokeStyle = 'rgba(0, 200, 255, 0.6)';
-        ctx.strokeRect(screenX, this.y, this.width, this.height);
+        ctx.strokeRect(screenX, screenY, this.width, this.height);
         ctx.setLineDash([]);
         break;
 
       case 'wall':
         // Vertical wall for wall-jumping (dark metallic)
-        const wallGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y);
+        const wallGradient = ctx.createLinearGradient(screenX, screenY, screenX + this.width, screenY);
         wallGradient.addColorStop(0, '#4a5568');
         wallGradient.addColorStop(0.5, '#718096');
         wallGradient.addColorStop(1, '#4a5568');
         ctx.fillStyle = wallGradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Grip texture lines
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.lineWidth = 1;
-        for (let wy = this.y + 10; wy < this.y + this.height; wy += 15) {
+        for (let wy = screenY + 10; wy < screenY + this.height; wy += 15) {
           ctx.beginPath();
           ctx.moveTo(screenX + 3, wy);
           ctx.lineTo(screenX + this.width - 3, wy);
@@ -541,7 +541,7 @@ export class Platform {
         }
         // Wall jump arrows
         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        const wallCenterY = this.y + this.height / 2;
+        const wallCenterY = screenY + this.height / 2;
         ctx.beginPath();
         ctx.moveTo(screenX + this.width + 5, wallCenterY - 10);
         ctx.lineTo(screenX + this.width + 15, wallCenterY);
@@ -556,23 +556,23 @@ export class Platform {
           const shimmerTime = Date.now() * 0.003;
           ctx.globalAlpha = 0.1 + Math.sin(shimmerTime) * 0.05;
           ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
-          ctx.fillRect(screenX, this.y, this.width, this.height);
+          ctx.fillRect(screenX, screenY, this.width, this.height);
           ctx.globalAlpha = 1;
         } else {
           // Fade in golden platform
           ctx.globalAlpha = this.secretRevealProgress;
-          const secretGradient = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
+          const secretGradient = ctx.createLinearGradient(screenX, screenY, screenX, screenY + this.height);
           secretGradient.addColorStop(0, '#ffd700');
           secretGradient.addColorStop(0.5, '#ffec8b');
           secretGradient.addColorStop(1, '#ffd700');
           ctx.fillStyle = secretGradient;
-          ctx.fillRect(screenX, this.y, this.width, this.height);
+          ctx.fillRect(screenX, screenY, this.width, this.height);
           // Sparkle effect
           ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
           const sparkleTime = Date.now() * 0.005;
           for (let i = 0; i < 3; i++) {
             const sx = screenX + (this.width / 4) * (i + 1);
-            const sy = this.y + this.height / 2 + Math.sin(sparkleTime + i) * 5;
+            const sy = screenY + this.height / 2 + Math.sin(sparkleTime + i) * 5;
             ctx.beginPath();
             ctx.arc(sx, sy, 3, 0, Math.PI * 2);
             ctx.fill();
@@ -582,7 +582,7 @@ export class Platform {
             ctx.font = 'bold 10px Arial';
             ctx.fillStyle = 'rgba(139, 69, 19, 0.8)';
             ctx.textAlign = 'center';
-            ctx.fillText('SECRET', screenX + this.width / 2, this.y + this.height / 2 + 4);
+            ctx.fillText('SECRET', screenX + this.width / 2, screenY + this.height / 2 + 4);
           }
           ctx.globalAlpha = 1;
         }
@@ -592,10 +592,10 @@ export class Platform {
         gradient.addColorStop(0, '#5a6a7a');
         gradient.addColorStop(1, '#3a4a5a');
         ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, this.y, this.width, this.height);
+        ctx.fillRect(screenX, screenY, this.width, this.height);
         // Top highlight
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fillRect(screenX, this.y, this.width, 3);
+        ctx.fillRect(screenX, screenY, this.width, 3);
         break;
     }
 
@@ -603,19 +603,19 @@ export class Platform {
     if (this.type !== 'spike') {
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
       ctx.lineWidth = 2;
-      ctx.strokeRect(screenX, this.y, this.width, this.height);
+      ctx.strokeRect(screenX, screenY, this.width, this.height);
     }
 
     // Draw colorblind mode patterns/icons
     if (Platform.colorblindMode) {
-      this.drawColorblindPattern(ctx, screenX);
+      this.drawColorblindPattern(ctx, screenX, screenY);
     }
   }
 
   // Draw distinctive patterns for colorblind accessibility
-  private drawColorblindPattern(ctx: CanvasRenderingContext2D, screenX: number): void {
+  private drawColorblindPattern(ctx: CanvasRenderingContext2D, screenX: number, screenY: number): void {
     const centerX = screenX + this.width / 2;
-    const centerY = this.y + this.height / 2;
+    const centerY = screenY + this.height / 2;
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
@@ -670,7 +670,7 @@ export class Platform {
         // Broken/cracked - dashed lines
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
         ctx.setLineDash([3, 3]);
-        ctx.strokeRect(screenX + 5, this.y + 5, this.width - 10, this.height - 10);
+        ctx.strokeRect(screenX + 5, screenY + 5, this.width - 10, this.height - 10);
         ctx.setLineDash([]);
         break;
 
