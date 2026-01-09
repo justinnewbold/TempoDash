@@ -57,6 +57,10 @@ const level1Config: LevelConfig = {
     { x: BEAT * 24.5, y: GROUND_Y - 80 },
     { x: BEAT * 26, y: GROUND_Y - 80 },
   ],
+  powerUps: [
+    // Tutorial level - introduce the shield power-up gently
+    { type: 'shield', x: BEAT * 6, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe starting zone =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
