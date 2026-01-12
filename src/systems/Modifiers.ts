@@ -6,7 +6,16 @@ export type ModifierId =
   | 'fragile'
   | 'mirrorMode'
   | 'timeAttack'
-  | 'invisible';
+  | 'invisible'
+  // New fun modifiers
+  | 'bigHead'
+  | 'neonMode'
+  | 'chaosMode'
+  | 'lowGravity'
+  | 'hyperSpeed'
+  | 'tinyMode'
+  | 'rainbowTrail'
+  | 'earthquakeMode';
 
 export interface Modifier {
   id: ModifierId;
@@ -65,6 +74,71 @@ export const MODIFIERS: Record<ModifierId, Modifier> = {
     icon: '👻',
     scoreMultiplier: 1.5,
     color: '#aaaaff',
+  },
+  // New fun modifiers
+  bigHead: {
+    id: 'bigHead',
+    name: 'Big Head Mode',
+    description: 'Player is 2x bigger (easier to see, harder to fit)',
+    icon: '🎃',
+    scoreMultiplier: 0.8,
+    color: '#ffaa00',
+  },
+  neonMode: {
+    id: 'neonMode',
+    name: 'Neon Dreams',
+    description: 'Everything glows with neon outlines',
+    icon: '💜',
+    scoreMultiplier: 1.0,
+    color: '#ff00ff',
+  },
+  chaosMode: {
+    id: 'chaosMode',
+    name: 'Chaos Mode',
+    description: 'Platform types randomize as you play',
+    icon: '🎲',
+    scoreMultiplier: 1.3,
+    color: '#ff6600',
+  },
+  lowGravity: {
+    id: 'lowGravity',
+    name: 'Moon Bounce',
+    description: 'Reduced gravity, floaty jumps',
+    icon: '🌙',
+    scoreMultiplier: 0.9,
+    color: '#aaffff',
+  },
+  hyperSpeed: {
+    id: 'hyperSpeed',
+    name: 'Hyper Speed',
+    description: '2x game speed for the brave',
+    icon: '🚀',
+    scoreMultiplier: 2.0,
+    color: '#ff0000',
+  },
+  tinyMode: {
+    id: 'tinyMode',
+    name: 'Tiny Mode',
+    description: 'Player is 0.5x size (easier to dodge)',
+    icon: '🐜',
+    scoreMultiplier: 1.1,
+    color: '#88ff88',
+  },
+  rainbowTrail: {
+    id: 'rainbowTrail',
+    name: 'Rainbow Trail',
+    description: 'Leave a beautiful rainbow trail',
+    icon: '🌈',
+    scoreMultiplier: 1.0,
+    color: '#ff0088',
+  },
+  earthquakeMode: {
+    id: 'earthquakeMode',
+    name: 'Earthquake',
+    description: 'Screen constantly shakes',
+    icon: '🌋',
+    scoreMultiplier: 1.2,
+    color: '#884400',
   },
 };
 
@@ -138,9 +212,12 @@ export class ModifierManager {
     return Math.max(0, this.timeRemaining);
   }
 
-  // Get speed multiplier (for speed demon)
+  // Get speed multiplier (for speed demon and hyper speed)
   getSpeedMultiplier(): number {
-    return this.isActive('speedDemon') ? 1.5 : 1.0;
+    let speed = 1.0;
+    if (this.isActive('speedDemon')) speed = 1.5;
+    if (this.isActive('hyperSpeed')) speed = 2.0;
+    return speed;
   }
 
   // Check if double jump is disabled
@@ -161,6 +238,45 @@ export class ModifierManager {
   // Check if platforms should fade
   shouldPlatformsFade(): boolean {
     return this.isActive('invisible');
+  }
+
+  // ===== NEW FUN MODIFIER HELPERS =====
+
+  // Get player scale (for big head / tiny mode)
+  getPlayerScale(): number {
+    if (this.isActive('bigHead')) return 2.0;
+    if (this.isActive('tinyMode')) return 0.5;
+    return 1.0;
+  }
+
+  // Check if neon mode is active
+  isNeonMode(): boolean {
+    return this.isActive('neonMode');
+  }
+
+  // Check if chaos mode is active (random platform types)
+  isChaosMode(): boolean {
+    return this.isActive('chaosMode');
+  }
+
+  // Get gravity multiplier (for low gravity)
+  getGravityMultiplier(): number {
+    return this.isActive('lowGravity') ? 0.5 : 1.0;
+  }
+
+  // Check if rainbow trail is active
+  isRainbowTrail(): boolean {
+    return this.isActive('rainbowTrail');
+  }
+
+  // Check if earthquake mode is active
+  isEarthquakeMode(): boolean {
+    return this.isActive('earthquakeMode');
+  }
+
+  // Get earthquake shake intensity
+  getEarthquakeIntensity(): number {
+    return this.isActive('earthquakeMode') ? 3 : 0;
   }
 
   // Get display string for active modifiers

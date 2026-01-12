@@ -20,6 +20,8 @@ import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challen
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
 import { GhostManager } from '../systems/GhostManager';
+import { ScreenEffects } from '../systems/ScreenEffects';
+import { BossManager } from '../systems/BossMode';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -152,6 +154,15 @@ export class Game {
   private ghostManager: GhostManager;
   private showGhost = true;
 
+  // Screen effects (freeze frames, zoom, chromatic aberration, etc.)
+  private screenEffects: ScreenEffects;
+
+  // Boss mode
+  private bossManager: BossManager;
+
+  // Perfect run tracking
+  private isPerfectRun = true; // No deaths this run
+
   // Level timing and stats
   private levelStartTime = 0;
   private levelElapsedTime = 0;
@@ -222,6 +233,8 @@ export class Game {
     this.challengeManager = new ChallengeManager();
     this.chaseMode = new ChaseModeManager();
     this.ghostManager = new GhostManager();
+    this.screenEffects = new ScreenEffects();
+    this.bossManager = new BossManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -384,6 +397,23 @@ export class Game {
     } else {
       this.chaseMode.setEnabled(false);
     }
+
+    // Initialize boss for boss levels (5, 10, 15)
+    this.bossManager.initForLevel(levelId, this.level.playerStart.x);
+
+    // Reset perfect run tracking and screen effects
+    this.isPerfectRun = true;
+    this.screenEffects.reset();
+    this.screenEffects.setPerfectRun(true);
+
+    // Set weather based on level (for visual variety)
+    const weatherForLevel: Record<number, 'rain' | 'snow' | 'lightning' | 'none'> = {
+      5: 'lightning',  // Boss level - dramatic lightning
+      10: 'rain',      // Boss level - rain
+      12: 'snow',      // Frost Fortress - snow
+      15: 'lightning', // Ultimate Challenge - lightning
+    };
+    this.screenEffects.setWeather(weatherForLevel[levelId] || 'none', 0.8);
   }
 
   private handleWheel(e: WheelEvent): void {
@@ -1498,6 +1528,7 @@ export class Game {
     // Update new systems
     this.particles.update(deltaTime);
     this.transition.update(deltaTime);
+    this.screenEffects.update(deltaTime);
 
     // Handle quick restart (hold R key)
     if (this.quickRestartHeld) {
@@ -1710,6 +1741,29 @@ export class Game {
         this.player.isDead = true;
         this.triggerShake(15, 400); // Strong shake for wall death
       }
+
+      // Update boss for boss levels
+      if (this.bossManager.isActive() && !this.player.isDead) {
+        const levelProgress = this.level.getProgress(this.player.x);
+        const bossResult = this.bossManager.update(
+          deltaTime,
+          this.player.x + this.player.width / 2,
+          this.player.y + this.player.height / 2,
+          levelProgress
+        );
+
+        // Check if boss hit the player
+        if (bossResult.hitPlayer) {
+          this.player.isDead = true;
+          this.triggerShake(15, 400);
+          this.screenEffects.triggerChromaticAberration(15);
+        }
+
+        // Boss warning flash
+        if (bossResult.warning) {
+          this.screenEffects.triggerFlash('#ff0000', 0.1);
+        }
+      }
     }
 
     // Update level timing
@@ -1847,12 +1901,29 @@ export class Game {
         );
       }
 
-      // Check combo achievements
-      if (this.comboCount >= 5) {
+      // Check combo achievements and trigger zoom pulses on milestones
+      const prevCombo = this.comboCount - coinsCollected;
+      if (prevCombo < 5 && this.comboCount >= 5) {
         this.tryUnlockAchievement('combo_5');
+        this.screenEffects.triggerZoomPulse(1.05, 150);
       }
-      if (this.comboCount >= 10) {
+      if (prevCombo < 10 && this.comboCount >= 10) {
         this.tryUnlockAchievement('combo_10');
+        this.screenEffects.triggerZoomPulse(1.08, 150);
+        this.screenEffects.triggerChromaticAberration(4);
+      }
+      if (prevCombo < 15 && this.comboCount >= 15) {
+        this.screenEffects.triggerZoomPulse(1.1, 200);
+        this.screenEffects.triggerBeatDrop(300);
+      }
+      if (prevCombo < 20 && this.comboCount >= 20) {
+        this.screenEffects.triggerZoomPulse(1.12, 200);
+        this.particles.spawnFirework(this.player.x, this.player.y - 50);
+      }
+      if (prevCombo < 25 && this.comboCount >= 25) {
+        this.screenEffects.triggerZoomPulse(1.15, 300);
+        this.screenEffects.triggerBeatDrop(500);
+        this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 3);
       }
 
       // Update longest combo
@@ -1934,6 +2005,15 @@ export class Game {
         const playerCenterX = this.player.x + this.player.width / 2;
         const playerCenterY = this.player.y + this.player.height / 2;
         this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, this.save.getSelectedSkin().glowColor);
+
+        // NEW: Screen effects for death
+        this.screenEffects.triggerFreezeFrame(4); // Freeze for impact
+        this.screenEffects.triggerKillCam(playerCenterX, playerCenterY, 600); // Slow-mo kill cam
+        this.screenEffects.triggerChromaticAberration(10);
+
+        // Mark perfect run as failed
+        this.isPerfectRun = false;
+        this.screenEffects.setPerfectRun(false);
 
         // Track death for statistics and achievements
         this.statistics.recordDeath(this.state.currentLevel, this.player.x, this.player.y);
@@ -2085,6 +2165,22 @@ export class Game {
       this.audio.fadeOut(300); // Smooth fade out
       this.audio.playLevelComplete();
       this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
+
+      // Victory screen effects
+      this.screenEffects.triggerVictoryZoom();
+
+      // Defeat boss if on boss level
+      this.bossManager.defeatBoss();
+
+      // Fireworks for level complete (extra for perfect run!)
+      const fireworkCount = this.isPerfectRun ? 10 : 5;
+      this.particles.spawnFireworkShow(GAME_WIDTH / 2, GAME_HEIGHT / 3, fireworkCount);
+
+      // Extra confetti for perfect run
+      if (this.isPerfectRun) {
+        this.particles.spawnConfetti(0, 0, GAME_WIDTH);
+        this.screenEffects.triggerFlash('#ffd700', 0.3); // Golden flash
+      }
     }
 
     // End debug update timing
@@ -2221,6 +2317,9 @@ export class Game {
         this.chaseMode.render(this.ctx, this.cameraX, GAME_HEIGHT);
         this.chaseMode.renderWarning(this.ctx, this.player.x, this.cameraX, GAME_WIDTH);
 
+        // Render boss if on boss level
+        this.bossManager.render(this.ctx, this.cameraX);
+
         this.renderPlayingUI();
 
         // Render active power-up UI indicators
@@ -2244,6 +2343,9 @@ export class Game {
       this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.powerUpFlashOpacity})`;
       this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     }
+
+    // Screen effects post-processing (vignette, weather, etc.)
+    this.screenEffects.renderPostEffects(this.ctx);
 
     this.ctx.restore();
 
