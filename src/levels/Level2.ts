@@ -47,6 +47,14 @@ const level2Config: LevelConfig = {
     { x: BEAT * 29, y: GROUND_Y - 70 },     // On elevator
     { x: BEAT * 34.5, y: GROUND_Y - 90 },   // On synchronized pair
   ],
+  powerUps: [
+    // Shield before the lava section with horizontal movers
+    { type: 'shield', x: BEAT * 14, y: GROUND_Y - 60 },
+    // Magnet for the coin-rich circular mover section
+    { type: 'magnet', x: BEAT * 20, y: GROUND_Y - 60 },
+    // Slowmo before the synchronized pair - timing is crucial
+    { type: 'slowmo', x: BEAT * 32, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe zone to observe first moving platform =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },

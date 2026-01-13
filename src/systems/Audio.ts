@@ -1,7 +1,7 @@
 // Procedural EDM music system using Web Audio API
 // Based on the Neon Pulse Engine with multiple music styles
 
-export type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic';
+export type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic' | 'industrial' | 'ethereal';
 
 interface MusicPreset {
   tempo: number;
@@ -17,14 +17,21 @@ interface MusicPreset {
 
 // Map levels to music styles
 export const LEVEL_MUSIC: Record<number, MusicStyle> = {
-  1: 'noir',      // Level 1: Neon Noir - smooth intro
-  2: 'funk',      // Level 2: Cyber Funk - upbeat
-  3: 'crystal',   // Level 3: Crystalline - dreamy
-  4: 'focus',     // Level 4: Deep Focus - steady
-  5: 'sludge',    // Level 5: Sludge Factory - heavy
-  6: 'hazard',    // Level 6: Biohazard - aggressive
-  7: 'energetic', // Level 7: Festival EDM - high energy
-  8: 'crystal',   // Level 8: Sky Temple - serene but challenging
+  1: 'noir',       // Level 1: Neon Noir - smooth intro
+  2: 'funk',       // Level 2: Cyber Funk - upbeat
+  3: 'crystal',    // Level 3: Crystalline - dreamy
+  4: 'focus',      // Level 4: Deep Focus - steady
+  5: 'sludge',     // Level 5: Sludge Factory - heavy
+  6: 'hazard',     // Level 6: Biohazard - aggressive
+  7: 'energetic',  // Level 7: Festival EDM - high energy
+  8: 'crystal',    // Level 8: Sky Temple - serene but challenging
+  9: 'hazard',     // Level 9: The Chase - intense pursuit
+  10: 'ethereal',  // Level 10: Sky Glider - floating in clouds
+  11: 'industrial', // Level 11: Conveyor Chaos - factory rhythm
+  12: 'crystal',   // Level 12: Frost Fortress - icy atmosphere
+  13: 'focus',     // Level 13: Gravity Flip - precision required
+  14: 'industrial', // Level 14: Wall Runner - urban intensity
+  15: 'energetic', // Level 15: Ultimate Challenge - final boss energy
 };
 
 export class AudioManager {
@@ -142,6 +149,30 @@ export class AudioManager {
       useDelay: true,
       filterQ: 8,
       drumStyle: 'standard',
+    },
+    // Industrial (135 BPM) - Minor with chromatic: mechanical, driving
+    industrial: {
+      tempo: 135,
+      bassFreqs: [55.00, 55.00, 61.74, 55.00],
+      leadFreqs: [220.00, 233.08, 261.63, 277.18, 329.63],
+      bassWave: 'sawtooth',
+      leadWave: 'square',
+      arpPattern: [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1],
+      useDelay: false,
+      filterQ: 12,
+      drumStyle: 'distorted',
+    },
+    // Ethereal (88 BPM) - Lydian/Suspended: floating, atmospheric
+    ethereal: {
+      tempo: 88,
+      bassFreqs: [65.41, 73.42, 87.31, 98.00],
+      leadFreqs: [523.25, 659.25, 783.99, 987.77, 1174.66],
+      bassWave: 'sine',
+      leadWave: 'sine',
+      arpPattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+      useDelay: true,
+      filterQ: 0,
+      drumStyle: 'soft',
     },
   };
 
@@ -271,6 +302,8 @@ export class AudioManager {
       crystal: 'Crystalline',
       hazard: 'Biohazard',
       energetic: 'Festival EDM',
+      industrial: 'Industrial',
+      ethereal: 'Ethereal',
     };
     return names[this.currentStyle];
   }

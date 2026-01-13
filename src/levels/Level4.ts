@@ -48,6 +48,14 @@ const level4Config: LevelConfig = {
     { x: BEAT * 30, y: GROUND_Y - 80 },    // Ice staircase coin
     { x: BEAT * 36, y: GROUND_Y - 120 },   // Final challenge coin
   ],
+  powerUps: [
+    // Shield at the start of the ice section for safety
+    { type: 'shield', x: BEAT * 7.5, y: GROUND_Y - 60 },
+    // Slowmo before the crumble chain - timing is critical
+    { type: 'slowmo', x: BEAT * 18, y: GROUND_Y - 80 },
+    // Double points for the ice staircase section (risky coins)
+    { type: 'doublePoints', x: BEAT * 25, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Learn ice feel =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'ice' },

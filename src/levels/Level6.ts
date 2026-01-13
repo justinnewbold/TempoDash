@@ -50,6 +50,18 @@ const level6Config: LevelConfig = {
     { x: BEAT * 38, y: GROUND_Y - 80 },
     { x: BEAT * 44, y: GROUND_Y - 60 },
   ],
+  powerUps: [
+    // Shield early - crumble platforms are unforgiving
+    { type: 'shield', x: BEAT * 2, y: GROUND_Y - 60 },
+    // Slowmo before the mixed mechanics section
+    { type: 'slowmo', x: BEAT * 15, y: GROUND_Y - 60 },
+    // Shield before phase + crumble nightmare
+    { type: 'shield', x: BEAT * 22, y: GROUND_Y - 60 },
+    // Magnet for the coin-rich descent section
+    { type: 'magnet', x: BEAT * 30, y: GROUND_Y - 60 },
+    // Double points for the final sprint
+    { type: 'doublePoints', x: BEAT * 38, y: GROUND_Y - 60 },
+  ],
   platforms: [
     // ===== INTRO (Beats 0-3): Brief safe start - observe the chaos ahead =====
     { x: 0, y: GROUND_Y, width: BEAT * 3, height: GROUND_HEIGHT, type: 'solid' },

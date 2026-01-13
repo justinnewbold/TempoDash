@@ -1,12 +1,43 @@
 /**
  * Level Sharing System
  * Handles encoding/decoding levels for sharing, import/export functionality
+ * Includes cloud storage hooks for future backend integration
  */
 
 import { CustomLevel } from '../types';
 
 // Characters used for base64-like encoding (URL-safe)
 const ENCODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// Cloud storage configuration
+interface CloudConfig {
+  apiBaseUrl?: string;
+  apiKey?: string;
+  enabled: boolean;
+}
+
+// Cloud level metadata
+export interface CloudLevelMeta {
+  cloudId: string;
+  name: string;
+  author: string;
+  downloads: number;
+  rating: number;
+  ratingCount: number;
+  createdAt: number;
+  tags: string[];
+  difficulty: 'easy' | 'medium' | 'hard' | 'extreme';
+}
+
+export interface CloudLevelSearchResult {
+  levels: CloudLevelMeta[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+// Cloud storage singleton
+let cloudConfig: CloudConfig = { enabled: false };
 
 export interface ShareResult {
   success: boolean;
@@ -347,5 +378,250 @@ export class LevelSharingManager {
 
       input.click();
     });
+  }
+
+  // ===========================================
+  // CLOUD STORAGE METHODS (Backend Integration)
+  // ===========================================
+
+  /**
+   * Configure cloud storage settings
+   */
+  static configureCloud(config: Partial<CloudConfig>): void {
+    cloudConfig = { ...cloudConfig, ...config };
+  }
+
+  /**
+   * Check if cloud storage is available
+   */
+  static isCloudEnabled(): boolean {
+    return cloudConfig.enabled && !!cloudConfig.apiBaseUrl;
+  }
+
+  /**
+   * Upload a level to cloud storage
+   */
+  static async uploadToCloud(
+    level: CustomLevel,
+    metadata: { tags: string[]; difficulty: CloudLevelMeta['difficulty'] }
+  ): Promise<{ success: boolean; cloudId?: string; error?: string }> {
+    if (!this.isCloudEnabled()) {
+      return { success: false, error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const encoded = this.encodeLevel(level);
+      if (!encoded.success || !encoded.code) {
+        return { success: false, error: 'Failed to encode level' };
+      }
+
+      const response = await fetch(`${cloudConfig.apiBaseUrl}/levels`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+        },
+        body: JSON.stringify({
+          code: encoded.code,
+          name: level.name,
+          author: level.author,
+          tags: metadata.tags,
+          difficulty: metadata.difficulty,
+          platformCount: level.platforms.length,
+          coinCount: level.coins.length,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        return { success: false, error: `Upload failed: ${error}` };
+      }
+
+      const result = await response.json();
+      return { success: true, cloudId: result.id };
+    } catch (error) {
+      return { success: false, error: `Network error: ${error}` };
+    }
+  }
+
+  /**
+   * Download a level from cloud storage by ID
+   */
+  static async downloadFromCloud(
+    cloudId: string
+  ): Promise<{ success: boolean; level?: CustomLevel; meta?: CloudLevelMeta; error?: string }> {
+    if (!this.isCloudEnabled()) {
+      return { success: false, error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const response = await fetch(`${cloudConfig.apiBaseUrl}/levels/${cloudId}`, {
+        headers: {
+          ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+        },
+      });
+
+      if (!response.ok) {
+        return { success: false, error: 'Level not found' };
+      }
+
+      const data = await response.json();
+      const decoded = this.decodeLevel(data.code);
+
+      if (!decoded.success || !decoded.level) {
+        return { success: false, error: 'Failed to decode level' };
+      }
+
+      return {
+        success: true,
+        level: decoded.level,
+        meta: {
+          cloudId: data.id,
+          name: data.name,
+          author: data.author,
+          downloads: data.downloads,
+          rating: data.rating,
+          ratingCount: data.ratingCount,
+          createdAt: data.createdAt,
+          tags: data.tags,
+          difficulty: data.difficulty,
+        },
+      };
+    } catch (error) {
+      return { success: false, error: `Network error: ${error}` };
+    }
+  }
+
+  /**
+   * Search for levels in cloud storage
+   */
+  static async searchCloudLevels(options: {
+    query?: string;
+    tags?: string[];
+    difficulty?: CloudLevelMeta['difficulty'];
+    sortBy?: 'downloads' | 'rating' | 'newest';
+    page?: number;
+    pageSize?: number;
+  }): Promise<CloudLevelSearchResult | { error: string }> {
+    if (!this.isCloudEnabled()) {
+      return { error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (options.query) params.set('q', options.query);
+      if (options.tags?.length) params.set('tags', options.tags.join(','));
+      if (options.difficulty) params.set('difficulty', options.difficulty);
+      if (options.sortBy) params.set('sort', options.sortBy);
+      params.set('page', String(options.page || 1));
+      params.set('pageSize', String(options.pageSize || 20));
+
+      const response = await fetch(
+        `${cloudConfig.apiBaseUrl}/levels?${params.toString()}`,
+        {
+          headers: {
+            ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return { error: 'Search failed' };
+      }
+
+      return await response.json();
+    } catch (error) {
+      return { error: `Network error: ${error}` };
+    }
+  }
+
+  /**
+   * Rate a cloud level
+   */
+  static async rateLevel(
+    cloudId: string,
+    rating: 1 | 2 | 3 | 4 | 5
+  ): Promise<{ success: boolean; newRating?: number; error?: string }> {
+    if (!this.isCloudEnabled()) {
+      return { success: false, error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const response = await fetch(
+        `${cloudConfig.apiBaseUrl}/levels/${cloudId}/rate`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+          },
+          body: JSON.stringify({ rating }),
+        }
+      );
+
+      if (!response.ok) {
+        return { success: false, error: 'Rating failed' };
+      }
+
+      const result = await response.json();
+      return { success: true, newRating: result.rating };
+    } catch (error) {
+      return { success: false, error: `Network error: ${error}` };
+    }
+  }
+
+  /**
+   * Get featured/popular levels
+   */
+  static async getFeaturedLevels(): Promise<CloudLevelMeta[] | { error: string }> {
+    if (!this.isCloudEnabled()) {
+      return { error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const response = await fetch(`${cloudConfig.apiBaseUrl}/levels/featured`, {
+        headers: {
+          ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+        },
+      });
+
+      if (!response.ok) {
+        return { error: 'Failed to fetch featured levels' };
+      }
+
+      return await response.json();
+    } catch (error) {
+      return { error: `Network error: ${error}` };
+    }
+  }
+
+  /**
+   * Report a level for inappropriate content
+   */
+  static async reportLevel(
+    cloudId: string,
+    reason: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.isCloudEnabled()) {
+      return { success: false, error: 'Cloud storage is not configured' };
+    }
+
+    try {
+      const response = await fetch(
+        `${cloudConfig.apiBaseUrl}/levels/${cloudId}/report`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cloudConfig.apiKey && { 'Authorization': `Bearer ${cloudConfig.apiKey}` }),
+          },
+          body: JSON.stringify({ reason }),
+        }
+      );
+
+      return { success: response.ok };
+    } catch (error) {
+      return { success: false, error: `Network error: ${error}` };
+    }
   }
 }

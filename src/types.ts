@@ -210,6 +210,17 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'all_skins', name: 'Fashionista', description: 'Unlock all skins', icon: '🎨' },
   { id: 'level_creator', name: 'Creator', description: 'Create a custom level', icon: '🛠️' },
   { id: 'dedicated', name: 'Dedicated', description: 'Play for 1 hour total', icon: '⏰', secret: true },
+  // New achievements
+  { id: 'endless_1000', name: 'Legendary', description: 'Reach 1000m in endless mode', icon: '🏅' },
+  { id: 'combo_20', name: 'Combo Legend', description: 'Get a 20 coin combo', icon: '🌈' },
+  { id: 'wall_master', name: 'Wall Runner', description: 'Wall jump 50 times', icon: '🧗' },
+  { id: 'shield_saver', name: 'Shield Saver', description: 'Get saved by a shield 10 times', icon: '🛡️' },
+  { id: 'near_miss_pro', name: 'Daredevil', description: 'Get 50 near misses', icon: '😱' },
+  { id: 'challenge_streak', name: 'Challenger', description: 'Complete 7 daily challenges in a row', icon: '📅' },
+  { id: 'gravity_flipper', name: 'Gravity Master', description: 'Use gravity platforms 25 times', icon: '🔄' },
+  { id: 'ice_skater', name: 'Ice Skater', description: 'Slide on ice for 500m total', icon: '⛸️' },
+  { id: 'conveyor_rider', name: 'Conveyor Pro', description: 'Ride conveyors for 200m total', icon: '🏭' },
+  { id: 'power_collector', name: 'Power Hungry', description: 'Collect 100 power-ups', icon: '✨', secret: true },
 ];
 
 export type ColorblindMode = 'normal' | 'deuteranopia' | 'protanopia' | 'tritanopia';

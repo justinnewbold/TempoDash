@@ -276,6 +276,94 @@ export class ParticleEffects {
     }
   }
 
+  // ===== FIREWORKS FOR PERFECT RUNS AND CELEBRATIONS =====
+
+  // Spawn a firework burst at position
+  spawnFirework(x: number, y: number, color?: string): void {
+    const colors = ['#ff0000', '#00ff00', '#0088ff', '#ff00ff', '#ffff00', '#00ffff', '#ff8800'];
+    const burstColor = color || colors[Math.floor(Math.random() * colors.length)];
+    const particleCount = 30;
+
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.burstParticles.acquire();
+      if (!particle) break;
+
+      const angle = (Math.PI * 2 / particleCount) * i + (Math.random() - 0.5) * 0.3;
+      const speed = 150 + Math.random() * 150;
+
+      particle.x = x;
+      particle.y = y;
+      particle.vx = Math.cos(angle) * speed;
+      particle.vy = Math.sin(angle) * speed;
+      particle.size = 3 + Math.random() * 4;
+      particle.color = burstColor;
+      particle.alpha = 1;
+      particle.maxLifetime = 800 + Math.random() * 400;
+    }
+
+    // Spawn secondary sparkles
+    for (let i = 0; i < 10; i++) {
+      const spark = this.sparkParticles.acquire();
+      if (!spark) break;
+
+      spark.x = x;
+      spark.y = y;
+      spark.vx = (Math.random() - 0.5) * 300;
+      spark.vy = (Math.random() - 0.5) * 300;
+      spark.size = 1 + Math.random() * 2;
+      spark.color = '#ffffff';
+      spark.alpha = 1;
+    }
+  }
+
+  // Spawn multiple fireworks for big celebrations
+  spawnFireworkShow(centerX: number, centerY: number, count: number = 5): void {
+    const delay = 200;
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        const x = centerX + (Math.random() - 0.5) * 300;
+        const y = centerY + (Math.random() - 0.5) * 150;
+        this.spawnFirework(x, y);
+      }, i * delay);
+    }
+  }
+
+  // Spawn celebration confetti
+  spawnConfetti(x: number, y: number, width: number): void {
+    const colors = ['#ff0000', '#00ff00', '#0088ff', '#ff00ff', '#ffff00', '#ff8800', '#00ffff'];
+    const particleCount = 40;
+
+    for (let i = 0; i < particleCount; i++) {
+      const particle = this.deathParticles.acquire();
+      if (!particle) break;
+
+      particle.x = x + Math.random() * width;
+      particle.y = y;
+      particle.vx = (Math.random() - 0.5) * 150;
+      particle.vy = -200 - Math.random() * 150;
+      particle.size = 4 + Math.random() * 6;
+      particle.color = colors[Math.floor(Math.random() * colors.length)];
+      particle.rotation = Math.random() * 360;
+      particle.rotationSpeed = (Math.random() - 0.5) * 720;
+      particle.alpha = 1;
+      particle.maxLifetime = 2000 + Math.random() * 1000;
+    }
+  }
+
+  // Spawn rainbow trail particle
+  spawnRainbowTrail(x: number, y: number, hueOffset: number): void {
+    const particle = this.trailParticles.acquire();
+    if (!particle) return;
+
+    const hue = (Date.now() / 10 + hueOffset) % 360;
+    particle.x = x;
+    particle.y = y;
+    particle.color = `hsl(${hue}, 100%, 60%)`;
+    particle.size = 10 + Math.random() * 4;
+    particle.alpha = 0.7;
+    particle.maxLifetime = 400;
+  }
+
   // Update trail spawning based on player movement
   updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean): void {
     if (!isMoving) return;
