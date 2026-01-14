@@ -22,6 +22,9 @@ import { LevelSharingManager } from '../systems/LevelSharing';
 import { GhostManager } from '../systems/GhostManager';
 import { ScreenEffects } from '../systems/ScreenEffects';
 import { BossManager } from '../systems/BossMode';
+import { FlowMeterManager } from '../systems/FlowMeter';
+import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
+import { TimeRewindManager } from '../systems/TimeRewind';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -160,6 +163,18 @@ export class Game {
   // Boss mode
   private bossManager: BossManager;
 
+  // Flow Meter / Overdrive system
+  private flowMeter: FlowMeterManager;
+
+  // Beat-synced hazards
+  private beatHazards: BeatHazardManager;
+  private currentBeatNumber = 0;  // Track beat number for hazard patterns
+
+  // Time Rewind system
+  private timeRewind: TimeRewindManager;
+  private isWaitingForRewindInput = false;  // True when player just died and can rewind
+  private rewindInputWindow = 0;  // Time remaining to press rewind
+
   // Perfect run tracking
   private isPerfectRun = true; // No deaths this run
 
@@ -235,6 +250,9 @@ export class Game {
     this.ghostManager = new GhostManager();
     this.screenEffects = new ScreenEffects();
     this.bossManager = new BossManager();
+    this.flowMeter = new FlowMeterManager();
+    this.beatHazards = new BeatHazardManager();
+    this.timeRewind = new TimeRewindManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -1262,6 +1280,17 @@ export class Game {
     const config = this.level.getConfig();
     this.currentBPM = config.bpm || 128;
     this.beatTimer = 0;
+    this.currentBeatNumber = 0;
+
+    // Reset new systems for level
+    this.flowMeter.reset();
+    this.beatHazards.reset();
+    this.timeRewind.reset();
+    this.isWaitingForRewindInput = false;
+    this.rewindInputWindow = 0;
+
+    // Load beat hazards for this level (example hazards for demo)
+    this.loadBeatHazardsForLevel(levelId);
 
     // Start ghost recording
     this.ghostManager.startRecording();
@@ -1317,6 +1346,95 @@ export class Game {
 
     // Start audio
     this.audio.start();
+  }
+
+  // Handle death respawn when rewind is not used
+  private handleDeathRespawn(): void {
+    this.deathTimer = 0;
+    if (this.isPracticeMode) {
+      // Respawn at checkpoint
+      this.player.reset({ x: this.checkpointX, y: this.checkpointY });
+      this.cameraX = Math.max(0, this.checkpointX - 150);
+    } else {
+      // Regular respawn
+      this.player.reset(this.level.playerStart);
+      this.cameraX = 0;
+    }
+    this.attempts++;
+    this.speedMultiplier = 1.0;
+    this.jumpCount = 0;
+    this.audio.setGameSpeedMultiplier(1.0);
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.comboMultiplier = 1;
+    this.timeRewind.clearRecording();
+  }
+
+  // Load beat-synced hazards for a level
+  private loadBeatHazardsForLevel(levelId: number): void {
+    this.beatHazards.reset();
+
+    // Add example hazards for certain levels to demonstrate the system
+    // These can be expanded or moved to level config files
+    if (levelId >= 5) {
+      // Level 5+: Add sawblades that alternate on beats 1,3 vs 2,4
+      const hazards: BeatHazardConfig[] = [];
+
+      // Get level width to place hazards
+      const levelConfig = this.level.getConfig();
+      const levelWidth = levelConfig.goal.x;
+
+      // Place hazards throughout the level
+      for (let x = 400; x < levelWidth - 200; x += 600) {
+        if (Math.random() > 0.5) {
+          hazards.push({
+            type: 'sawblade',
+            x: x,
+            y: 280 + Math.random() * 100,
+            width: 50,
+            height: 50,
+            pattern: [1, 0, 1, 0],  // Active on beats 1 and 3
+            patternOffset: Math.floor(Math.random() * 4),
+          });
+        }
+      }
+
+      // Level 8+: Add lasers
+      if (levelId >= 8) {
+        for (let x = 600; x < levelWidth - 300; x += 800) {
+          if (Math.random() > 0.6) {
+            hazards.push({
+              type: 'laser',
+              x: x,
+              y: 200,
+              width: 20,
+              height: 180,
+              pattern: [1, 1, 0, 0, 1, 1, 0, 0],  // On for 2 beats, off for 2
+              patternOffset: Math.floor(Math.random() * 8),
+            });
+          }
+        }
+      }
+
+      // Level 10+: Add crushers
+      if (levelId >= 10) {
+        for (let x = 500; x < levelWidth - 400; x += 700) {
+          if (Math.random() > 0.7) {
+            hazards.push({
+              type: 'crusher',
+              x: x,
+              y: 50,
+              width: 80,
+              height: 40,
+              pattern: [1, 0, 0, 0],  // Slam on beat 1, retract on 2-4
+              patternOffset: Math.floor(Math.random() * 4),
+            });
+          }
+        }
+      }
+
+      this.beatHazards.loadHazards(hazards);
+    }
   }
 
   private nextLevel(): void {
@@ -1659,6 +1777,85 @@ export class Game {
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
 
+    // Update beat timer and rhythm lock state BEFORE player update (affects platform.isCollidable())
+    this.beatTimer += deltaTime;
+    const beatInterval = 60000 / this.currentBPM; // ms per beat
+    if (this.beatTimer >= beatInterval) {
+      this.beatTimer -= beatInterval;
+      this.currentBeatNumber++;
+      // Trigger beat pulse on all platforms
+      const platformsToUpdate = this.isEndlessMode ? this.endlessPlatforms : this.level.getActivePlatforms();
+      for (const platform of platformsToUpdate) {
+        platform.triggerBeatPulse();
+      }
+      // Check for on-beat jump (for Flow Meter)
+      if (inputState.jumpPressed) {
+        this.flowMeter.onOnBeatJump();
+      }
+    }
+    const beatProgress = this.beatTimer / beatInterval; // 0-1 position in beat cycle
+    Platform.updateBeatSolidity(beatProgress);
+    Platform.setRhythmLockEnabled(this.modifiers.isRhythmLockMode());
+
+    // Update beat hazards
+    this.beatHazards.update(deltaTime, this.currentBeatNumber);
+
+    // Update flow meter
+    this.flowMeter.update(deltaTime);
+
+    // Update time rewind (handle rewind in progress)
+    if (this.timeRewind.isInRewind()) {
+      const rewindResult = this.timeRewind.update(deltaTime);
+      if (rewindResult) {
+        // Rewind complete - restore player state
+        this.player.x = rewindResult.x;
+        this.player.y = rewindResult.y;
+        this.player.velocityY = rewindResult.velocityY;
+        this.cameraX = rewindResult.cameraX;
+        this.player.isDead = false;
+        this.isWaitingForRewindInput = false;
+        // Play rewind complete sound
+        this.audio.playCheckpoint();
+        this.screenEffects.triggerZoomPulse(1.1, 200);
+      }
+      return; // Skip normal update during rewind
+    }
+
+    // Handle rewind input window after death
+    if (this.isWaitingForRewindInput) {
+      this.rewindInputWindow -= deltaTime;
+      if (this.rewindInputWindow <= 0) {
+        this.isWaitingForRewindInput = false;
+        // Time's up - do normal death respawn
+        this.handleDeathRespawn();
+      } else if (inputState.dashPressed && this.timeRewind.canRewind()) {
+        // Player pressed dash to trigger rewind
+        this.timeRewind.startRewind();
+        this.audio.playSelect();
+        return;
+      }
+      return; // Wait for input during rewind window
+    }
+
+    // Record player state for time rewind
+    this.timeRewind.recordFrame(
+      this.player.x,
+      this.player.y,
+      this.player.velocityY,
+      this.player.getRotation(),
+      this.cameraX
+    );
+
+    // Handle Overdrive activation (press dash when meter is full)
+    if (inputState.dashPressed && this.flowMeter.isMeterFull() && !this.flowMeter.isInOverdrive()) {
+      if (this.flowMeter.activateOverdrive()) {
+        this.audio.playLevelComplete(); // Dramatic sound
+        this.screenEffects.triggerBeatDrop(500);
+        this.screenEffects.triggerZoomPulse(1.2, 300);
+        this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 5);
+      }
+    }
+
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
       this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier, allowAirJumps);
@@ -1713,9 +1910,10 @@ export class Game {
     }
     this.player.clearEvents();
 
-    // Trigger dash shake
+    // Trigger dash shake and Flow Meter update
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
+      this.flowMeter.onDash();
     }
 
     // Update player trail particles
@@ -1784,17 +1982,6 @@ export class Game {
     // Update ghost playback
     this.ghostManager.update(deltaTime);
 
-    // Beat visualization - pulse platforms on beat
-    this.beatTimer += deltaTime;
-    const beatInterval = 60000 / this.currentBPM; // ms per beat
-    if (this.beatTimer >= beatInterval) {
-      this.beatTimer -= beatInterval;
-      // Trigger pulse on visible platforms
-      for (const platform of this.level.getActivePlatforms()) {
-        platform.triggerBeatPulse();
-      }
-    }
-
     // Check secret platform reveals
     const playerCenterX = this.player.x + this.player.width / 2;
     const playerCenterY = this.player.y + this.player.height / 2;
@@ -1851,10 +2038,11 @@ export class Game {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
-          // Near miss! Add to combo
+          // Near miss! Add to combo and Flow Meter
           this.nearMissCount++;
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
+          this.flowMeter.onNearMiss();
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
           this.comboMeterPulse = 1;
@@ -1881,8 +2069,15 @@ export class Game {
       this.audio.playCoinCollect();
       this.input.triggerHaptic('light'); // Haptic feedback for coin collection
 
+      // Update Flow Meter for coin collection
+      for (let i = 0; i < coinsCollected; i++) {
+        this.flowMeter.onCoinCollect();
+      }
+
       // Apply double points multiplier from power-up AND combo multiplier
-      const pointsMultiplier = this.powerUps.getPointsMultiplier();
+      // Also apply Overdrive 3x multiplier if active
+      const overdriveMultiplier = this.flowMeter.getScoreMultiplier();
+      const pointsMultiplier = this.powerUps.getPointsMultiplier() * overdriveMultiplier;
       const effectiveCoins = Math.floor(coinsCollected * pointsMultiplier * this.comboMultiplier);
 
       // Update combo (with multiplied coins)
@@ -1906,10 +2101,12 @@ export class Game {
       if (prevCombo < 5 && this.comboCount >= 5) {
         this.tryUnlockAchievement('combo_5');
         this.screenEffects.triggerZoomPulse(1.05, 150);
+        this.flowMeter.onComboMilestone(5);
       }
       if (prevCombo < 10 && this.comboCount >= 10) {
         this.tryUnlockAchievement('combo_10');
         this.screenEffects.triggerZoomPulse(1.08, 150);
+        this.flowMeter.onComboMilestone(10);
         this.screenEffects.triggerChromaticAberration(4);
       }
       if (prevCombo < 15 && this.comboCount >= 15) {
@@ -1965,6 +2162,10 @@ export class Game {
     if (!wasGroundedBefore && this.player.isGrounded && !this.player.isDead) {
       const landX = this.player.x + this.player.width / 2;
       const landY = this.player.y + this.player.height;
+
+      // Perfect landing for Flow Meter
+      this.flowMeter.onPerfectLanding();
+
       // Scale dust intensity based on fall velocity
       const velocityScale = Math.min(Math.abs(prevVelocityY) / 800, 2);
       if (velocityScale > 0.3) {
@@ -1978,9 +2179,30 @@ export class Game {
       this.triggerShake(6, 120); // Medium shake on bounce
     }
 
+    // Check beat hazard collisions
+    if (!this.player.isDead && !this.flowMeter.isInOverdrive()) {
+      if (this.beatHazards.checkCollisions(this.player.getBounds())) {
+        this.player.isDead = true;
+      }
+    }
+
     if (wasAliveBefore && this.player.isDead) {
+      // Check if Overdrive makes player invincible
+      if (this.flowMeter.isInOverdrive()) {
+        // Overdrive saves the player!
+        this.player.isDead = false;
+        this.player.revive();
+        this.audio.playCoinCollect();
+        this.particles.spawnFloatingText(
+          this.player.x + this.player.width / 2,
+          this.player.y - 30,
+          'OVERDRIVE!',
+          '#ffff00',
+          18
+        );
+      }
       // Check if shield can save the player (disabled by fragile modifier)
-      if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
+      else if (!this.modifiers.isShieldDisabled() && this.powerUps.consumeShield()) {
         // Shield consumed! Revive the player
         this.player.revive();
         this.audio.playCoinCollect(); // Play a positive sound
@@ -1992,7 +2214,7 @@ export class Game {
         const playerCenterY = this.player.y + this.player.height / 2;
         this.particles.spawnDeathExplosion(playerCenterX, playerCenterY, '#00aaff');
       } else {
-        // No shield - player dies
+        // No shield - player dies (but can rewind!)
         this.audio.playDeath();
         this.triggerShake(12, 350); // Strong shake on death
         // Trigger death flash (reduced or disabled based on settings)
@@ -2022,6 +2244,23 @@ export class Game {
 
         // Increment level death count for star calculation
         this.levelDeathCount++;
+
+        // Update Flow Meter on death
+        this.flowMeter.onDeath();
+
+        // Check if Time Rewind is available
+        if (this.timeRewind.canRewind()) {
+          this.isWaitingForRewindInput = true;
+          this.rewindInputWindow = 1500; // 1.5 seconds to press rewind
+          // Show rewind prompt
+          this.particles.spawnFloatingText(
+            playerCenterX,
+            playerCenterY - 50,
+            `PRESS DASH TO REWIND (${this.timeRewind.getRewindsRemaining()} left)`,
+            '#00aaff',
+            14
+          );
+        }
       }
     }
 
@@ -2051,7 +2290,7 @@ export class Game {
       }
     }
 
-    if (this.player.isDead) {
+    if (this.player.isDead && !this.isWaitingForRewindInput) {
       this.deathTimer += deltaTime;
       if (this.deathTimer > 500) {
         this.deathTimer = 0;
@@ -2319,6 +2558,19 @@ export class Game {
 
         // Render boss if on boss level
         this.bossManager.render(this.ctx, this.cameraX);
+
+        // Render beat-synced hazards
+        this.beatHazards.render(this.ctx, this.cameraX);
+
+        // Render time rewind effect if active
+        if (this.timeRewind.isInRewind()) {
+          this.timeRewind.render(this.ctx, this.cameraX, this.player.width, this.player.height);
+        }
+
+        // Render Overdrive visual effect
+        if (this.flowMeter.isInOverdrive()) {
+          this.renderOverdriveEffect();
+        }
 
         this.renderPlayingUI();
 
@@ -2761,10 +3013,164 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
+    // Flow Meter UI (left side, vertical bar)
+    this.renderFlowMeterUI();
+
+    // Time Rewind counter (bottom-left)
+    this.renderRewindCounter();
+
     // Mobile controls (pause, home, restart buttons)
     if (this.input.isMobileDevice()) {
       this.renderMobileControls();
     }
+
+    this.ctx.restore();
+  }
+
+  private renderFlowMeterUI(): void {
+    const meterX = 25;
+    const meterY = 140;
+    const meterWidth = 12;
+    const meterHeight = 150;
+    const fillPercent = this.flowMeter.getMeterPercent();
+    const isFull = this.flowMeter.isMeterFull();
+    const isOverdrive = this.flowMeter.isInOverdrive();
+
+    // Background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
+
+    // Fill from bottom
+    const fillHeight = meterHeight * fillPercent;
+    const fillY = meterY + meterHeight - fillHeight;
+
+    // Color gradient based on fill level
+    let meterColor = '#00ffaa';
+    if (fillPercent > 0.75) meterColor = '#ffff00';
+    if (fillPercent > 0.9) meterColor = '#ff00ff';
+    if (isFull) meterColor = '#ffffff';
+
+    // Pulsing when full
+    if (isFull && !isOverdrive) {
+      const pulse = Math.sin(performance.now() * 0.01) * 0.3 + 0.7;
+      this.ctx.shadowColor = '#ff00ff';
+      this.ctx.shadowBlur = 20 * pulse;
+    }
+
+    this.ctx.fillStyle = meterColor;
+    this.ctx.fillRect(meterX, fillY, meterWidth, fillHeight);
+    this.ctx.shadowBlur = 0;
+
+    // Border
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+
+    // Label
+    this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = meterColor;
+    this.ctx.fillText('FLOW', meterX + meterWidth / 2, meterY - 5);
+
+    // "READY!" indicator when full
+    if (isFull && !isOverdrive) {
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.shadowColor = '#ff00ff';
+      this.ctx.shadowBlur = 10;
+      this.ctx.fillText('DASH!', meterX + meterWidth / 2, meterY + meterHeight + 15);
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Overdrive timer display
+    if (isOverdrive) {
+      const remaining = this.flowMeter.getOverdrivePercent();
+      this.ctx.fillStyle = 'rgba(255, 0, 255, 0.8)';
+      this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight * remaining);
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffff00';
+      this.ctx.shadowColor = '#ffff00';
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText('OVERDRIVE!', meterX + meterWidth / 2 + 40, meterY + meterHeight / 2);
+      this.ctx.shadowBlur = 0;
+    }
+  }
+
+  private renderRewindCounter(): void {
+    const rewindsLeft = this.timeRewind.getRewindsRemaining();
+    const maxRewinds = this.timeRewind.getMaxRewinds();
+
+    // Position in bottom-left
+    const x = 25;
+    const y = GAME_HEIGHT - 50;
+
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'left';
+
+    // Draw rewind icons
+    for (let i = 0; i < maxRewinds; i++) {
+      const iconX = x + i * 20;
+      if (i < rewindsLeft) {
+        this.ctx.fillStyle = '#00aaff';
+        this.ctx.shadowColor = '#00aaff';
+        this.ctx.shadowBlur = 5;
+      } else {
+        this.ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+        this.ctx.shadowBlur = 0;
+      }
+      this.ctx.fillText('⏪', iconX, y);
+    }
+    this.ctx.shadowBlur = 0;
+
+    // Label
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.fillText('REWIND', x, y + 15);
+  }
+
+  private renderOverdriveEffect(): void {
+    // Rainbow border effect during Overdrive
+    const time = performance.now() * 0.002;
+    const hue = (time * 60) % 360;
+
+    this.ctx.save();
+
+    // Pulsing rainbow border
+    this.ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+    this.ctx.lineWidth = 8 + Math.sin(time * 5) * 3;
+    this.ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+    this.ctx.shadowBlur = 30;
+    this.ctx.strokeRect(4, 4, GAME_WIDTH - 8, GAME_HEIGHT - 8);
+
+    // Corner flares
+    const flareSize = 50 + Math.sin(time * 3) * 20;
+    const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, flareSize);
+    gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
+    gradient.addColorStop(1, 'transparent');
+
+    // Top-left corner
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, flareSize, flareSize);
+
+    // Top-right corner
+    this.ctx.save();
+    this.ctx.translate(GAME_WIDTH, 0);
+    this.ctx.scale(-1, 1);
+    this.ctx.fillRect(0, 0, flareSize, flareSize);
+    this.ctx.restore();
+
+    // Bottom corners
+    this.ctx.save();
+    this.ctx.translate(0, GAME_HEIGHT);
+    this.ctx.scale(1, -1);
+    this.ctx.fillRect(0, 0, flareSize, flareSize);
+    this.ctx.restore();
+
+    this.ctx.save();
+    this.ctx.translate(GAME_WIDTH, GAME_HEIGHT);
+    this.ctx.scale(-1, -1);
+    this.ctx.fillRect(0, 0, flareSize, flareSize);
+    this.ctx.restore();
 
     this.ctx.restore();
   }

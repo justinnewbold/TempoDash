@@ -17,6 +17,47 @@ export class Platform {
     Platform.colorblindMode = enabled;
   }
 
+  // Rhythm Lock mode - platforms only solid on beat
+  private static rhythmLockEnabled = false;
+  private static beatSolidity = 0; // 0-1 where 1 = fully solid (on beat)
+  private static readonly BEAT_SOLID_WINDOW = 0.4; // Platforms solid when beatSolidity > this
+
+  static setRhythmLockEnabled(enabled: boolean): void {
+    Platform.rhythmLockEnabled = enabled;
+  }
+
+  static isRhythmLockEnabled(): boolean {
+    return Platform.rhythmLockEnabled;
+  }
+
+  // Update beat solidity (called from Game on each frame)
+  // beatProgress: 0-1 representing position in beat cycle (0 = beat, 1 = just before next beat)
+  static updateBeatSolidity(beatProgress: number): void {
+    // Creates a window of solidity around each beat
+    // Platforms are solid right after a beat and right before the next
+    const windowSize = 0.25; // How much of the beat cycle the platform is solid
+
+    if (beatProgress < windowSize) {
+      // Just after a beat - solid, decreasing
+      Platform.beatSolidity = 1 - (beatProgress / windowSize);
+    } else if (beatProgress > (1 - windowSize)) {
+      // Just before next beat - increasing toward solid
+      Platform.beatSolidity = (beatProgress - (1 - windowSize)) / windowSize;
+    } else {
+      // In between beats - not solid
+      Platform.beatSolidity = 0;
+    }
+  }
+
+  static getBeatSolidity(): number {
+    return Platform.beatSolidity;
+  }
+
+  // Check if platforms are currently solid in rhythm lock mode
+  static isOnBeat(): boolean {
+    return Platform.beatSolidity > Platform.BEAT_SOLID_WINDOW;
+  }
+
   private startX: number;
   private startY: number;
   private moveTime = 0;
@@ -202,6 +243,16 @@ export class Platform {
     if (this.isDestroyed || this.isPhased) return false;
     // Secret platforms only collidable after revealed (with some progress)
     if (this.type === 'secret' && this.secretRevealProgress < 0.3) return false;
+
+    // Rhythm Lock mode - safe platforms only solid on beat
+    // Deadly platforms (spike, lava) are ALWAYS collidable (still dangerous!)
+    if (Platform.rhythmLockEnabled) {
+      const isDeadlyPlatform = this.type === 'spike' || this.type === 'lava';
+      if (!isDeadlyPlatform && !Platform.isOnBeat()) {
+        return false; // Safe platforms are intangible off-beat
+      }
+    }
+
     return true;
   }
 
@@ -220,6 +271,24 @@ export class Platform {
     if (this.type === 'phase') {
       const alpha = this.isPhased ? 0.2 : 1;
       ctx.globalAlpha = alpha;
+    }
+
+    // Handle rhythm lock visual feedback
+    if (Platform.rhythmLockEnabled) {
+      const isDeadly = this.type === 'spike' || this.type === 'lava';
+      if (!isDeadly) {
+        // Safe platforms fade based on beat solidity
+        const solidity = Platform.beatSolidity;
+        const minAlpha = 0.15; // Minimum visibility so players can see timing
+        const alpha = minAlpha + (1 - minAlpha) * solidity;
+        ctx.globalAlpha *= alpha;
+
+        // Add pulsing glow when on beat
+        if (solidity > 0.5) {
+          ctx.shadowColor = '#ff00aa';
+          ctx.shadowBlur = 15 * solidity;
+        }
+      }
     }
 
     // Handle crumble shake

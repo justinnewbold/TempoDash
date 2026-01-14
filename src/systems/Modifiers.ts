@@ -15,7 +15,9 @@ export type ModifierId =
   | 'hyperSpeed'
   | 'tinyMode'
   | 'rainbowTrail'
-  | 'earthquakeMode';
+  | 'earthquakeMode'
+  // Rhythm-based modifier
+  | 'rhythmLock';
 
 export interface Modifier {
   id: ModifierId;
@@ -139,6 +141,14 @@ export const MODIFIERS: Record<ModifierId, Modifier> = {
     icon: '🌋',
     scoreMultiplier: 1.2,
     color: '#884400',
+  },
+  rhythmLock: {
+    id: 'rhythmLock',
+    name: 'Rhythm Lock',
+    description: 'Platforms only solid on the beat!',
+    icon: '🎵',
+    scoreMultiplier: 1.8,
+    color: '#ff00aa',
   },
 };
 
@@ -277,6 +287,11 @@ export class ModifierManager {
   // Get earthquake shake intensity
   getEarthquakeIntensity(): number {
     return this.isActive('earthquakeMode') ? 3 : 0;
+  }
+
+  // Check if rhythm lock mode is active
+  isRhythmLockMode(): boolean {
+    return this.isActive('rhythmLock');
   }
 
   // Get display string for active modifiers
