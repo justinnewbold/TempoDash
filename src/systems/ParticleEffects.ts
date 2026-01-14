@@ -24,6 +24,9 @@ export class ParticleEffects {
   private trailSpawnTimer = 0;
   private static readonly TRAIL_SPAWN_INTERVAL = 30; // ms between trail particles
 
+  // Track firework show timeouts for cleanup
+  private fireworkTimeouts: ReturnType<typeof setTimeout>[] = [];
+
   constructor() {
     this.deathParticles = new ObjectPool(createDeathParticle, 50, 100);
     this.coinParticles = new ObjectPool(createCoinParticle, 20, 50);
@@ -320,11 +323,15 @@ export class ParticleEffects {
   spawnFireworkShow(centerX: number, centerY: number, count: number = 5): void {
     const delay = 200;
     for (let i = 0; i < count; i++) {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         const x = centerX + (Math.random() - 0.5) * 300;
         const y = centerY + (Math.random() - 0.5) * 150;
         this.spawnFirework(x, y);
+        // Remove this timeout from tracking array
+        const idx = this.fireworkTimeouts.indexOf(timeoutId);
+        if (idx !== -1) this.fireworkTimeouts.splice(idx, 1);
       }, i * delay);
+      this.fireworkTimeouts.push(timeoutId);
     }
   }
 
@@ -616,5 +623,11 @@ export class ParticleEffects {
     this.dustParticles.releaseAll();
     this.burstParticles.releaseAll();
     this.sparkParticles.releaseAll();
+
+    // Clear any pending firework timeouts
+    for (const timeoutId of this.fireworkTimeouts) {
+      clearTimeout(timeoutId);
+    }
+    this.fireworkTimeouts = [];
   }
 }

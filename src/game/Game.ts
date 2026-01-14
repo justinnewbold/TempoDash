@@ -1681,8 +1681,11 @@ export class Game {
       }
     }
 
-    // Update menu animation
+    // Update menu animation (wrap to prevent precision loss after long sessions)
     this.menuAnimation += deltaTime / 1000;
+    if (this.menuAnimation > 1000) {
+      this.menuAnimation -= 1000;  // Keep cycling smoothly
+    }
 
     // Update achievement notifications
     this.updateAchievementNotifications(deltaTime);
@@ -2530,6 +2533,9 @@ export class Game {
 
     this.ctx.save();
     this.ctx.translate(shake.x, shake.y);
+
+    // Apply screen effects pre-render (zoom, etc.) - pairs with renderPostEffects restore
+    this.screenEffects.applyPreRender(this.ctx);
 
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
