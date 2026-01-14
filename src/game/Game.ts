@@ -1351,6 +1351,29 @@ export class Game {
   // Handle death respawn when rewind is not used
   private handleDeathRespawn(): void {
     this.deathTimer = 0;
+
+    // Endless mode: go to game over instead of respawning
+    if (this.isEndlessMode) {
+      this.save.setEndlessHighScore(this.endlessDistance);
+
+      // Check endless mode achievements
+      if (this.endlessDistance >= 50) {
+        this.tryUnlockAchievement('endless_50');
+      }
+      if (this.endlessDistance >= 100) {
+        this.tryUnlockAchievement('endless_100');
+      }
+      if (this.endlessDistance >= 500) {
+        this.tryUnlockAchievement('endless_500');
+      }
+
+      this.isEndlessMode = false;
+      this.state.gameStatus = 'gameOver';
+      this.audio.stop();
+      this.timeRewind.clearRecording();
+      return;
+    }
+
     if (this.isPracticeMode) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
