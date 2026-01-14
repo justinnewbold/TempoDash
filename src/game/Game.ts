@@ -1659,6 +1659,21 @@ export class Game {
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
 
+    // Update beat timer and rhythm lock state BEFORE player update (affects platform.isCollidable())
+    this.beatTimer += deltaTime;
+    const beatInterval = 60000 / this.currentBPM; // ms per beat
+    if (this.beatTimer >= beatInterval) {
+      this.beatTimer -= beatInterval;
+      // Trigger beat pulse on all platforms
+      const platformsToUpdate = this.isEndlessMode ? this.endlessPlatforms : this.level.getActivePlatforms();
+      for (const platform of platformsToUpdate) {
+        platform.triggerBeatPulse();
+      }
+    }
+    const beatProgress = this.beatTimer / beatInterval; // 0-1 position in beat cycle
+    Platform.updateBeatSolidity(beatProgress);
+    Platform.setRhythmLockEnabled(this.modifiers.isRhythmLockMode());
+
     // In endless mode, use procedural platforms
     if (this.isEndlessMode) {
       this.player.update(deltaTime, inputState, this.endlessPlatforms, effectiveSpeedMultiplier, allowAirJumps);
@@ -1783,17 +1798,6 @@ export class Game {
 
     // Update ghost playback
     this.ghostManager.update(deltaTime);
-
-    // Beat visualization - pulse platforms on beat
-    this.beatTimer += deltaTime;
-    const beatInterval = 60000 / this.currentBPM; // ms per beat
-    if (this.beatTimer >= beatInterval) {
-      this.beatTimer -= beatInterval;
-      // Trigger pulse on visible platforms
-      for (const platform of this.level.getActivePlatforms()) {
-        platform.triggerBeatPulse();
-      }
-    }
 
     // Check secret platform reveals
     const playerCenterX = this.player.x + this.player.width / 2;
