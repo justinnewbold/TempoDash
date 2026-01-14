@@ -1351,6 +1351,29 @@ export class Game {
   // Handle death respawn when rewind is not used
   private handleDeathRespawn(): void {
     this.deathTimer = 0;
+
+    // Endless mode: go to game over instead of respawning
+    if (this.isEndlessMode) {
+      this.save.setEndlessHighScore(this.endlessDistance);
+
+      // Check endless mode achievements
+      if (this.endlessDistance >= 50) {
+        this.tryUnlockAchievement('endless_50');
+      }
+      if (this.endlessDistance >= 100) {
+        this.tryUnlockAchievement('endless_100');
+      }
+      if (this.endlessDistance >= 500) {
+        this.tryUnlockAchievement('endless_500');
+      }
+
+      this.isEndlessMode = false;
+      this.state.gameStatus = 'gameOver';
+      this.audio.stop();
+      this.timeRewind.clearRecording();
+      return;
+    }
+
     if (this.isPracticeMode) {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
@@ -1658,8 +1681,11 @@ export class Game {
       }
     }
 
-    // Update menu animation
+    // Update menu animation (wrap to prevent precision loss after long sessions)
     this.menuAnimation += deltaTime / 1000;
+    if (this.menuAnimation > 1000) {
+      this.menuAnimation -= 1000;  // Keep cycling smoothly
+    }
 
     // Update achievement notifications
     this.updateAchievementNotifications(deltaTime);
@@ -1893,6 +1919,7 @@ export class Game {
         this.player.bounceEvent.y,
         this.player.bounceEvent.width
       );
+      this.statistics.recordBounce();
     }
     if (this.player.wallSlideEvent) {
       this.particles.spawnWallSparks(
@@ -1914,6 +1941,7 @@ export class Game {
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
       this.flowMeter.onDash();
+      this.statistics.recordDash();
     }
 
     // Update player trail particles
@@ -2114,6 +2142,7 @@ export class Game {
         this.screenEffects.triggerBeatDrop(300);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
+        this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
       }
@@ -2325,6 +2354,9 @@ export class Game {
           if (this.endlessDistance >= 500) {
             this.tryUnlockAchievement('endless_500');
           }
+          if (this.endlessDistance >= 1000) {
+            this.tryUnlockAchievement('endless_1000');
+          }
 
           this.isEndlessMode = false;
           this.state.gameStatus = 'gameOver';
@@ -2501,6 +2533,9 @@ export class Game {
 
     this.ctx.save();
     this.ctx.translate(shake.x, shake.y);
+
+    // Apply screen effects pre-render (zoom, etc.) - pairs with renderPostEffects restore
+    this.screenEffects.applyPreRender(this.ctx);
 
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);

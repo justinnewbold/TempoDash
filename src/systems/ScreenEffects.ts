@@ -65,6 +65,9 @@ export class ScreenEffects {
   private beatDropIntensity = 0;
   private beatDropTimer = 0;
 
+  // Zoom pulse timer (replaces setTimeout)
+  private zoomPulseTimer = 0;
+
   // Streak/perfect run effects
   private streakGlow = 0;
   private perfectRunActive = false;
@@ -126,9 +129,7 @@ export class ScreenEffects {
   triggerZoomPulse(intensity: number = 1.1, duration: number = 200): void {
     if (!this.config.cameraZoomEnabled) return;
     this.targetZoom = intensity;
-    setTimeout(() => {
-      this.targetZoom = 1.0;
-    }, duration / 2);
+    this.zoomPulseTimer = duration / 2;  // Timer-based instead of setTimeout
   }
 
   /**
@@ -354,6 +355,15 @@ export class ScreenEffects {
   // ===========================================
 
   update(deltaTime: number): void {
+    // Update zoom pulse timer
+    if (this.zoomPulseTimer > 0) {
+      this.zoomPulseTimer -= deltaTime;
+      if (this.zoomPulseTimer <= 0) {
+        this.targetZoom = 1.0;
+        this.zoomPulseTimer = 0;
+      }
+    }
+
     // Update zoom
     if (this.zoomLevel !== this.targetZoom) {
       const diff = this.targetZoom - this.zoomLevel;
@@ -649,6 +659,7 @@ export class ScreenEffects {
     this.freezeFrameTimer = 0;
     this.zoomLevel = 1.0;
     this.targetZoom = 1.0;
+    this.zoomPulseTimer = 0;
     this.chromaticIntensity = 0;
     this.slowMoFactor = 1.0;
     this.killCamActive = false;
