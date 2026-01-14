@@ -109,6 +109,11 @@ export class TimeRewindManager {
 
     // Calculate current frame index based on progress
     const totalFrames = this.rewindStartIndex - this.rewindTargetIndex;
+    // Guard against division by zero
+    if (totalFrames <= 0) {
+      this.isRewinding = false;
+      return null;
+    }
     const progressPerFrame = 1 / totalFrames;
     this.rewindProgress += progressPerFrame * this.rewindSpeed;
 

@@ -336,8 +336,9 @@ export class Player {
             this.velocityY = -PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
             this.y = bounds.y - this.height;
             this.bounceEvent = { x: bounds.x, y: bounds.y, width: bounds.width };
+            continue;  // Skip edge bounce handling for top collision
           }
-          continue;
+          break;  // Allow side collisions to fall through to edge bounce handling
 
         case 'glass':
           if (collision === 'top') {
@@ -364,8 +365,9 @@ export class Player {
             this.velocityY = this.gravityFlipped ? PLAYER.JUMP_FORCE : -PLAYER.JUMP_FORCE;
             this.y = bounds.y - this.height;
             this.gravityFlipEvent = { x: this.x + this.width / 2, y: this.y + this.height / 2, flipped: this.gravityFlipped };
+            continue;  // Skip edge bounce handling for top collision
           }
-          continue;
+          break;  // Allow side collisions to fall through to edge bounce handling
 
         case 'wall':
           // Wall platforms allow wall sliding instead of death on side collision

@@ -1916,6 +1916,7 @@ export class Game {
         this.player.bounceEvent.y,
         this.player.bounceEvent.width
       );
+      this.statistics.recordBounce();
     }
     if (this.player.wallSlideEvent) {
       this.particles.spawnWallSparks(
@@ -1937,6 +1938,7 @@ export class Game {
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
       this.flowMeter.onDash();
+      this.statistics.recordDash();
     }
 
     // Update player trail particles
@@ -2137,6 +2139,7 @@ export class Game {
         this.screenEffects.triggerBeatDrop(300);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
+        this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
       }
@@ -2347,6 +2350,9 @@ export class Game {
           }
           if (this.endlessDistance >= 500) {
             this.tryUnlockAchievement('endless_500');
+          }
+          if (this.endlessDistance >= 1000) {
+            this.tryUnlockAchievement('endless_1000');
           }
 
           this.isEndlessMode = false;

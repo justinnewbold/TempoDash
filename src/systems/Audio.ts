@@ -478,6 +478,7 @@ export class AudioManager {
     filter.connect(gain);
     gain.connect(this.musicGain);
     noise.start(time);
+    noise.stop(time + 0.2);  // Stop after decay to prevent memory leak
   }
 
   private playHiHat(time: number, duration: number): void {

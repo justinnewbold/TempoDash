@@ -349,6 +349,10 @@ export class SaveManager {
       unlockedSkins: [...DEFAULT_SAVE.unlockedSkins],
       achievements: [],
       levelCoins: {},
+      levelStars: {},
+      levelDeaths: {},
+      bestTimes: {},
+      ghostRuns: {},
     };
     this.save();
   }
