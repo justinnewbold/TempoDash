@@ -65,6 +65,11 @@ export class Player {
   private static readonly WALL_SLIDE_SPEED = 100; // Slower falling when sliding
   private static readonly WALL_JUMP_COOLDOWN = 200; // ms cooldown between wall jumps
 
+  // Boomerang bounce state (when hitting platform edge)
+  private boomerangVelocityX = 0;
+  private static readonly BOOMERANG_INITIAL_VELOCITY = -250; // Initial backward velocity
+  private static readonly BOOMERANG_RETURN_ACCEL = 500; // Forward acceleration to create boomerang curve
+
   // Slow-mo zone state
   isInSlowMo = false;
 
@@ -124,6 +129,7 @@ export class Player {
     this.isWallSliding = false;
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
+    this.boomerangVelocityX = 0;
     this.clearEvents();
   }
 
@@ -181,6 +187,20 @@ export class Player {
     const stickySlow = this.isStuck ? 0.3 : 1;
     const speedMult = this.isDashing ? Player.DASH_SPEED_MULT : 1;
     this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
+
+    // Boomerang physics: when hit platform edge, player moves back then forward again
+    if (this.boomerangVelocityX !== 0) {
+      // Apply boomerang velocity to position
+      this.x += this.boomerangVelocityX * (deltaTime / 1000);
+
+      // Accelerate forward to create boomerang curve (back -> forward)
+      this.boomerangVelocityX += Player.BOOMERANG_RETURN_ACCEL * (deltaTime / 1000);
+
+      // Once we've swung back forward past the starting point, end the boomerang
+      if (this.boomerangVelocityX >= 150) {
+        this.boomerangVelocityX = 0;
+      }
+    }
 
     // Flying mode: hold to fly up, release to fall
     if (this.flyingMode) {
@@ -375,22 +395,24 @@ export class Player {
       }
 
       // Edge bounce: if hitting side but at least 25% of player body is above platform edge,
-      // bounce them back and up to give a chance to recover with a well-timed jump
+      // trigger boomerang bounce - player swings back then forward like a boomerang
       if (collision === 'left') {
         const playerTop = this.y;
         const platformTop = bounds.y;
         const overlapAbove = platformTop - playerTop; // How much of player is above platform
 
-        // If at least 25% of player height is above platform top, bounce back and up
+        // If at least 25% of player height is above platform top, trigger boomerang bounce
         if (overlapAbove >= this.height * 0.25) {
           // Push back from the platform edge
           this.x = bounds.x + bounds.width + 2;
           // Give upward velocity - enough to potentially clear platform with a jump
-          // Use a fraction of jump force so player needs to time their jump
-          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
+          // Trigger boomerang effect - player swings backwards then forwards
+          this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
+          // Reset all jumps - give player 3 air jumps to recover
+          this.airJumpsRemaining = 3;
           // Emit edge bounce event for visual feedback
           this.edgeBounceEvent = { x: bounds.x + bounds.width, y: bounds.y, direction: 'left' };
-          // Don't consume air jumps - give player a chance to recover
           continue;
         }
 
@@ -408,7 +430,11 @@ export class Player {
           // Push back from the platform edge
           this.x = bounds.x - this.width - 2;
           // Give upward velocity for recovery
-          this.velocityY = -PLAYER.JUMP_FORCE * 0.6;
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
+          // Trigger boomerang effect - player swings backwards then forwards
+          this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
+          // Reset all jumps - give player 3 air jumps to recover
+          this.airJumpsRemaining = 3;
           // Emit edge bounce event for visual feedback
           this.edgeBounceEvent = { x: bounds.x, y: bounds.y, direction: 'right' };
           continue;
