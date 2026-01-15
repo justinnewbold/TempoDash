@@ -2368,7 +2368,7 @@ export class Game {
       return;
     }
 
-    if (this.level.checkGoal(this.player)) {
+    if (!this.player.isDead && this.level.checkGoal(this.player)) {
       if (!this.isPracticeMode) {
         // Calculate score based on attempts and coins (only in normal mode)
         const baseScore = 1000;

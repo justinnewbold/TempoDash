@@ -43,7 +43,7 @@ export class Player {
   private trailCount = 0; // Number of active trail points
 
   private animationTime = 0;
-  private airJumpsRemaining = 2; // Can perform two air jumps (double + triple)
+  private airJumpsRemaining = 4; // Can perform four air jumps (5 total jumps)
 
   // Dash ability (triggered on triple jump)
   isDashing = false;
@@ -120,7 +120,7 @@ export class Player {
     }
     this.trailHead = 0;
     this.trailCount = 0;
-    this.airJumpsRemaining = 2;
+    this.airJumpsRemaining = 4;
     this.isDashing = false;
     this.dashTimer = 0;
     this.onConveyor = null;
@@ -233,14 +233,27 @@ export class Player {
       if (input.jump && this.isGrounded && !this.isStuck) {
         this.velocityY = -PLAYER.JUMP_FORCE;
         this.isGrounded = false;
-        this.airJumpsRemaining = 2; // Reset air jumps on ground jump
+        this.airJumpsRemaining = 4; // Reset air jumps on ground jump
       } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
-        // Air jumps (double/triple) - each successive jump is weaker
+        // Air jumps (5 total jumps: 1 ground + 4 air)
         // Disabled when "Grounded" modifier is active
-        const jumpMultiplier = this.airJumpsRemaining === 2 ? 1.275 : 0.7;
+        // Jump 2 (airJumpsRemaining=4): normal double jump (1.275x)
+        // Jump 3 (airJumpsRemaining=3): weaker triple jump (0.7x)
+        // Jump 4 (airJumpsRemaining=2): higher jump (1.5x)
+        // Jump 5 (airJumpsRemaining=1): forward dash
+        let jumpMultiplier: number;
+        if (this.airJumpsRemaining === 4) {
+          jumpMultiplier = 1.275; // 2nd jump - normal double jump
+        } else if (this.airJumpsRemaining === 3) {
+          jumpMultiplier = 0.7; // 3rd jump - weaker
+        } else if (this.airJumpsRemaining === 2) {
+          jumpMultiplier = 1.5; // 4th jump - higher
+        } else {
+          jumpMultiplier = 0.5; // 5th jump - minimal vertical, forward dash instead
+        }
         this.velocityY = -PLAYER.JUMP_FORCE * jumpMultiplier;
 
-        // Triple jump (last air jump) triggers dash
+        // 5th jump (last air jump) triggers forward dash
         if (this.airJumpsRemaining === 1) {
           this.isDashing = true;
           this.dashTimer = Player.DASH_DURATION;
@@ -411,8 +424,8 @@ export class Player {
           this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
           // Trigger boomerang effect - player swings backwards then forwards
           this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
-          // Reset all jumps - give player 3 air jumps to recover
-          this.airJumpsRemaining = 3;
+          // Reset all jumps - give player full air jumps to recover
+          this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback
           this.edgeBounceEvent = { x: bounds.x + bounds.width, y: bounds.y, direction: 'left' };
           continue;
@@ -435,8 +448,8 @@ export class Player {
           this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
           // Trigger boomerang effect - player swings backwards then forwards
           this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
-          // Reset all jumps - give player 3 air jumps to recover
-          this.airJumpsRemaining = 3;
+          // Reset all jumps - give player full air jumps to recover
+          this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback
           this.edgeBounceEvent = { x: bounds.x, y: bounds.y, direction: 'right' };
           continue;
@@ -499,7 +512,7 @@ export class Player {
         this.y = bounds.y - this.height;
         this.velocityY = 0;
         this.isGrounded = true;
-        this.airJumpsRemaining = 2; // Reset air jumps on landing
+        this.airJumpsRemaining = 4; // Reset air jumps on landing
         break;
       case 'bottom':
         this.y = bounds.y + bounds.height;
