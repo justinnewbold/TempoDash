@@ -282,8 +282,9 @@ export class Game {
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        this.touchStartY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const coords = this.screenToGameCoords(touch.clientX, touch.clientY);
+        if (!coords) return; // Canvas not visible
+        this.touchStartY = coords.y;
         this.lastTouchY = this.touchStartY;
         this.isTouchScrolling = false;
       }
@@ -292,8 +293,9 @@ export class Game {
     canvas.addEventListener('touchmove', (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        const currentY = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const coords = this.screenToGameCoords(touch.clientX, touch.clientY);
+        if (!coords) return; // Canvas not visible
+        const currentY = coords.y;
         const deltaY = this.lastTouchY - currentY;
 
         // Check if we've moved enough to consider this a scroll
@@ -340,12 +342,11 @@ export class Game {
       if (e.changedTouches.length === 1 && this.state.gameStatus !== 'playing') {
         e.preventDefault();
         const touch = e.changedTouches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        const x = (touch.clientX - rect.left) * (GAME_WIDTH / rect.width);
-        const y = (touch.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+        const coords = this.screenToGameCoords(touch.clientX, touch.clientY);
+        if (!coords) return; // Canvas not visible
 
         // Create a synthetic event-like object for the handlers
-        this.handleTouchMenuClick(x, y);
+        this.handleTouchMenuClick(coords.x, coords.y);
       }
     }, { passive: false });
 
@@ -469,6 +470,19 @@ export class Game {
     }
   }
 
+  // Helper to safely transform screen coordinates to game coordinates
+  // Returns null if canvas has zero dimensions
+  private screenToGameCoords(clientX: number, clientY: number): { x: number; y: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return null;
+    }
+    return {
+      x: (clientX - rect.left) * (GAME_WIDTH / rect.width),
+      y: (clientY - rect.top) * (GAME_HEIGHT / rect.height),
+    };
+  }
+
   private handleClick(e: MouseEvent): void {
     // Dismiss orientation hint on click
     if (this.showOrientationHint) {
@@ -483,9 +497,9 @@ export class Game {
       return;
     }
 
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
-    const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
+    const coords = this.screenToGameCoords(e.clientX, e.clientY);
+    if (!coords) return; // Canvas not visible
+    const { x, y } = coords;
 
     switch (this.state.gameStatus) {
       case 'mainMenu':

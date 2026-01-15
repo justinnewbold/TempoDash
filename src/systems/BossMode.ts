@@ -69,8 +69,9 @@ export class BossManager {
   // Attacks
   private attackTimer = 0;
   private projectiles: Projectile[] = [];
-  private stompWarningY = -1;
+  private stompWarningX = -1;  // X position where stomp will land
   private stompTimer = 0;
+  private stompRecoveryTimer = 0;  // Timer for boss to return to sky after stomp
 
   // State
   private isEnraged = false;
@@ -206,18 +207,28 @@ export class BossManager {
         // Stomp from above
         this.bossX = playerX + Math.sin(this.animTimer / 600) * 50;
 
+        // Handle stomp recovery (boss returning to sky after stomp)
+        if (this.stompRecoveryTimer > 0) {
+          this.stompRecoveryTimer -= deltaTime;
+          if (this.stompRecoveryTimer <= 0) {
+            this.bossY = -100;
+            this.stompWarningX = -1;
+          }
+          break;
+        }
+
         this.attackTimer += deltaTime;
         const stompInterval = this.bossConfig.attackInterval / speedMultiplier;
 
-        if (this.stompWarningY < 0 && this.attackTimer >= stompInterval) {
+        if (this.stompWarningX < 0 && this.attackTimer >= stompInterval) {
           // Start stomp warning
-          this.stompWarningY = playerX;
+          this.stompWarningX = playerX;
           this.stompTimer = 800; // Warning duration
           this.attackTimer = 0;
           warning = true;
         }
 
-        if (this.stompWarningY >= 0) {
+        if (this.stompWarningX >= 0) {
           this.stompTimer -= deltaTime;
           warning = true;
 
@@ -226,15 +237,12 @@ export class BossManager {
             this.bossY = GAME_HEIGHT - this.bossConfig.size;
 
             // Check if player is in stomp zone
-            if (Math.abs(playerX - this.stompWarningY) < this.bossConfig.size) {
+            if (Math.abs(playerX - this.stompWarningX) < this.bossConfig.size) {
               hitPlayer = true;
             }
 
-            // Reset after stomp
-            setTimeout(() => {
-              this.bossY = -100;
-              this.stompWarningY = -1;
-            }, 300);
+            // Start recovery timer (synchronous, no setTimeout)
+            this.stompRecoveryTimer = 300;
           }
         } else {
           this.bossY = -100 + Math.sin(this.animTimer / 200) * 20;
@@ -372,8 +380,8 @@ export class BossManager {
     }
 
     // Render stomp warning
-    if (this.stompWarningY >= 0 && this.bossConfig.type === 'stomper') {
-      const warningX = this.stompWarningY - cameraX;
+    if (this.stompWarningX >= 0 && this.bossConfig.type === 'stomper') {
+      const warningX = this.stompWarningX - cameraX;
       const warningAlpha = Math.sin(this.animTimer / 50) * 0.3 + 0.5;
 
       ctx.fillStyle = `rgba(255, 0, 0, ${warningAlpha})`;
@@ -416,5 +424,9 @@ export class BossManager {
     this.projectiles = [];
     this.defeated = false;
     this.isEnraged = false;
+    this.stompWarningX = -1;
+    this.stompRecoveryTimer = 0;
+    this.stompTimer = 0;
+    this.attackTimer = 0;
   }
 }
