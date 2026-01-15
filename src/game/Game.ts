@@ -1212,6 +1212,14 @@ export class Game {
                       this.state.gameStatus === 'challengePlaying';
 
     if (isPlaying) {
+      // If player is dead and waiting for rewind, cancel the rewind window and respawn
+      // This prevents getting stuck in a dead state when tab is switched
+      if (this.player.isDead && this.isWaitingForRewindInput) {
+        this.isWaitingForRewindInput = false;
+        this.handleDeathRespawn();
+        return; // Don't pause, we've handled the death
+      }
+
       this.state.gameStatus = 'paused';
       this.audio.stop();
     }
@@ -1378,10 +1386,12 @@ export class Game {
       // Respawn at checkpoint
       this.player.reset({ x: this.checkpointX, y: this.checkpointY });
       this.cameraX = Math.max(0, this.checkpointX - 150);
+      this.state.gameStatus = 'practice';
     } else {
       // Regular respawn
       this.player.reset(this.level.playerStart);
       this.cameraX = 0;
+      this.state.gameStatus = 'playing';
     }
     this.attempts++;
     this.speedMultiplier = 1.0;
