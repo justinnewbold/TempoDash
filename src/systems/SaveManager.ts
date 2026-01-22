@@ -143,6 +143,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   reduceFlash: false,
   showGhost: true,
   highContrast: false,
+  assistMode: false,
+  showBeatVisualizer: true,
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -656,6 +658,24 @@ export class SaveManager {
 
   setHighContrast(enabled: boolean): void {
     this.data.settings.highContrast = enabled;
+    this.save();
+  }
+
+  isAssistModeEnabled(): boolean {
+    return this.data.settings.assistMode ?? false;
+  }
+
+  setAssistMode(enabled: boolean): void {
+    this.data.settings.assistMode = enabled;
+    this.save();
+  }
+
+  isBeatVisualizerEnabled(): boolean {
+    return this.data.settings.showBeatVisualizer ?? true;
+  }
+
+  setBeatVisualizer(enabled: boolean): void {
+    this.data.settings.showBeatVisualizer = enabled;
     this.save();
   }
 

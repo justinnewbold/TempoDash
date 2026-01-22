@@ -19,7 +19,7 @@ import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
-import { GhostManager } from '../systems/GhostManager';
+import { GhostManager, encodeReplay } from '../systems/GhostManager';
 import { ScreenEffects } from '../systems/ScreenEffects';
 import { BossManager } from '../systems/BossMode';
 import { FlowMeterManager } from '../systems/FlowMeter';
@@ -233,6 +233,29 @@ export class Game {
   private showDeathHeatmap = false;
   private heatmapLevelId = 1;
 
+  // Replay Sharing System
+  private showReplayShare = false;
+  private replayCode: string | null = null;
+  private replayCopied = false;
+  private replayCopyTimer = 0;
+
+  // Adaptive Difficulty / Assist Mode
+  private assistModeEnabled = false;
+  private assistModeOffered = false;
+  private static readonly ASSIST_OFFER_DEATHS = 5; // Offer assist after this many deaths
+  private showAssistOffer = false;
+  private assistCheckpointInterval = 0.1; // Auto-checkpoint every 10% progress
+
+  // Rhythm Sync Visualizer
+  private showBeatVisualizer = true;
+  private beatIndicators: { time: number; intensity: number; x: number }[] = [];
+  private lastBeatTime = 0;
+  private beatAccuracy: { time: number; accuracy: 'perfect' | 'good' | 'miss'; timer: number }[] = [];
+  private rhythmMultiplier = 1;
+  private consecutiveOnBeatJumps = 0;
+  private static readonly BEAT_PERFECT_WINDOW = 50; // ms
+  private static readonly BEAT_GOOD_WINDOW = 150; // ms
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -301,6 +324,8 @@ export class Game {
     this.audio.setMusicVolume(settings.musicVolume);
     this.audio.setSfxVolume(settings.sfxVolume);
     this.showGhost = this.save.isShowGhostEnabled();
+    this.showBeatVisualizer = this.save.isBeatVisualizerEnabled();
+    this.assistModeEnabled = this.save.isAssistModeEnabled();
 
     this.loadLevel(1);
 
@@ -394,6 +419,18 @@ export class Game {
     this.audio.setBeatCallback((beat) => {
       if (beat % 2 === 0) {
         this.beatPulse = 1;
+      }
+      // Track beat timing for rhythm visualizer
+      this.lastBeatTime = performance.now();
+      this.currentBeatNumber = beat;
+
+      // Add visual beat indicator
+      if (this.showBeatVisualizer && this.state.gameStatus === 'playing') {
+        this.beatIndicators.push({
+          time: 1.0,
+          intensity: 1.0,
+          x: GAME_WIDTH - 60,
+        });
       }
     });
 
@@ -557,13 +594,44 @@ export class Game {
         this.handleEditorClick(e);
         break;
       case 'levelComplete':
-        this.nextLevel();
+        this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
         this.endlessDistance = 0; // Reset for next endless run
         this.state.gameStatus = 'mainMenu';
         break;
     }
+  }
+
+  private handleLevelCompleteClick(x: number, y: number): void {
+    // Check replay share modal first
+    if (this.showReplayShare) {
+      if (this.handleReplayShareClick(x, y)) return;
+      return; // Consume click when modal is open
+    }
+
+    // Check assist mode offer
+    if (this.showAssistOffer) {
+      if (this.handleAssistModeOfferClick(x, y)) return;
+      return;
+    }
+
+    // Check share replay button
+    const buttonX = GAME_WIDTH / 2;
+    const buttonY = GAME_HEIGHT / 2 + 165;
+    const buttonWidth = 160;
+    const buttonHeight = 35;
+
+    if (!this.isPracticeMode &&
+        x >= buttonX - buttonWidth / 2 && x <= buttonX + buttonWidth / 2 &&
+        y >= buttonY - buttonHeight / 2 && y <= buttonY + buttonHeight / 2) {
+      this.audio.playSelect();
+      this.generateReplayCode();
+      return;
+    }
+
+    // Default: proceed to next level
+    this.nextLevel();
   }
 
   private handleTouchMenuClick(x: number, y: number): void {
@@ -612,7 +680,7 @@ export class Game {
         // Editor has its own touch handling via TouchHandler
         break;
       case 'levelComplete':
-        this.nextLevel();
+        this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
         this.endlessDistance = 0;
@@ -1737,6 +1805,9 @@ export class Game {
       this.showEncouragementMessage();
     }
 
+    // Check if we should offer assist mode
+    this.checkAssistModeOffer();
+
     // Reset combo on death
     this.comboCount = 0;
     this.comboTimer = 0;
@@ -1832,6 +1903,17 @@ export class Game {
     // Decay beat pulse
     if (this.beatPulse > 0) {
       this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
+    }
+
+    // Update beat indicators for rhythm visualizer
+    this.updateBeatIndicators(deltaTime);
+
+    // Decay replay copy notification
+    if (this.replayCopied && this.replayCopyTimer > 0) {
+      this.replayCopyTimer -= deltaTime;
+      if (this.replayCopyTimer <= 0) {
+        this.replayCopied = false;
+      }
     }
 
     // Decay screen shake
@@ -1949,10 +2031,14 @@ export class Game {
       for (const platform of platformsToUpdate) {
         platform.triggerBeatPulse();
       }
-      // Check for on-beat jump (for Flow Meter)
+      // Check for on-beat jump (for Flow Meter and Rhythm Visualizer)
       if (inputState.jumpPressed) {
         this.flowMeter.onOnBeatJump();
+        this.onPlayerJump();
       }
+    } else if (inputState.jumpPressed) {
+      // Track off-beat jumps too for rhythm feedback
+      this.onPlayerJump();
     }
     const beatProgress = this.beatTimer / beatInterval; // 0-1 position in beat cycle
     Platform.updateBeatSolidity(beatProgress);
@@ -2146,6 +2232,11 @@ export class Game {
       );
     }
 
+    // Apply assist mode auto-checkpoints
+    if (this.assistModeEnabled && !this.player.isDead) {
+      this.applyAssistModeCheckpoint();
+    }
+
     // Update ghost playback
     this.ghostManager.update(deltaTime);
 
@@ -2332,7 +2423,8 @@ export class Game {
       this.audio.playJump();
       // Increase speed by 1% per jump (compound growth)
       this.jumpCount++;
-      this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
+      const speedIncrease = Game.SPEED_INCREASE_PER_JUMP * this.getAssistModeSpeedMultiplier();
+      this.speedMultiplier *= (1 + speedIncrease);
       // Sync music tempo with game speed
       this.audio.setGameSpeedMultiplier(this.speedMultiplier);
 
@@ -2903,6 +2995,21 @@ export class Game {
 
     // Level completion celebration effects
     this.renderCelebration();
+
+    // Rhythm sync visualizer
+    this.renderBeatVisualizer();
+
+    // Assist mode indicator
+    this.renderAssistModeIndicator();
+
+    // Replay share button on level complete
+    this.renderReplayShareButton();
+
+    // Replay share modal (on top of everything)
+    this.renderReplayShareModal();
+
+    // Assist mode offer modal
+    this.renderAssistModeOffer();
 
     // Quick restart progress indicator
     if (this.quickRestartHeld && this.quickRestartTimer > 0) {
@@ -7717,6 +7824,475 @@ export class Game {
     }
 
     this.ctx.shadowBlur = 0;
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // RHYTHM SYNC VISUALIZER
+  // =====================================================
+
+  private updateBeatIndicators(deltaTime: number): void {
+    // Update existing indicators
+    for (let i = this.beatIndicators.length - 1; i >= 0; i--) {
+      this.beatIndicators[i].time -= deltaTime / 1000;
+      this.beatIndicators[i].intensity -= deltaTime / 500;
+      if (this.beatIndicators[i].time <= 0) {
+        this.beatIndicators.splice(i, 1);
+      }
+    }
+
+    // Update beat accuracy feedback
+    for (let i = this.beatAccuracy.length - 1; i >= 0; i--) {
+      this.beatAccuracy[i].timer -= deltaTime;
+      if (this.beatAccuracy[i].timer <= 0) {
+        this.beatAccuracy.splice(i, 1);
+      }
+    }
+
+    // Calculate rhythm multiplier based on consecutive on-beat jumps
+    if (this.consecutiveOnBeatJumps > 0) {
+      this.rhythmMultiplier = 1 + Math.min(this.consecutiveOnBeatJumps * 0.1, 0.5);
+    } else {
+      this.rhythmMultiplier = Math.max(1, this.rhythmMultiplier - deltaTime / 2000);
+    }
+  }
+
+  private checkBeatTiming(): 'perfect' | 'good' | 'miss' {
+    const now = performance.now();
+    const timeSinceBeat = now - this.lastBeatTime;
+    const beatInterval = 60000 / this.currentBPM;
+    const timeToNextBeat = beatInterval - (timeSinceBeat % beatInterval);
+    const distanceFromBeat = Math.min(timeSinceBeat % beatInterval, timeToNextBeat);
+
+    if (distanceFromBeat <= Game.BEAT_PERFECT_WINDOW) {
+      return 'perfect';
+    } else if (distanceFromBeat <= Game.BEAT_GOOD_WINDOW) {
+      return 'good';
+    }
+    return 'miss';
+  }
+
+  private onPlayerJump(): void {
+    if (!this.showBeatVisualizer) return;
+
+    const timing = this.checkBeatTiming();
+    this.beatAccuracy.push({
+      time: performance.now(),
+      accuracy: timing,
+      timer: 800 // Show for 800ms
+    });
+
+    if (timing === 'perfect') {
+      this.consecutiveOnBeatJumps++;
+      this.flowMeter.onOnBeatJump();
+      // Trigger milestone for rhythm streak
+      if (this.consecutiveOnBeatJumps >= 10 && this.consecutiveOnBeatJumps % 5 === 0) {
+        this.triggerMilestone('rhythm', this.consecutiveOnBeatJumps);
+      }
+    } else if (timing === 'good') {
+      this.consecutiveOnBeatJumps = Math.max(0, this.consecutiveOnBeatJumps - 1);
+    } else {
+      this.consecutiveOnBeatJumps = 0;
+    }
+  }
+
+  private renderBeatVisualizer(): void {
+    if (!this.showBeatVisualizer) return;
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice') return;
+
+    this.ctx.save();
+
+    const baseX = GAME_WIDTH - 60;
+    const baseY = GAME_HEIGHT - 80;
+
+    // Beat ring background
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(baseX, baseY, 25, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    // Pulsing beat indicator
+    const beatInterval = 60000 / this.currentBPM;
+    const now = performance.now();
+    const beatProgress = ((now - this.lastBeatTime) % beatInterval) / beatInterval;
+    const pulseSize = 25 - beatProgress * 20;
+
+    if (pulseSize > 5) {
+      this.ctx.strokeStyle = `rgba(0, 255, 170, ${1 - beatProgress})`;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.arc(baseX, baseY, pulseSize, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    // Center beat indicator
+    const beatGlow = this.beatPulse;
+    if (beatGlow > 0) {
+      this.ctx.fillStyle = `rgba(0, 255, 170, ${beatGlow})`;
+      this.ctx.shadowColor = '#00ffaa';
+      this.ctx.shadowBlur = 20 * beatGlow;
+      this.ctx.beginPath();
+      this.ctx.arc(baseX, baseY, 8 + beatGlow * 5, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Inner dot
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.beginPath();
+    this.ctx.arc(baseX, baseY, 5, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Rhythm multiplier display
+    if (this.rhythmMultiplier > 1) {
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.shadowColor = '#ffcc00';
+      this.ctx.shadowBlur = 5;
+      this.ctx.fillText(`${this.rhythmMultiplier.toFixed(1)}x`, baseX, baseY - 35);
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Beat accuracy feedback (floating text)
+    for (const feedback of this.beatAccuracy) {
+      const age = 800 - feedback.timer;
+      const alpha = 1 - age / 800;
+      const yOffset = age / 10;
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+
+      if (feedback.accuracy === 'perfect') {
+        this.ctx.fillStyle = `rgba(0, 255, 170, ${alpha})`;
+        this.ctx.fillText('PERFECT!', baseX, baseY - 50 - yOffset);
+      } else if (feedback.accuracy === 'good') {
+        this.ctx.fillStyle = `rgba(255, 200, 0, ${alpha})`;
+        this.ctx.fillText('GOOD', baseX, baseY - 50 - yOffset);
+      }
+    }
+
+    // Rhythm streak indicator
+    if (this.consecutiveOnBeatJumps >= 3) {
+      this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffff';
+      this.ctx.fillText(`${this.consecutiveOnBeatJumps} streak`, baseX, baseY + 40);
+    }
+
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // REPLAY SHARING SYSTEM
+  // =====================================================
+
+  private generateReplayCode(): void {
+    const replayData = this.ghostManager.createReplayData(
+      this.state.currentLevel,
+      'Player', // Could allow custom names later
+      this.levelElapsedTime,
+      this.level.coinsCollected,
+      this.levelDeathCount
+    );
+    this.replayCode = encodeReplay(replayData);
+    this.showReplayShare = true;
+  }
+
+  private copyReplayToClipboard(): void {
+    if (!this.replayCode) return;
+
+    navigator.clipboard.writeText(this.replayCode).then(() => {
+      this.replayCopied = true;
+      this.replayCopyTimer = 2000;
+    }).catch(() => {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = this.replayCode!;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      this.replayCopied = true;
+      this.replayCopyTimer = 2000;
+    });
+  }
+
+  private renderReplayShareButton(): void {
+    // Only show on level complete screen (non-practice mode)
+    if (this.state.gameStatus !== 'levelComplete' || this.isPracticeMode) return;
+
+    const buttonX = GAME_WIDTH / 2;
+    const buttonY = GAME_HEIGHT / 2 + 165;
+    const buttonWidth = 160;
+    const buttonHeight = 35;
+
+    this.ctx.save();
+
+    // Share replay button
+    this.ctx.fillStyle = '#6644ff';
+    this.ctx.strokeStyle = '#aa88ff';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('📤 Share Replay', buttonX, buttonY);
+
+    this.ctx.restore();
+  }
+
+  private renderReplayShareModal(): void {
+    if (!this.showReplayShare || !this.replayCode) return;
+
+    this.ctx.save();
+
+    // Overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Modal box
+    this.ctx.fillStyle = '#1a1a2e';
+    this.ctx.strokeStyle = '#6644ff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 200, centerY - 120, 400, 240, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Share Your Replay', centerX, centerY - 80);
+
+    // Replay code box
+    this.ctx.fillStyle = '#0d0d1a';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 180, centerY - 50, 360, 50, 8);
+    this.ctx.fill();
+
+    // Truncated code display
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#88ff88';
+    const displayCode = this.replayCode.length > 45
+      ? this.replayCode.substring(0, 42) + '...'
+      : this.replayCode;
+    this.ctx.fillText(displayCode, centerX, centerY - 22);
+
+    // Copy button
+    const copyY = centerY + 30;
+    this.ctx.fillStyle = this.replayCopied ? '#00aa66' : '#00ffaa';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 80, copyY - 18, 160, 36, 8);
+    this.ctx.fill();
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillText(this.replayCopied ? '✓ Copied!' : '📋 Copy Code', centerX, copyY + 5);
+
+    // Close button
+    const closeY = centerY + 85;
+    this.ctx.fillStyle = '#444466';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 60, closeY - 15, 120, 30, 8);
+    this.ctx.fill();
+
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Close', centerX, closeY + 5);
+
+    this.ctx.restore();
+  }
+
+  private handleReplayShareClick(x: number, y: number): boolean {
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Check copy button
+    if (x >= centerX - 80 && x <= centerX + 80 && y >= centerY + 12 && y <= centerY + 48) {
+      this.copyReplayToClipboard();
+      return true;
+    }
+
+    // Check close button
+    if (x >= centerX - 60 && x <= centerX + 60 && y >= centerY + 70 && y <= centerY + 100) {
+      this.showReplayShare = false;
+      this.replayCode = null;
+      return true;
+    }
+
+    return false;
+  }
+
+  // =====================================================
+  // ADAPTIVE DIFFICULTY / ASSIST MODE
+  // =====================================================
+
+  private checkAssistModeOffer(): void {
+    // Only offer assist if not already enabled and player is struggling
+    if (this.assistModeEnabled || this.assistModeOffered) return;
+    if (this.consecutiveDeaths < Game.ASSIST_OFFER_DEATHS) return;
+
+    this.showAssistOffer = true;
+    this.assistModeOffered = true;
+  }
+
+  private enableAssistMode(): void {
+    this.assistModeEnabled = true;
+    this.save.setAssistMode(true);
+    this.showAssistOffer = false;
+
+    // Reset some difficulty factors
+    this.speedMultiplier = Math.max(1, this.speedMultiplier * 0.8);
+
+    // Show confirmation
+    this.encouragementMessage = {
+      text: 'Assist Mode Enabled!',
+      subtext: 'Auto-checkpoints every 10% • Slower speed buildup',
+      timer: 3000
+    };
+  }
+
+  private renderAssistModeOffer(): void {
+    if (!this.showAssistOffer) return;
+
+    this.ctx.save();
+
+    // Overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Modal box with friendly color
+    this.ctx.fillStyle = '#1a2a3a';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 220, centerY - 140, 440, 280, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Icon
+    this.ctx.font = '48px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('🤝', centerX, centerY - 85);
+
+    // Title
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Need Some Help?', centerX, centerY - 40);
+
+    // Description
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaccff';
+    this.ctx.fillText('Assist Mode gives you a gentler experience:', centerX, centerY - 10);
+
+    this.ctx.fillStyle = '#88ffaa';
+    this.ctx.fillText('• Auto-checkpoints every 10% progress', centerX, centerY + 15);
+    this.ctx.fillText('• Slower speed buildup (50% rate)', centerX, centerY + 35);
+    this.ctx.fillText('• Extra visual cues for timing', centerX, centerY + 55);
+
+    // Enable button
+    const enableY = centerY + 95;
+    this.ctx.fillStyle = '#00aa66';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 90, enableY - 18, 180, 36, 8);
+    this.ctx.fill();
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Enable Assist', centerX, enableY + 5);
+
+    // Decline button
+    const declineY = centerY + 135;
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888899';
+    this.ctx.fillText('No thanks, I\'ve got this!', centerX, declineY);
+
+    this.ctx.restore();
+  }
+
+  private handleAssistModeOfferClick(x: number, y: number): boolean {
+    if (!this.showAssistOffer) return false;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Enable button
+    if (x >= centerX - 90 && x <= centerX + 90 && y >= centerY + 77 && y <= centerY + 113) {
+      this.enableAssistMode();
+      return true;
+    }
+
+    // Decline text area
+    if (y >= centerY + 120 && y <= centerY + 150) {
+      this.showAssistOffer = false;
+      return true;
+    }
+
+    return false;
+  }
+
+  private applyAssistModeCheckpoint(): void {
+    if (!this.assistModeEnabled) return;
+
+    const progress = this.level.getProgress(this.player.x);
+    const checkpointIndex = Math.floor(progress / this.assistCheckpointInterval);
+
+    // Save checkpoint if we've passed a new threshold
+    if (checkpointIndex > Math.floor(this.lastCheckpointProgress / this.assistCheckpointInterval)) {
+      this.checkpointX = this.player.x;
+      this.checkpointY = this.player.y;
+      this.lastCheckpointProgress = progress;
+      this.checkpointFeedbackTimer = 500;
+
+      // Visual feedback
+      this.particles.spawnPowerUpCollect(
+        this.player.x - this.cameraX,
+        this.player.y,
+        '#00ffaa'
+      );
+    }
+  }
+
+  private getAssistModeSpeedMultiplier(): number {
+    if (!this.assistModeEnabled) return 1;
+    return 0.5; // 50% speed buildup rate
+  }
+
+  private renderAssistModeIndicator(): void {
+    if (!this.assistModeEnabled) return;
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice') return;
+
+    this.ctx.save();
+
+    // Small indicator in corner
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillText('ASSIST', 20, GAME_HEIGHT - 15);
+
+    // Auto-checkpoint progress indicator
+    const progress = this.level.getProgress(this.player.x);
+    const nextCheckpoint = Math.ceil(progress / this.assistCheckpointInterval) * this.assistCheckpointInterval;
+    const progressToNext = (nextCheckpoint - progress) / this.assistCheckpointInterval;
+
+    this.ctx.fillStyle = 'rgba(0, 170, 255, 0.3)';
+    this.ctx.fillRect(60, GAME_HEIGHT - 20, 50, 8);
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillRect(60, GAME_HEIGHT - 20, 50 * (1 - progressToNext), 8);
+
     this.ctx.restore();
   }
 }

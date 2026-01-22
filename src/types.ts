@@ -146,6 +146,7 @@ export type MenuState =
   | 'achievements'
   | 'challenges'
   | 'platformGuide'
+  | 'replays'
   | 'playing'
   | 'practice'
   | 'endless'
@@ -240,6 +241,8 @@ export interface GameSettings {
   reduceFlash: boolean;  // Reduce screen flash effects (death/power-up)
   showGhost: boolean;    // Show ghost replay in levels
   highContrast: boolean; // High contrast mode for better visibility
+  assistMode: boolean;   // Assist mode for struggling players
+  showBeatVisualizer: boolean; // Show rhythm sync visualizer
 }
 
 export interface PlayerSkin {
