@@ -183,6 +183,23 @@ export class Game {
   private levelElapsedTime = 0;
   private levelDeathCount = 0;
 
+  // Speed Run Split Times
+  private splitTimes: number[] = []; // Time at each checkpoint
+  private bestSplitTimes: number[] = []; // Best times at each checkpoint
+  private lastCheckpointIndex = -1;
+  private splitDisplay: { time: number; diff: number; isAhead: boolean; timer: number } | null = null;
+
+  // Encouragement System (after repeated deaths)
+  private consecutiveDeaths = 0;
+  private encouragementMessage: { text: string; subtext: string; timer: number } | null = null;
+  private static readonly ENCOURAGEMENT_DURATION = 3000;
+
+  // Level Completion Celebration
+  private celebrationActive = false;
+  private celebrationTimer = 0;
+  private celebrationStars: { x: number; y: number; vx: number; vy: number; size: number; color: string; rotation: number }[] = [];
+  private celebrationCoins: { x: number; y: number; targetX: number; targetY: number; progress: number }[] = [];
+
   // Beat visualization
   private beatTimer = 0;
   private currentBPM = 128;
@@ -1358,6 +1375,19 @@ export class Game {
     this.levelElapsedTime = 0;
     this.levelDeathCount = 0;
 
+    // Reset split time tracking
+    this.splitTimes = [];
+    this.lastCheckpointIndex = -1;
+    this.splitDisplay = null;
+    // Load best split times for this level (stored in save data)
+    this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
+
+    // Reset encouragement and celebration
+    this.consecutiveDeaths = 0;
+    this.encouragementMessage = null;
+    this.celebrationActive = false;
+    this.celebrationTimer = 0;
+
     // Initialize BPM for beat visualization
     const config = this.level.getConfig();
     this.currentBPM = config.bpm || 128;
@@ -1699,6 +1729,13 @@ export class Game {
 
   private respawnPlayer(): void {
     this.attempts++;
+    this.consecutiveDeaths++;
+    this.levelDeathCount++;
+
+    // Show encouragement message after repeated deaths
+    if (this.consecutiveDeaths >= 3) {
+      this.showEncouragementMessage();
+    }
 
     // Reset combo on death
     this.comboCount = 0;
@@ -1827,6 +1864,12 @@ export class Game {
         this.shareNotification = null;
       }
     }
+
+    // Update encouragement messages
+    this.updateEncouragementMessage(deltaTime);
+
+    // Update level completion celebration
+    this.updateCelebration(deltaTime);
 
     // Editor mode has its own update
     if (this.state.gameStatus === 'editor') {
@@ -2424,20 +2467,61 @@ export class Game {
     const targetCameraX = this.player.x - 150;
     this.cameraX = Math.max(0, targetCameraX);
 
-    // Update checkpoints in practice mode (every 25% progress)
+    // Update checkpoints and split times (every 25% progress)
+    const progress = this.level.getProgress(this.player.x);
+    const checkpointInterval = 0.25;
+    const currentCheckpointIndex = Math.floor(progress / checkpointInterval);
+
+    // Track split times at each checkpoint (25%, 50%, 75%)
+    if (currentCheckpointIndex > this.lastCheckpointIndex && currentCheckpointIndex < 4) {
+      const splitTime = this.levelElapsedTime;
+      this.splitTimes[currentCheckpointIndex - 1] = splitTime;
+
+      // Compare to best split time
+      const bestSplit = this.bestSplitTimes[currentCheckpointIndex - 1] || 0;
+      if (bestSplit > 0) {
+        const diff = splitTime - bestSplit;
+        this.splitDisplay = {
+          time: splitTime,
+          diff: diff,
+          isAhead: diff < 0,
+          timer: 2000 // Show for 2 seconds
+        };
+      } else {
+        // First time through - just show the time
+        this.splitDisplay = {
+          time: splitTime,
+          diff: 0,
+          isAhead: true,
+          timer: 2000
+        };
+      }
+
+      this.lastCheckpointIndex = currentCheckpointIndex;
+      this.audio.playCheckpoint();
+      this.input.triggerHaptic('medium');
+      this.checkpointFeedbackTimer = 500;
+
+      // Reset consecutive deaths - player is making progress!
+      this.consecutiveDeaths = 0;
+    }
+
+    // Practice mode checkpoint saving
     if (this.isPracticeMode) {
-      const progress = this.level.getProgress(this.player.x);
-      const checkpointInterval = 0.25;
       const currentCheckpoint = Math.floor(progress / checkpointInterval) * checkpointInterval;
 
       if (currentCheckpoint > this.lastCheckpointProgress && this.player.isGrounded) {
         this.checkpointX = this.player.x;
         this.checkpointY = this.player.y;
         this.lastCheckpointProgress = currentCheckpoint;
-        // Audio and visual feedback for checkpoint
-        this.audio.playCheckpoint();
-        this.input.triggerHaptic('medium');
-        this.checkpointFeedbackTimer = 500; // Show visual feedback for 500ms
+      }
+    }
+
+    // Update split display timer
+    if (this.splitDisplay) {
+      this.splitDisplay.timer -= deltaTime;
+      if (this.splitDisplay.timer <= 0) {
+        this.splitDisplay = null;
       }
     }
 
@@ -2554,10 +2638,18 @@ export class Game {
         this.ghostManager.stopRecording();
       }
 
+      // Save best split times
+      if (this.splitTimes.length > 0) {
+        this.save.setBestSplitTimes(this.state.currentLevel, this.splitTimes);
+      }
+
       this.state.gameStatus = 'levelComplete';
       this.audio.fadeOut(300); // Smooth fade out
       this.audio.playLevelComplete();
       this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
+
+      // Start level celebration animation
+      this.startLevelCelebration();
 
       // Victory screen effects
       this.screenEffects.triggerVictoryZoom();
@@ -2806,6 +2898,12 @@ export class Game {
     // Milestone celebrations
     this.renderMilestoneCelebration();
 
+    // Encouragement messages (after repeated deaths)
+    this.renderEncouragementMessage();
+
+    // Level completion celebration effects
+    this.renderCelebration();
+
     // Quick restart progress indicator
     if (this.quickRestartHeld && this.quickRestartTimer > 0) {
       this.renderQuickRestartIndicator();
@@ -3047,6 +3145,54 @@ export class Game {
       this.ctx.font = '12px "Courier New", monospace';
       this.ctx.fillStyle = 'rgba(255, 170, 0, 0.8)';
       this.ctx.fillText(`Best: ${this.formatSpeedrunTime(bestTime)}`, GAME_WIDTH - 20, GAME_HEIGHT - 38);
+    }
+
+    // Split time popup (when passing checkpoints)
+    if (this.splitDisplay) {
+      const fadeProgress = Math.min(1, this.splitDisplay.timer / 500); // Fade out in last 500ms
+      const slideProgress = Math.min(1, (2000 - this.splitDisplay.timer) / 300); // Slide in first 300ms
+
+      this.ctx.save();
+      this.ctx.globalAlpha = fadeProgress;
+
+      const splitX = GAME_WIDTH / 2;
+      const splitY = 150 + (1 - slideProgress) * 20;
+
+      // Background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(splitX - 80, splitY - 25, 160, 50, 10);
+      this.ctx.fill();
+
+      // Border color based on ahead/behind
+      this.ctx.strokeStyle = this.splitDisplay.isAhead ? '#00ff88' : '#ff6666';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Checkpoint label
+      const checkpointNum = this.lastCheckpointIndex;
+      this.ctx.textAlign = 'center';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(`SPLIT ${checkpointNum} (${checkpointNum * 25}%)`, splitX, splitY - 8);
+
+      // Split time and difference
+      this.ctx.font = 'bold 16px "Courier New", monospace';
+      const timeStr = this.formatSpeedrunTime(this.splitDisplay.time);
+
+      if (this.splitDisplay.diff !== 0) {
+        const diffStr = this.splitDisplay.isAhead
+          ? `-${this.formatSpeedrunTime(Math.abs(this.splitDisplay.diff))}`
+          : `+${this.formatSpeedrunTime(this.splitDisplay.diff)}`;
+
+        this.ctx.fillStyle = this.splitDisplay.isAhead ? '#00ff88' : '#ff6666';
+        this.ctx.fillText(`${timeStr} (${diffStr})`, splitX, splitY + 12);
+      } else {
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText(timeStr, splitX, splitY + 12);
+      }
+
+      this.ctx.restore();
     }
 
     // Combo counter and meter (center, when active)
@@ -7347,5 +7493,230 @@ export class Game {
     if (this.save.getTotalPlayTime() >= 3600000) {
       this.tryUnlockAchievement('dedicated');
     }
+  }
+
+  // Encouragement System - motivational messages after repeated deaths
+  private showEncouragementMessage(): void {
+    const messages = [
+      { text: "You've got this!", subtext: "Every master was once a beginner" },
+      { text: "Keep going!", subtext: "Practice makes perfect" },
+      { text: "Don't give up!", subtext: "You're learning the patterns" },
+      { text: "Almost there!", subtext: "Try timing your jumps to the beat" },
+      { text: "Stay focused!", subtext: "Watch the platform colors for clues" },
+      { text: "You can do it!", subtext: "Each death teaches something new" },
+      { text: "Take a breath", subtext: "Sometimes a pause helps" },
+      { text: "Great effort!", subtext: "The checkpoint system can help - try Practice mode" },
+      { text: "Persistence pays off!", subtext: "Use the death heatmap to see trouble spots" },
+      { text: "Keep trying!", subtext: "Double-tap for air jumps!" },
+    ];
+
+    // Add specific tips based on death count
+    const progress = this.level.getProgress(this.player.x);
+    let specificTip = '';
+
+    if (progress < 0.25) {
+      specificTip = "Tip: The start is always the hardest!";
+    } else if (progress < 0.5) {
+      specificTip = "Tip: You're getting further! Keep it up!";
+    } else if (progress < 0.75) {
+      specificTip = "Tip: Over halfway! The finish is in sight!";
+    } else {
+      specificTip = "Tip: So close! You've got the skills!";
+    }
+
+    // Pick a random message
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+
+    this.encouragementMessage = {
+      text: msg.text,
+      subtext: this.consecutiveDeaths >= 5 ? specificTip : msg.subtext,
+      timer: Game.ENCOURAGEMENT_DURATION
+    };
+
+    // Reset death counter after showing message
+    if (this.consecutiveDeaths >= 10) {
+      this.consecutiveDeaths = 3; // Keep showing messages but less frequently
+    }
+  }
+
+  private updateEncouragementMessage(deltaTime: number): void {
+    if (this.encouragementMessage) {
+      this.encouragementMessage.timer -= deltaTime;
+      if (this.encouragementMessage.timer <= 0) {
+        this.encouragementMessage = null;
+      }
+    }
+  }
+
+  private renderEncouragementMessage(): void {
+    if (!this.encouragementMessage) return;
+
+    const fadeIn = Math.min(1, (Game.ENCOURAGEMENT_DURATION - this.encouragementMessage.timer) / 300);
+    const fadeOut = Math.min(1, this.encouragementMessage.timer / 500);
+    const alpha = Math.min(fadeIn, fadeOut);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2 - 50;
+
+    // Background glow
+    const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 150);
+    gradient.addColorStop(0, 'rgba(0, 200, 150, 0.3)');
+    gradient.addColorStop(1, 'rgba(0, 200, 150, 0)');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(centerX - 150, centerY - 60, 300, 120);
+
+    // Background box
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.strokeStyle = '#00ffaa';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 140, centerY - 45, 280, 90, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Icon
+    this.ctx.font = '32px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText('💪', centerX, centerY - 10);
+
+    // Main message
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowColor = '#00ffaa';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(this.encouragementMessage.text, centerX, centerY + 18);
+    this.ctx.shadowBlur = 0;
+
+    // Sub message
+    this.ctx.font = '13px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText(this.encouragementMessage.subtext, centerX, centerY + 38);
+
+    this.ctx.restore();
+  }
+
+  // Level Completion Celebration
+  private startLevelCelebration(): void {
+    this.celebrationActive = true;
+    this.celebrationTimer = 0;
+    this.celebrationStars = [];
+    this.celebrationCoins = [];
+
+    // Spawn celebration stars
+    for (let i = 0; i < 30; i++) {
+      this.celebrationStars.push({
+        x: Math.random() * GAME_WIDTH,
+        y: GAME_HEIGHT + 20,
+        vx: (Math.random() - 0.5) * 200,
+        vy: -300 - Math.random() * 400,
+        size: 10 + Math.random() * 20,
+        color: ['#ffcc00', '#ff00ff', '#00ffaa', '#ff6600', '#00ffff'][Math.floor(Math.random() * 5)],
+        rotation: Math.random() * 360
+      });
+    }
+
+    // Create coin collection animation
+    const coinsCollected = this.level.coinsCollected;
+    for (let i = 0; i < Math.min(coinsCollected, 15); i++) {
+      this.celebrationCoins.push({
+        x: 50 + Math.random() * (GAME_WIDTH - 100),
+        y: 100 + Math.random() * (GAME_HEIGHT - 200),
+        targetX: GAME_WIDTH - 80,
+        targetY: 30,
+        progress: -i * 0.1 // Stagger the animations
+      });
+    }
+  }
+
+  private updateCelebration(deltaTime: number): void {
+    if (!this.celebrationActive) return;
+
+    this.celebrationTimer += deltaTime;
+
+    // Update stars
+    for (const star of this.celebrationStars) {
+      star.x += star.vx * (deltaTime / 1000);
+      star.y += star.vy * (deltaTime / 1000);
+      star.vy += 500 * (deltaTime / 1000); // Gravity
+      star.rotation += 180 * (deltaTime / 1000);
+    }
+
+    // Update coin animations
+    for (const coin of this.celebrationCoins) {
+      if (coin.progress < 0) {
+        coin.progress += deltaTime / 1000;
+      } else if (coin.progress < 1) {
+        coin.progress += deltaTime / 800; // Take ~800ms to fly to corner
+      }
+    }
+
+    // End celebration after 3 seconds
+    if (this.celebrationTimer > 3000) {
+      this.celebrationActive = false;
+    }
+  }
+
+  private renderCelebration(): void {
+    if (!this.celebrationActive) return;
+
+    this.ctx.save();
+
+    // Render stars
+    for (const star of this.celebrationStars) {
+      if (star.y < GAME_HEIGHT + 50) {
+        this.ctx.save();
+        this.ctx.translate(star.x, star.y);
+        this.ctx.rotate(star.rotation * Math.PI / 180);
+        this.ctx.fillStyle = star.color;
+        this.ctx.shadowColor = star.color;
+        this.ctx.shadowBlur = 10;
+
+        // Draw star shape
+        this.ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = (i * 144 - 90) * Math.PI / 180;
+          const r = star.size;
+          if (i === 0) {
+            this.ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          } else {
+            this.ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          }
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+    }
+
+    // Render flying coins
+    for (const coin of this.celebrationCoins) {
+      if (coin.progress >= 0 && coin.progress <= 1) {
+        // Ease out curve
+        const t = 1 - Math.pow(1 - coin.progress, 3);
+        const x = coin.x + (coin.targetX - coin.x) * t;
+        const y = coin.y + (coin.targetY - coin.y) * t - Math.sin(t * Math.PI) * 100;
+
+        this.ctx.fillStyle = '#ffd700';
+        this.ctx.shadowColor = '#ffd700';
+        this.ctx.shadowBlur = 15;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 12 * (1 - t * 0.5), 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Inner shine
+        this.ctx.fillStyle = '#fff8dc';
+        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.arc(x - 3, y - 3, 4 * (1 - t * 0.5), 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.restore();
   }
 }

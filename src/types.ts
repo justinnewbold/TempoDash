@@ -169,6 +169,7 @@ export interface SaveData {
   levelStars: Record<number, number>; // levelId -> stars earned (1-3)
   levelDeaths: Record<number, number>; // levelId -> best run death count
   bestTimes: Record<number, number>; // levelId -> best completion time (ms)
+  splitTimes?: Record<number, number[]>; // levelId -> best split times at checkpoints
   ghostRuns: Record<number, GhostFrame[]>; // levelId -> ghost data
   totalDeaths: number;
   totalCoinsCollected: number;

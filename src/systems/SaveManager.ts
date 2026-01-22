@@ -543,6 +543,29 @@ export class SaveManager {
     return this.data.bestTimes[levelId];
   }
 
+  // --- SPLIT TIMES ---
+
+  getBestSplitTimes(levelId: number): number[] {
+    return this.data.splitTimes?.[levelId] || [];
+  }
+
+  setBestSplitTimes(levelId: number, splits: number[]): void {
+    if (!this.data.splitTimes) {
+      this.data.splitTimes = {};
+    }
+    // Only save if these are better splits (or first time)
+    const existing = this.data.splitTimes[levelId] || [];
+    const shouldUpdate = splits.some((time, i) => !existing[i] || time < existing[i]);
+
+    if (shouldUpdate || existing.length === 0) {
+      // Save best split for each checkpoint
+      this.data.splitTimes[levelId] = splits.map((time, i) =>
+        existing[i] ? Math.min(time, existing[i]) : time
+      );
+      this.save();
+    }
+  }
+
   // --- LEVEL DEATHS (for star calculation) ---
 
   setLevelDeaths(levelId: number, deaths: number): boolean {
