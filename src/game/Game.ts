@@ -200,6 +200,22 @@ export class Game {
   private pendingImportLevel: import('../types').CustomLevel | null = null;
   private showingTemplateSelect = false;
 
+  // Platform Encyclopedia
+  private encyclopediaScrollOffset = 0;
+  private encyclopediaAnimTime = 0;
+
+  // Milestone Celebration System
+  private milestoneQueue: { type: string; value: number; timer: number }[] = [];
+  private currentMilestone: { type: string; value: number; timer: number } | null = null;
+  private milestoneDuration = 1500; // 1.5 seconds display
+  private lastComboMilestone = 0;
+  private nearMissStreak = 0;
+  private perfectLandingCount = 0;
+
+  // Death Heatmap
+  private showDeathHeatmap = false;
+  private heatmapLevelId = 1;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -466,6 +482,11 @@ export class Game {
         this.achievementsScrollOffset = Math.max(0, Math.min(maxScroll, this.achievementsScrollOffset + delta));
         break;
       }
+      case 'platformGuide': {
+        const maxScroll = 600; // Platform guide content is longer
+        this.encyclopediaScrollOffset = Math.max(0, Math.min(maxScroll, this.encyclopediaScrollOffset + delta));
+        break;
+      }
     }
   }
 
@@ -508,6 +529,9 @@ export class Game {
         break;
       case 'challenges':
         this.handleChallengesClick(x, y);
+        break;
+      case 'platformGuide':
+        this.handlePlatformGuideClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -560,6 +584,9 @@ export class Game {
         break;
       case 'challenges':
         this.handleChallengesClick(x, y);
+        break;
+      case 'platformGuide':
+        this.handlePlatformGuideClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -751,6 +778,24 @@ export class Game {
       }
     }
 
+    // Handle death heatmap panel clicks
+    if (this.showDeathHeatmap) {
+      const panelX = 50;
+      const panelY = 80;
+      const panelW = GAME_WIDTH - 100;
+      const panelH = 380;
+
+      // Check if click is inside the panel
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        // Just consume the click if inside the panel
+        return;
+      } else {
+        // Click outside panel - close it
+        this.showDeathHeatmap = false;
+        return;
+      }
+    }
+
     // Back button
     if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
       this.audio.playSelect();
@@ -766,6 +811,7 @@ export class Game {
     if (x >= modBtnX && x <= modBtnX + modBtnW && y >= modBtnY && y <= modBtnY + modBtnH) {
       this.showModifierPanel = !this.showModifierPanel;
       this.showSectionPractice = false; // Close section practice if open
+      this.showDeathHeatmap = false; // Close heatmap if open
       this.audio.playSelect();
       return;
     }
@@ -780,9 +826,27 @@ export class Game {
       if (x >= secBtnX && x <= secBtnX + secBtnW && y >= secBtnY && y <= secBtnY + secBtnH) {
         this.showSectionPractice = !this.showSectionPractice;
         this.showModifierPanel = false; // Close modifiers if open
+        this.showDeathHeatmap = false; // Close heatmap if open
         this.selectedSection = 0; // Reset section selection
         this.audio.playSelect();
         return;
+      }
+
+      // Death Heatmap button (only show if there are deaths recorded)
+      const deathData = this.statistics.getDeathHeatmap(levelId);
+      if (deathData.length > 0) {
+        const heatBtnX = GAME_WIDTH / 2 - 80;
+        const heatBtnY = secBtnY + 35;
+        const heatBtnW = 160;
+        const heatBtnH = 28;
+        if (x >= heatBtnX && x <= heatBtnX + heatBtnW && y >= heatBtnY && y <= heatBtnY + heatBtnH) {
+          this.showDeathHeatmap = !this.showDeathHeatmap;
+          this.showSectionPractice = false; // Close section practice if open
+          this.showModifierPanel = false; // Close modifiers if open
+          this.heatmapLevelId = levelId;
+          this.audio.playSelect();
+          return;
+        }
       }
     }
 
@@ -987,6 +1051,13 @@ export class Game {
         this.audio.playSelect();
       }
     }
+
+    // Platform Guide button (left column)
+    if (x >= leftColX - 45 && x <= leftColX + 45 && y >= 570 && y <= 600) {
+      this.audio.playSelect();
+      this.encyclopediaScrollOffset = 0;
+      this.state.gameStatus = 'platformGuide';
+    }
   }
 
   private handleSkinsClick(x: number, y: number): void {
@@ -1115,6 +1186,13 @@ export class Game {
         if (e.code === 'Escape') {
           this.audio.playSelect();
           this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'platformGuide':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'settings';
         }
         break;
 
@@ -1255,6 +1333,10 @@ export class Game {
     this.nearMissTimer = 0;
     this.nearMissCount = 0;
     this.comboMeterPulse = 0;
+    // Reset milestone tracking
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
     this.audio.start();
   }
 
@@ -1288,6 +1370,13 @@ export class Game {
     this.timeRewind.reset();
     this.isWaitingForRewindInput = false;
     this.rewindInputWindow = 0;
+
+    // Reset milestone tracking for new level
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
+    this.milestoneQueue = [];
+    this.currentMilestone = null;
 
     // Load beat hazards for this level (example hazards for demo)
     this.loadBeatHazardsForLevel(levelId);
@@ -1690,6 +1779,9 @@ export class Game {
     // Update achievement notifications
     this.updateAchievementNotifications(deltaTime);
 
+    // Update milestone celebrations
+    this.updateMilestones(deltaTime);
+
     // Track play time
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless' || this.state.gameStatus === 'challengePlaying') {
       this.lastPlayTimeUpdate += deltaTime;
@@ -2068,12 +2160,23 @@ export class Game {
         if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
           // Near miss! Add to combo and Flow Meter
           this.nearMissCount++;
+          this.nearMissStreak++;
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
           this.comboMeterPulse = 1;
+
+          // Trigger milestone celebration for near-miss streaks
+          if (this.nearMissStreak === 3) {
+            this.triggerMilestone('nearmiss', 3);
+          } else if (this.nearMissStreak === 5) {
+            this.triggerMilestone('nearmiss', 5);
+          } else if (this.nearMissStreak === 10) {
+            this.triggerMilestone('nearmiss', 10);
+            this.tryUnlockAchievement('near_miss_pro');
+          }
 
           // Spawn near-miss particle effect
           this.particles.spawnFloatingText(
@@ -2130,26 +2233,31 @@ export class Game {
         this.tryUnlockAchievement('combo_5');
         this.screenEffects.triggerZoomPulse(1.05, 150);
         this.flowMeter.onComboMilestone(5);
+        this.triggerMilestone('combo', 5);
       }
       if (prevCombo < 10 && this.comboCount >= 10) {
         this.tryUnlockAchievement('combo_10');
         this.screenEffects.triggerZoomPulse(1.08, 150);
         this.flowMeter.onComboMilestone(10);
         this.screenEffects.triggerChromaticAberration(4);
+        this.triggerMilestone('combo', 10);
       }
       if (prevCombo < 15 && this.comboCount >= 15) {
         this.screenEffects.triggerZoomPulse(1.1, 200);
         this.screenEffects.triggerBeatDrop(300);
+        this.triggerMilestone('combo', 15);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
         this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
+        this.triggerMilestone('combo', 20);
       }
       if (prevCombo < 25 && this.comboCount >= 25) {
         this.screenEffects.triggerZoomPulse(1.15, 300);
         this.screenEffects.triggerBeatDrop(500);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 3);
+        this.triggerMilestone('combo', 25);
       }
 
       // Update longest combo
@@ -2194,6 +2302,16 @@ export class Game {
 
       // Perfect landing for Flow Meter
       this.flowMeter.onPerfectLanding();
+
+      // Track perfect landings for milestones
+      this.perfectLandingCount++;
+      if (this.perfectLandingCount === 10) {
+        this.triggerMilestone('landing', 10);
+      } else if (this.perfectLandingCount === 25) {
+        this.triggerMilestone('landing', 25);
+      } else if (this.perfectLandingCount === 50) {
+        this.triggerMilestone('landing', 50);
+      }
 
       // Scale dust intensity based on fall velocity
       const velocityScale = Math.min(Math.abs(prevVelocityY) / 800, 2);
@@ -2664,6 +2782,9 @@ export class Game {
       case 'challenges':
         this.renderChallenges();
         break;
+      case 'platformGuide':
+        this.renderPlatformGuide();
+        break;
       case 'paused':
         this.renderPaused();
         break;
@@ -2677,6 +2798,9 @@ export class Game {
 
     // Achievement notification (always on top)
     this.renderAchievementNotification();
+
+    // Milestone celebrations
+    this.renderMilestoneCelebration();
 
     // Quick restart progress indicator
     if (this.quickRestartHeld && this.quickRestartTimer > 0) {
@@ -3752,6 +3876,27 @@ export class Game {
       this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffffff';
       this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, secBtnY + 18);
+
+      // Death Heatmap button (only show if there are deaths recorded)
+      const deathData = this.statistics.getDeathHeatmap(levelId);
+      if (deathData.length > 0) {
+        const heatBtnX = GAME_WIDTH / 2 - 80;
+        const heatBtnY = secBtnY + 35;
+        const heatBtnW = 160;
+        const heatBtnH = 28;
+
+        this.ctx.fillStyle = this.showDeathHeatmap ? '#ff4444' : 'rgba(255, 68, 68, 0.6)';
+        this.ctx.strokeStyle = '#ff4444';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(heatBtnX, heatBtnY, heatBtnW, heatBtnH, 6);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(`DEATH HEATMAP (${deathData.length})`, GAME_WIDTH / 2, heatBtnY + 18);
+      }
     }
 
     // Render modifier panel if open
@@ -3762,6 +3907,11 @@ export class Game {
     // Render section practice panel if open
     if (this.showSectionPractice) {
       this.renderSectionPracticePanel();
+    }
+
+    // Render death heatmap panel if open
+    if (this.showDeathHeatmap) {
+      this.renderDeathHeatmapPanel();
     }
 
     // Level features hint
@@ -3961,6 +4111,223 @@ export class Game {
     this.ctx.fillText('Click section to select | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 10);
   }
 
+  private renderDeathHeatmapPanel(): void {
+    const panelX = 50;
+    const panelY = 80;
+    const panelW = GAME_WIDTH - 100;
+    const panelH = 380;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#ff4444';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff4444';
+    this.ctx.shadowColor = '#ff4444';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('💀 DEATH HEATMAP', GAME_WIDTH / 2, panelY + 30);
+    this.ctx.shadowBlur = 0;
+
+    // Get death data
+    const deathData = this.statistics.getDeathHeatmap(this.heatmapLevelId);
+    const levelStats = this.statistics.getLevelStats(this.heatmapLevelId);
+
+    // Stats summary
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(
+      `Level ${this.heatmapLevelId} - ${deathData.length} deaths recorded${levelStats ? ` (${levelStats.attempts} attempts)` : ''}`,
+      GAME_WIDTH / 2,
+      panelY + 55
+    );
+
+    // Heatmap visualization area
+    const mapX = panelX + 20;
+    const mapY = panelY + 75;
+    const mapW = panelW - 40;
+    const mapH = 200;
+
+    // Background for the map
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.roundRect(mapX, mapY, mapW, mapH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Calculate level bounds from death locations
+    if (deathData.length > 0) {
+      const xCoords = deathData.map(d => d.x);
+      const yCoords = deathData.map(d => d.y);
+      const minX = Math.min(...xCoords);
+      const maxX = Math.max(...xCoords);
+      const minY = Math.min(...yCoords);
+      const maxY = Math.max(...yCoords);
+
+      // Add padding
+      const padding = 100;
+      const levelMinX = Math.max(0, minX - padding);
+      const levelMaxX = maxX + padding;
+      const levelMinY = Math.max(0, minY - padding);
+      const levelMaxY = Math.min(GAME_HEIGHT, maxY + padding);
+
+      // Scale factors
+      const scaleX = mapW / (levelMaxX - levelMinX || 1);
+      const scaleY = mapH / (levelMaxY - levelMinY || 1);
+      const scale = Math.min(scaleX, scaleY);
+
+      // Center offset
+      const offsetX = mapX + (mapW - (levelMaxX - levelMinX) * scale) / 2;
+      const offsetY = mapY + (mapH - (levelMaxY - levelMinY) * scale) / 2;
+
+      // Draw heatmap spots with varying intensity
+      // First, count deaths per grid cell
+      const gridSize = 50;
+      const heatGrid: Map<string, number> = new Map();
+      for (const death of deathData) {
+        const gridX = Math.floor(death.x / gridSize);
+        const gridY = Math.floor(death.y / gridSize);
+        const key = `${gridX},${gridY}`;
+        heatGrid.set(key, (heatGrid.get(key) || 0) + 1);
+      }
+
+      // Find max intensity for normalization
+      const maxIntensity = Math.max(...heatGrid.values());
+
+      // Draw heat spots
+      for (const [key, count] of heatGrid) {
+        const [gx, gy] = key.split(',').map(Number);
+        const worldX = gx * gridSize + gridSize / 2;
+        const worldY = gy * gridSize + gridSize / 2;
+
+        const screenX = offsetX + (worldX - levelMinX) * scale;
+        const screenY = offsetY + (worldY - levelMinY) * scale;
+
+        // Skip if off the map area
+        if (screenX < mapX || screenX > mapX + mapW || screenY < mapY || screenY > mapY + mapH) continue;
+
+        // Intensity gradient (red to yellow for hotspots)
+        const intensity = count / maxIntensity;
+        const radius = 15 + intensity * 20;
+
+        // Gradient for heat spot
+        const gradient = this.ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius);
+        if (intensity > 0.7) {
+          // Hotspot - bright yellow/white center
+          gradient.addColorStop(0, `rgba(255, 255, 100, ${0.8 * intensity})`);
+          gradient.addColorStop(0.3, `rgba(255, 200, 50, ${0.6 * intensity})`);
+          gradient.addColorStop(0.7, `rgba(255, 100, 50, ${0.3 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        } else if (intensity > 0.4) {
+          // Medium - orange
+          gradient.addColorStop(0, `rgba(255, 150, 50, ${0.6 * intensity})`);
+          gradient.addColorStop(0.5, `rgba(255, 80, 30, ${0.4 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        } else {
+          // Low - red
+          gradient.addColorStop(0, `rgba(255, 50, 50, ${0.4 + 0.3 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        }
+
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Add death count for high intensity spots
+        if (count >= 3) {
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
+          this.ctx.fillText(`${count}`, screenX, screenY + 4);
+        }
+      }
+
+      // Draw individual death markers for clarity
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      for (const death of deathData) {
+        const screenX = offsetX + (death.x - levelMinX) * scale;
+        const screenY = offsetY + (death.y - levelMinY) * scale;
+
+        if (screenX >= mapX && screenX <= mapX + mapW && screenY >= mapY && screenY <= mapY + mapH) {
+          this.ctx.beginPath();
+          this.ctx.arc(screenX, screenY, 2, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
+
+      // Legend
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+
+      // Legend gradient bar
+      const legendX = mapX + 10;
+      const legendY = mapY + mapH - 25;
+      const legendW = 100;
+      const legendH = 10;
+
+      const legendGrad = this.ctx.createLinearGradient(legendX, legendY, legendX + legendW, legendY);
+      legendGrad.addColorStop(0, 'rgba(255, 50, 50, 0.5)');
+      legendGrad.addColorStop(0.5, 'rgba(255, 150, 50, 0.7)');
+      legendGrad.addColorStop(1, 'rgba(255, 255, 100, 0.9)');
+      this.ctx.fillStyle = legendGrad;
+      this.ctx.fillRect(legendX, legendY, legendW, legendH);
+
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('Low', legendX, legendY - 3);
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText('High', legendX + legendW, legendY - 3);
+    } else {
+      // No death data
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.textAlign = 'center';
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillText('No death data recorded yet', GAME_WIDTH / 2, mapY + mapH / 2);
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillText('Play the level to start tracking deaths', GAME_WIDTH / 2, mapY + mapH / 2 + 25);
+    }
+
+    // Tips section
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText('💡 Tips for Improvement', GAME_WIDTH / 2, panelY + panelH - 80);
+
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+
+    if (deathData.length >= 5) {
+      // Analyze death patterns and give tips
+      const yCoords = deathData.map(d => d.y);
+      const highDeaths = yCoords.filter(y => y < GAME_HEIGHT / 2).length;
+      const lowDeaths = yCoords.filter(y => y >= GAME_HEIGHT / 2).length;
+
+      let tip = '';
+      if (highDeaths > lowDeaths * 1.5) {
+        tip = 'Many deaths at high altitudes - focus on precise jumps and timing';
+      } else if (lowDeaths > highDeaths * 1.5) {
+        tip = 'Many deaths near ground - watch for spikes and lava hazards';
+      } else {
+        tip = 'Deaths spread evenly - practice the whole level in sections';
+      }
+      this.ctx.fillText(tip, GAME_WIDTH / 2, panelY + panelH - 55);
+    } else {
+      this.ctx.fillText('Play more to get personalized tips!', GAME_WIDTH / 2, panelY + panelH - 55);
+    }
+
+    // Close hint
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click outside to close', GAME_WIDTH / 2, panelY + panelH - 15);
+  }
+
   private getCheckpointsForLevel(levelId: number): { x: number; y: number; name?: string }[] {
     // Get the level config checkpoints
     const levelConfigs: Record<number, { checkpoints?: { x: number; y: number; name?: string }[] }> = {
@@ -4122,6 +4489,14 @@ export class Game {
     // Reset button
     this.ctx.fillStyle = '#ff4444';
     this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
+
+    // Platform Guide button (help section)
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('HELP', leftColX, 555);
+
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.renderSettingsButton('Platform Guide', leftColX, 585, '#00ffff');
 
     this.ctx.restore();
   }
@@ -4568,6 +4943,436 @@ export class Game {
         this.startChallenge(challenge);
         return;
       }
+    }
+  }
+
+  // Platform Encyclopedia - comprehensive guide to all platform types
+  private renderPlatformGuide(): void {
+    this.renderOverlay();
+    this.ctx.save();
+
+    // Update animation time
+    this.encyclopediaAnimTime += 16;
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 32px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLATFORM ENCYCLOPEDIA', GAME_WIDTH / 2, 50);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 35);
+
+    // Scrollable content area
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, 70, GAME_WIDTH, GAME_HEIGHT - 90);
+    this.ctx.clip();
+
+    const scrollY = -this.encyclopediaScrollOffset;
+
+    // Platform data with comprehensive info
+    const platforms = [
+      { type: 'solid', name: 'SOLID', color: '#5a6a7a', icon: '■',
+        desc: 'Standard safe platforms - the foundation of every level.',
+        tip: 'Always safe to land on. Use as reference points.' },
+      { type: 'bounce', name: 'BOUNCE', color: '#ffc107', icon: '▲',
+        desc: 'Spring platforms that launch you 1.3x higher than normal jump.',
+        tip: 'Time your landing for maximum height. Great for reaching coins!' },
+      { type: 'ice', name: 'ICE', color: '#88ddff', icon: '❄',
+        desc: 'Slippery platforms with reduced friction. Hard to stop!',
+        tip: 'Jump early to avoid sliding off edges. Momentum is key.' },
+      { type: 'lava', name: 'LAVA', color: '#ff4400', icon: '☠',
+        desc: 'DEADLY! Instant death on contact. Avoid at all costs.',
+        tip: 'Watch for bubbling animation. Shield power-up protects you once.' },
+      { type: 'spike', name: 'SPIKE', color: '#ffffff', icon: '△',
+        desc: 'DEADLY! Sharp triangular obstacles that kill instantly.',
+        tip: 'Jump over or dash through. White color makes them visible.' },
+      { type: 'crumble', name: 'CRUMBLE', color: '#a0522d', icon: '▤',
+        desc: 'Falls apart shortly after you land on it.',
+        tip: 'Jump quickly! You have about 0.5 seconds before it crumbles.' },
+      { type: 'moving', name: 'MOVING', color: '#4fc3f7', icon: '↔',
+        desc: 'Platforms that move in patterns (horizontal, vertical, circular).',
+        tip: 'Study the pattern first. Land in the center for safety.' },
+      { type: 'phase', name: 'PHASE', color: '#e040fb', icon: '◌',
+        desc: 'Appears and disappears on a regular cycle.',
+        tip: 'Watch the timing! Jump when the platform is solidifying.' },
+      { type: 'conveyor', name: 'CONVEYOR', color: '#38a169', icon: '»',
+        desc: 'Moves you horizontally while standing. Check arrow direction!',
+        tip: 'Can help or hinder - use momentum for longer jumps.' },
+      { type: 'gravity', name: 'GRAVITY', color: '#d53f8c', icon: '⇅',
+        desc: 'Flips your gravity on contact! Up becomes down.',
+        tip: 'Disorienting at first. Jump immediately after flip for control.' },
+      { type: 'sticky', name: 'STICKY', color: '#ecc94b', icon: '●',
+        desc: 'Slows your movement significantly. Jump to escape!',
+        tip: 'Press jump repeatedly to break free faster.' },
+      { type: 'glass', name: 'GLASS', color: '#e2e8f0', icon: '□',
+        desc: 'Transparent platform that breaks after 2 landings.',
+        tip: 'First landing cracks it. Use sparingly or plan your route.' },
+      { type: 'slowmo', name: 'SLOW-MO ZONE', color: '#00c8ff', icon: '⏱',
+        desc: 'Time slows down while inside this zone.',
+        tip: 'Great for precise jumps. Score multiplier unaffected!' },
+      { type: 'wall', name: 'WALL', color: '#718096', icon: '║',
+        desc: 'Vertical surface for wall-jumping. Slide down slowly.',
+        tip: 'Press jump while touching to wall-jump away.' },
+      { type: 'secret', name: 'SECRET', color: '#ffd700', icon: '?',
+        desc: 'Hidden platform! Only appears when you get close.',
+        tip: 'Look for faint shimmers. Often lead to bonus coins!' },
+    ];
+
+    let y = 90 + scrollY;
+    const cardHeight = 85;
+    const cardWidth = GAME_WIDTH - 40;
+    const startX = 20;
+
+    for (let i = 0; i < platforms.length; i++) {
+      const p = platforms[i];
+      const cardY = y + i * (cardHeight + 10);
+
+      // Skip if off screen
+      if (cardY + cardHeight < 70 || cardY > GAME_HEIGHT) continue;
+
+      // Card background
+      this.ctx.fillStyle = 'rgba(20, 20, 40, 0.9)';
+      this.ctx.strokeStyle = p.color;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startX, cardY, cardWidth, cardHeight, 10);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Live animated platform preview (left side)
+      const previewX = startX + 15;
+      const previewY = cardY + 25;
+      const previewW = 70;
+      const previewH = 35;
+
+      this.renderPlatformPreview(p.type, previewX, previewY, previewW, previewH, this.encyclopediaAnimTime);
+
+      // Platform name and icon
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = p.color;
+      this.ctx.shadowColor = p.color;
+      this.ctx.shadowBlur = 8;
+      this.ctx.fillText(`${p.icon} ${p.name}`, startX + 100, cardY + 25);
+      this.ctx.shadowBlur = 0;
+
+      // Description
+      this.ctx.font = '13px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(p.desc, startX + 100, cardY + 45);
+
+      // Tip
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ff88';
+      this.ctx.fillText(`💡 ${p.tip}`, startX + 100, cardY + 68);
+
+      // Danger indicator for lethal platforms
+      if (p.type === 'lava' || p.type === 'spike') {
+        this.ctx.fillStyle = '#ff4444';
+        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText('⚠ DEADLY', startX + cardWidth - 15, cardY + 25);
+      }
+    }
+
+    this.ctx.restore();
+
+    // Scroll indicator
+    const totalHeight = platforms.length * (cardHeight + 10);
+    const visibleHeight = GAME_HEIGHT - 90;
+    if (totalHeight > visibleHeight) {
+      const scrollbarHeight = (visibleHeight / totalHeight) * visibleHeight;
+      const scrollbarY = 70 + (this.encyclopediaScrollOffset / (totalHeight - visibleHeight)) * (visibleHeight - scrollbarHeight);
+
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      this.ctx.fillRect(GAME_WIDTH - 8, 70, 4, visibleHeight);
+      this.ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+      this.ctx.fillRect(GAME_WIDTH - 8, scrollbarY, 4, scrollbarHeight);
+    }
+
+    // Scroll hint
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Scroll or swipe to see all platforms', GAME_WIDTH / 2, GAME_HEIGHT - 10);
+
+    this.ctx.restore();
+  }
+
+  // Render animated platform preview for encyclopedia
+  private renderPlatformPreview(type: string, x: number, y: number, w: number, h: number, time: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    switch (type) {
+      case 'solid':
+        const solidGrad = ctx.createLinearGradient(x, y, x, y + h);
+        solidGrad.addColorStop(0, '#5a6a7a');
+        solidGrad.addColorStop(1, '#3a4a5a');
+        ctx.fillStyle = solidGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(x, y, w, 3);
+        break;
+
+      case 'bounce':
+        const bounceGrad = ctx.createLinearGradient(x, y, x, y + h);
+        bounceGrad.addColorStop(0, '#ffc107');
+        bounceGrad.addColorStop(1, '#ff9800');
+        ctx.fillStyle = bounceGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated bounce lines
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        const bounceOffset = Math.sin(time * 0.005) * 3;
+        for (let i = 0; i < 3; i++) {
+          const lx = x + (w / 4) * (i + 1);
+          ctx.beginPath();
+          ctx.moveTo(lx - 4, y + h / 2 + bounceOffset);
+          ctx.lineTo(lx, y + 4 + bounceOffset);
+          ctx.lineTo(lx + 4, y + h / 2 + bounceOffset);
+          ctx.stroke();
+        }
+        break;
+
+      case 'ice':
+        const iceGrad = ctx.createLinearGradient(x, y, x, y + h);
+        iceGrad.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
+        iceGrad.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
+        ctx.fillStyle = iceGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.fillRect(x + 5, y + 3, w * 0.4, 4);
+        break;
+
+      case 'lava':
+        const lavaGrad = ctx.createLinearGradient(x, y, x, y + h);
+        lavaGrad.addColorStop(0, '#ff4444');
+        lavaGrad.addColorStop(0.5, '#ff6600');
+        lavaGrad.addColorStop(1, '#ff2200');
+        ctx.fillStyle = lavaGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated bubbles
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
+        for (let i = 0; i < 3; i++) {
+          const bx = x + (w / 4) * (i + 1);
+          const by = y + 8 + Math.sin(time * 0.003 + i) * 4;
+          ctx.beginPath();
+          ctx.arc(bx, by, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'spike':
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 8;
+        const spikeCount = 4;
+        const spikeW = w / spikeCount;
+        for (let i = 0; i < spikeCount; i++) {
+          ctx.beginPath();
+          ctx.moveTo(x + i * spikeW, y + h);
+          ctx.lineTo(x + i * spikeW + spikeW / 2, y);
+          ctx.lineTo(x + (i + 1) * spikeW, y + h);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        break;
+
+      case 'crumble':
+        const crumbleGrad = ctx.createLinearGradient(x, y, x, y + h);
+        crumbleGrad.addColorStop(0, '#a0522d');
+        crumbleGrad.addColorStop(1, '#8b4513');
+        ctx.fillStyle = crumbleGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.3, y);
+        ctx.lineTo(x + w * 0.4, y + h);
+        ctx.moveTo(x + w * 0.7, y);
+        ctx.lineTo(x + w * 0.6, y + h);
+        ctx.stroke();
+        break;
+
+      case 'moving':
+        const moveOffset = Math.sin(time * 0.003) * 10;
+        const moveGrad = ctx.createLinearGradient(x + moveOffset, y, x + moveOffset, y + h);
+        moveGrad.addColorStop(0, '#4fc3f7');
+        moveGrad.addColorStop(1, '#0288d1');
+        ctx.fillStyle = moveGrad;
+        ctx.fillRect(x + moveOffset, y, w - 20, h);
+        // Movement arrows
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(x + moveOffset + 8, y + h / 2);
+        ctx.lineTo(x + moveOffset + 15, y + h / 2 - 4);
+        ctx.lineTo(x + moveOffset + 15, y + h / 2 + 4);
+        ctx.fill();
+        break;
+
+      case 'phase':
+        const phaseAlpha = 0.3 + Math.abs(Math.sin(time * 0.003)) * 0.7;
+        ctx.globalAlpha = phaseAlpha;
+        const phaseGrad = ctx.createLinearGradient(x, y, x + w, y);
+        phaseGrad.addColorStop(0, '#9c27b0');
+        phaseGrad.addColorStop(0.5, '#e040fb');
+        phaseGrad.addColorStop(1, '#9c27b0');
+        ctx.fillStyle = phaseGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 1;
+        break;
+
+      case 'conveyor':
+        const convGrad = ctx.createLinearGradient(x, y, x, y + h);
+        convGrad.addColorStop(0, '#38a169');
+        convGrad.addColorStop(1, '#276749');
+        ctx.fillStyle = convGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated lines
+        ctx.strokeStyle = '#2d3748';
+        ctx.lineWidth = 2;
+        const lineOffset = (time * 0.05) % 15;
+        for (let lx = -15 + lineOffset; lx < w + 15; lx += 15) {
+          ctx.beginPath();
+          ctx.moveTo(x + lx, y);
+          ctx.lineTo(x + lx + 8, y + h);
+          ctx.stroke();
+        }
+        break;
+
+      case 'gravity':
+        const gravGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+        gravGrad.addColorStop(0, '#d53f8c');
+        gravGrad.addColorStop(0.5, '#805ad5');
+        gravGrad.addColorStop(1, '#d53f8c');
+        ctx.fillStyle = gravGrad;
+        ctx.fillRect(x, y, w, h);
+        // Floating particles
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        for (let i = 0; i < 3; i++) {
+          const px = x + (w / 4) * (i + 1);
+          const py = y + h / 2 + Math.sin(time * 0.004 + i) * 8;
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'sticky':
+        const stickyGrad = ctx.createLinearGradient(x, y, x, y + h);
+        stickyGrad.addColorStop(0, '#ecc94b');
+        stickyGrad.addColorStop(1, '#d69e2e');
+        ctx.fillStyle = stickyGrad;
+        ctx.fillRect(x, y, w, h);
+        // Dripping animation
+        ctx.fillStyle = '#d69e2e';
+        for (let i = 0; i < 3; i++) {
+          const dx = x + (w / 4) * (i + 1);
+          const dripH = 4 + Math.sin(time * 0.002 + i) * 3;
+          ctx.beginPath();
+          ctx.ellipse(dx, y + h + dripH / 2, 3, dripH, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'glass':
+        ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.fillRect(x + 3, y + 2, w * 0.5, 3);
+        ctx.strokeStyle = 'rgba(200, 220, 240, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
+
+      case 'slowmo':
+        const slowGrad = ctx.createRadialGradient(x + w / 2, y + h / 2, 0, x + w / 2, y + h / 2, w);
+        slowGrad.addColorStop(0, 'rgba(0, 200, 255, 0.5)');
+        slowGrad.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
+        ctx.fillStyle = slowGrad;
+        ctx.fillRect(x, y, w, h);
+        // Clock
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        const clockX = x + w / 2;
+        const clockY = y + h / 2;
+        ctx.beginPath();
+        ctx.arc(clockX, clockY, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(clockX, clockY);
+        ctx.lineTo(clockX + Math.cos(time * 0.001) * 8, clockY + Math.sin(time * 0.001) * 8);
+        ctx.stroke();
+        break;
+
+      case 'wall':
+        const wallGrad = ctx.createLinearGradient(x, y, x + w, y);
+        wallGrad.addColorStop(0, '#4a5568');
+        wallGrad.addColorStop(0.5, '#718096');
+        wallGrad.addColorStop(1, '#4a5568');
+        ctx.fillStyle = wallGrad;
+        ctx.fillRect(x, y, w, h);
+        // Grip lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        for (let wy = y + 8; wy < y + h; wy += 10) {
+          ctx.beginPath();
+          ctx.moveTo(x + 3, wy);
+          ctx.lineTo(x + w - 3, wy);
+          ctx.stroke();
+        }
+        break;
+
+      case 'secret':
+        const shimmer = 0.15 + Math.sin(time * 0.003) * 0.1;
+        ctx.globalAlpha = shimmer;
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 0.8;
+        const secretGrad = ctx.createLinearGradient(x, y, x, y + h);
+        secretGrad.addColorStop(0, '#ffd700');
+        secretGrad.addColorStop(0.5, '#ffec8b');
+        secretGrad.addColorStop(1, '#ffd700');
+        ctx.fillStyle = secretGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        ctx.fillStyle = 'rgba(139, 69, 19, 0.8)';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', x + w / 2, y + h / 2 + 5);
+        ctx.globalAlpha = 1;
+        break;
+
+      default:
+        ctx.fillStyle = '#5a6a7a';
+        ctx.fillRect(x, y, w, h);
+    }
+
+    // Border
+    if (type !== 'spike') {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    ctx.restore();
+  }
+
+  private handlePlatformGuideClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 140 && y >= 20 && y <= 55) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'settings';
+      return;
     }
   }
 
@@ -6341,6 +7146,112 @@ export class Game {
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     const desc = achievement.description.length > 35 ? achievement.description.substring(0, 32) + '...' : achievement.description;
     this.ctx.fillText(desc, x + 55, y + 56);
+
+    this.ctx.restore();
+  }
+
+  // Milestone Celebration System
+  private triggerMilestone(type: string, value: number): void {
+    // Don't queue same milestone twice in quick succession
+    if (this.lastComboMilestone === value && type === 'combo') return;
+    if (type === 'combo') this.lastComboMilestone = value;
+
+    this.milestoneQueue.push({ type, value, timer: 0 });
+    this.audio.playUnlock();
+  }
+
+  private updateMilestones(deltaTime: number): void {
+    // Process milestone queue
+    if (!this.currentMilestone && this.milestoneQueue.length > 0) {
+      this.currentMilestone = this.milestoneQueue.shift()!;
+    }
+
+    // Update current milestone timer
+    if (this.currentMilestone) {
+      this.currentMilestone.timer += deltaTime;
+      if (this.currentMilestone.timer >= this.milestoneDuration) {
+        this.currentMilestone = null;
+      }
+    }
+  }
+
+  private renderMilestoneCelebration(): void {
+    if (!this.currentMilestone) return;
+
+    const milestone = this.currentMilestone;
+    const progress = milestone.timer / this.milestoneDuration;
+
+    // Animation phases
+    const scaleIn = Math.min(progress / 0.15, 1); // Scale up in first 15%
+    const fadeOut = progress > 0.7 ? (progress - 0.7) / 0.3 : 0; // Fade in last 30%
+
+    // Position at center-top of screen
+    const centerX = GAME_WIDTH / 2;
+    const baseY = 100;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = 1 - fadeOut;
+
+    // Bounce/scale effect
+    const bounceScale = scaleIn < 1 ? 1.3 * scaleIn : 1 + Math.sin(progress * Math.PI * 4) * 0.05;
+
+    this.ctx.translate(centerX, baseY);
+    this.ctx.scale(bounceScale, bounceScale);
+    this.ctx.translate(-centerX, -baseY);
+
+    // Get milestone text and color
+    let text = '';
+    let subtext = '';
+    let color = '#ffcc00';
+    let icon = '';
+
+    switch (milestone.type) {
+      case 'combo':
+        icon = '🔥';
+        text = `${milestone.value}x COMBO!`;
+        subtext = milestone.value >= 20 ? 'INCREDIBLE!' : milestone.value >= 15 ? 'AMAZING!' : milestone.value >= 10 ? 'GREAT!' : 'NICE!';
+        color = milestone.value >= 20 ? '#ff00ff' : milestone.value >= 15 ? '#ff6600' : milestone.value >= 10 ? '#ffaa00' : '#ffcc00';
+        break;
+      case 'nearmiss':
+        icon = '😱';
+        text = `${milestone.value}x NEAR MISSES!`;
+        subtext = milestone.value >= 10 ? 'DAREDEVIL!' : milestone.value >= 5 ? 'RISKY!' : 'CLOSE CALL!';
+        color = '#ff4444';
+        break;
+      case 'landing':
+        icon = '✨';
+        text = `${milestone.value} PERFECT LANDINGS!`;
+        subtext = milestone.value >= 50 ? 'MASTER!' : milestone.value >= 25 ? 'SKILLED!' : 'SMOOTH!';
+        color = '#00ffaa';
+        break;
+    }
+
+    // Glow background
+    const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
+    glowGrad.addColorStop(0, color.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/[0-9a-f]{2}/gi, (m, i) => i === 0 ? '' : parseInt(m, 16) + ','));
+    glowGrad.addColorStop(0, `${color}33`);
+    glowGrad.addColorStop(1, 'transparent');
+    this.ctx.fillStyle = glowGrad;
+    this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
+
+    // Icon
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(icon, centerX, baseY - 15);
+
+    // Main text with shadow
+    this.ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = color;
+    this.ctx.shadowColor = color;
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText(text, centerX, baseY + 20);
+    this.ctx.shadowBlur = 0;
+
+    // Subtext
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(subtext, centerX, baseY + 45);
 
     this.ctx.restore();
   }

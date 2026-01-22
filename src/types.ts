@@ -145,6 +145,7 @@ export type MenuState =
   | 'skins'
   | 'achievements'
   | 'challenges'
+  | 'platformGuide'
   | 'playing'
   | 'practice'
   | 'endless'
