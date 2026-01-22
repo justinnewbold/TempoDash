@@ -2000,10 +2000,14 @@ export class Game {
       this.particles.spawnFloatingText(
         this.player.x + this.player.width / 2,
         this.player.y - 10,
-        'SAVE!',
+        'EDGE SAVE!',
         '#ffff00',
-        16
+        18
       );
+      // Screen effect for dramatic moment
+      this.screenEffects.triggerZoomPulse(1.08, 200);
+      this.screenEffects.triggerFreezeFrame(80);
+      this.audio.playSelect(); // Feedback sound
     }
     if (this.player.bounceEvent) {
       this.particles.spawnBounceEffect(
@@ -3175,6 +3179,9 @@ export class Game {
     // Flow Meter UI (left side, vertical bar)
     this.renderFlowMeterUI();
 
+    // Rescue Window indicator (when player hits edge and can tap to save)
+    this.renderRescueWindowIndicator();
+
     // Time Rewind counter (bottom-left)
     this.renderRewindCounter();
 
@@ -3254,6 +3261,62 @@ export class Game {
       this.ctx.fillText('OVERDRIVE!', meterX + meterWidth / 2 + 40, meterY + meterHeight / 2);
       this.ctx.shadowBlur = 0;
     }
+  }
+
+  private renderRescueWindowIndicator(): void {
+    if (!this.player.isInRescueWindow) return;
+
+    // Dramatic "TAP TO DASH!" indicator near the player
+    const playerScreenX = this.player.x - this.cameraX + this.player.width / 2;
+    const playerScreenY = this.player.y;
+
+    // Pulsing effect
+    const pulse = Math.sin(performance.now() * 0.015) * 0.3 + 0.7;
+    const scale = 1 + pulse * 0.2;
+
+    this.ctx.save();
+
+    // Background glow
+    const gradient = this.ctx.createRadialGradient(
+      playerScreenX, playerScreenY - 60,
+      0,
+      playerScreenX, playerScreenY - 60,
+      80
+    );
+    gradient.addColorStop(0, 'rgba(255, 200, 0, 0.4)');
+    gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(playerScreenX - 80, playerScreenY - 140, 160, 100);
+
+    // Text background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(playerScreenX - 70 * scale, playerScreenY - 90, 140 * scale, 45, 10);
+    this.ctx.fill();
+
+    // Border
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 3;
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 15 * pulse;
+    this.ctx.stroke();
+
+    // Main text
+    this.ctx.textAlign = 'center';
+    this.ctx.font = `bold ${Math.round(22 * scale)}px "Segoe UI", sans-serif`;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('TAP TO DASH!', playerScreenX, playerScreenY - 60);
+
+    // Sub text
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowBlur = 5;
+    this.ctx.fillText('RESCUE SAVE', playerScreenX, playerScreenY - 42);
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.restore();
   }
 
   private renderRewindCounter(): void {
