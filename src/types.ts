@@ -147,6 +147,7 @@ export type MenuState =
   | 'challenges'
   | 'platformGuide'
   | 'replays'
+  | 'leaderboards'
   | 'playing'
   | 'practice'
   | 'endless'
@@ -177,6 +178,12 @@ export interface SaveData {
   totalLevelsCompleted: number;
   totalPlayTime: number; // in milliseconds
   longestCombo: number;
+  // Mastery badges
+  levelMastery?: Record<number, MasteryBadge[]>; // levelId -> earned badges
+  rhythmAccuracy?: Record<number, number>; // levelId -> best rhythm accuracy (0-100)
+  // Leaderboard
+  playerName?: string;
+  localLeaderboards?: Record<number, LeaderboardEntry[]>; // levelId -> local entries
 }
 
 // Ghost replay frame
@@ -311,4 +318,43 @@ export interface EditorAction {
   elementType: 'platform' | 'coin' | 'playerStart' | 'goal' | 'background';
   before: unknown;
   after: unknown;
+}
+
+// Leaderboard Entry
+export interface LeaderboardEntry {
+  rank: number;
+  playerName: string;
+  score: number;
+  time: number;
+  deaths: number;
+  date: number;
+  isPlayer?: boolean; // Highlight current player's entry
+}
+
+// Level Mastery Badges
+export type MasteryBadge = 'flawless' | 'speedDemon' | 'collector' | 'rhythmMaster';
+
+export interface LevelMastery {
+  levelId: number;
+  badges: MasteryBadge[];
+  bestTime: number;
+  bestDeaths: number;
+  bestCoins: number;
+  rhythmAccuracy: number; // 0-100 percentage
+}
+
+// Weather/Environmental Effects
+export type WeatherType = 'clear' | 'rain' | 'wind' | 'fog' | 'night' | 'snow' | 'heat';
+
+export interface WeatherEffect {
+  type: WeatherType;
+  intensity: number; // 0-1
+  direction?: number; // For wind: -1 left, 1 right
+}
+
+export interface WeatherConfig {
+  enabled: boolean;
+  type: WeatherType;
+  intensity: number;
+  affectsGameplay: boolean; // Whether weather affects physics
 }

@@ -679,6 +679,102 @@ export class SaveManager {
     this.save();
   }
 
+  // --- MASTERY BADGES ---
+
+  getLevelMasteryBadges(levelId: number): string[] {
+    return this.data.levelMastery?.[levelId] || [];
+  }
+
+  addMasteryBadge(levelId: number, badge: string): boolean {
+    if (!this.data.levelMastery) {
+      this.data.levelMastery = {};
+    }
+    if (!this.data.levelMastery[levelId]) {
+      this.data.levelMastery[levelId] = [];
+    }
+    if (!this.data.levelMastery[levelId].includes(badge as import('../types').MasteryBadge)) {
+      this.data.levelMastery[levelId].push(badge as import('../types').MasteryBadge);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  hasMasteryBadge(levelId: number, badge: string): boolean {
+    return this.data.levelMastery?.[levelId]?.includes(badge as import('../types').MasteryBadge) ?? false;
+  }
+
+  getTotalMasteryBadges(): number {
+    if (!this.data.levelMastery) return 0;
+    return Object.values(this.data.levelMastery).reduce((sum, badges) => sum + badges.length, 0);
+  }
+
+  setRhythmAccuracy(levelId: number, accuracy: number): void {
+    if (!this.data.rhythmAccuracy) {
+      this.data.rhythmAccuracy = {};
+    }
+    const existing = this.data.rhythmAccuracy[levelId] || 0;
+    if (accuracy > existing) {
+      this.data.rhythmAccuracy[levelId] = accuracy;
+      this.save();
+    }
+  }
+
+  getRhythmAccuracy(levelId: number): number {
+    return this.data.rhythmAccuracy?.[levelId] ?? 0;
+  }
+
+  // --- LEADERBOARDS ---
+
+  getPlayerName(): string {
+    return this.data.playerName || 'Player';
+  }
+
+  setPlayerName(name: string): void {
+    this.data.playerName = name.trim().substring(0, 20);
+    this.save();
+  }
+
+  getLocalLeaderboard(levelId: number): import('../types').LeaderboardEntry[] {
+    return this.data.localLeaderboards?.[levelId] || [];
+  }
+
+  addLeaderboardEntry(levelId: number, entry: Omit<import('../types').LeaderboardEntry, 'rank'>): void {
+    if (!this.data.localLeaderboards) {
+      this.data.localLeaderboards = {};
+    }
+    if (!this.data.localLeaderboards[levelId]) {
+      this.data.localLeaderboards[levelId] = [];
+    }
+
+    const entries = this.data.localLeaderboards[levelId];
+
+    // Add entry with temporary rank
+    entries.push({ ...entry, rank: 0 });
+
+    // Sort by score (descending), then by time (ascending)
+    entries.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.time - b.time;
+    });
+
+    // Keep only top 10 entries
+    this.data.localLeaderboards[levelId] = entries.slice(0, 10);
+
+    // Update ranks
+    this.data.localLeaderboards[levelId].forEach((e, i) => {
+      e.rank = i + 1;
+    });
+
+    this.save();
+  }
+
+  getPlayerRank(levelId: number): number | null {
+    const entries = this.getLocalLeaderboard(levelId);
+    const playerEntry = entries.find(e => e.isPlayer);
+    return playerEntry?.rank ?? null;
+  }
+
   // --- EXPORT / IMPORT ---
 
   exportData(): string {

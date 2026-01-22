@@ -1,4 +1,4 @@
-import { GameState, CustomLevel, Achievement, GameSettings } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
@@ -256,6 +256,24 @@ export class Game {
   private static readonly BEAT_PERFECT_WINDOW = 50; // ms
   private static readonly BEAT_GOOD_WINDOW = 150; // ms
 
+  // Leaderboards
+  private leaderboardLevelId = 1;
+
+  // Level Mastery Badges
+  private levelRhythmHits = 0;
+  private levelRhythmTotal = 0;
+  private newBadgesEarned: { badge: string; levelId: number }[] = [];
+  private badgeNotificationTimer = 0;
+
+  // Weather Effects
+  private currentWeather: import('../types').WeatherType = 'clear';
+  private weatherIntensity = 0;
+  private weatherDirection = 0; // For wind: -1 left, 1 right
+  private weatherParticles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number }[] = [];
+  private weatherEnabled = true;
+  private fogOpacity = 0;
+  private nightSpotlightRadius = 150;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -502,6 +520,13 @@ export class Game {
       15: 'lightning', // Ultimate Challenge - lightning
     };
     this.screenEffects.setWeather(weatherForLevel[levelId] || 'none', 0.8);
+
+    // Initialize environmental weather effects
+    this.initWeatherForLevel();
+
+    // Reset rhythm tracking for mastery badges
+    this.levelRhythmHits = 0;
+    this.levelRhythmTotal = 0;
   }
 
   private handleWheel(e: WheelEvent): void {
@@ -586,6 +611,9 @@ export class Game {
         break;
       case 'platformGuide':
         this.handlePlatformGuideClick(x, y);
+        break;
+      case 'leaderboards':
+        this.handleLeaderboardsClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -672,6 +700,9 @@ export class Game {
         break;
       case 'platformGuide':
         this.handlePlatformGuideClick(x, y);
+        break;
+      case 'leaderboards':
+        this.handleLeaderboardsClick(x, y);
         break;
       case 'paused':
         this.handlePausedClick(x, y);
@@ -1271,6 +1302,19 @@ export class Game {
         if (e.code === 'Escape') {
           this.audio.playSelect();
           this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'leaderboards':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        } else if (e.code === 'ArrowLeft' && this.leaderboardLevelId > 1) {
+          this.leaderboardLevelId--;
+          this.audio.playSelect();
+        } else if (e.code === 'ArrowRight' && this.leaderboardLevelId < TOTAL_LEVELS) {
+          this.leaderboardLevelId++;
+          this.audio.playSelect();
         }
         break;
 
@@ -1952,6 +1996,15 @@ export class Game {
 
     // Update level completion celebration
     this.updateCelebration(deltaTime);
+
+    // Update badge notifications
+    this.updateBadgeNotification(deltaTime);
+
+    // Update weather effects
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
+      this.updateWeather(deltaTime);
+      this.applyWeatherPhysics();
+    }
 
     // Editor mode has its own update
     if (this.state.gameStatus === 'editor') {
@@ -2758,6 +2811,12 @@ export class Game {
         this.particles.spawnConfetti(0, 0, GAME_WIDTH);
         this.screenEffects.triggerFlash('#ffd700', 0.3); // Golden flash
       }
+
+      // Add to leaderboard
+      this.addToLeaderboard();
+
+      // Check and award mastery badges
+      this.checkMasteryBadges();
     }
 
     // End debug update timing
@@ -2973,6 +3032,9 @@ export class Game {
       case 'platformGuide':
         this.renderPlatformGuide();
         break;
+      case 'leaderboards':
+        this.renderLeaderboards();
+        break;
       case 'paused':
         this.renderPaused();
         break;
@@ -2983,6 +3045,15 @@ export class Game {
         this.renderLevelComplete();
         break;
     }
+
+    // Weather effects (during gameplay)
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
+      this.renderWeatherEffects();
+      this.renderWeatherIndicator();
+    }
+
+    // Badge unlock notification
+    this.renderBadgeNotification();
 
     // Achievement notification (always on top)
     this.renderAchievementNotification();
@@ -4105,11 +4176,14 @@ export class Game {
         this.ctx.fillStyle = '#ffd700';
         this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', cardCenterX, scaledCardY + 125 * scale);
 
+        // Mastery badges
+        this.renderMasteryBadges(levelId, cardCenterX - 40 * scale, scaledCardY + 145 * scale);
+
         // Click to play (only show on selected)
         if (isSelected) {
           this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
           this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 160 * scale);
+          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 175 * scale);
         }
       } else {
         // Lock icon
@@ -7873,6 +7947,9 @@ export class Game {
   }
 
   private onPlayerJump(): void {
+    // Track rhythm for mastery badges (regardless of visualizer setting)
+    this.levelRhythmTotal++;
+
     if (!this.showBeatVisualizer) return;
 
     const timing = this.checkBeatTiming();
@@ -7881,6 +7958,11 @@ export class Game {
       accuracy: timing,
       timer: 800 // Show for 800ms
     });
+
+    // Track rhythm hits for mastery badges
+    if (timing === 'perfect' || timing === 'good') {
+      this.levelRhythmHits++;
+    }
 
     if (timing === 'perfect') {
       this.consecutiveOnBeatJumps++;
@@ -8292,6 +8374,686 @@ export class Game {
     this.ctx.fillRect(60, GAME_HEIGHT - 20, 50, 8);
     this.ctx.fillStyle = '#00aaff';
     this.ctx.fillRect(60, GAME_HEIGHT - 20, 50 * (1 - progressToNext), 8);
+
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // LEADERBOARDS SYSTEM
+  // =====================================================
+
+  private renderLeaderboards(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText('LEADERBOARDS', GAME_WIDTH / 2, 60);
+    this.ctx.shadowBlur = 0;
+
+    // Level selector
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(`Level ${this.leaderboardLevelId}`, GAME_WIDTH / 2, 100);
+
+    // Arrow buttons
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = this.leaderboardLevelId > 1 ? '#00ffaa' : '#555555';
+    this.ctx.fillText('<', GAME_WIDTH / 2 - 80, 100);
+    this.ctx.fillStyle = this.leaderboardLevelId < TOTAL_LEVELS ? '#00ffaa' : '#555555';
+    this.ctx.fillText('>', GAME_WIDTH / 2 + 80, 100);
+
+    // Leaderboard entries
+    const entries = this.save.getLocalLeaderboard(this.leaderboardLevelId);
+    const startY = 140;
+    const rowHeight = 35;
+
+    // Header
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('RANK', 80, startY);
+    this.ctx.fillText('PLAYER', 150, startY);
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText('SCORE', GAME_WIDTH - 220, startY);
+    this.ctx.fillText('TIME', GAME_WIDTH - 120, startY);
+    this.ctx.fillText('DEATHS', GAME_WIDTH - 40, startY);
+
+    if (entries.length === 0) {
+      this.ctx.textAlign = 'center';
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#666666';
+      this.ctx.fillText('No entries yet. Complete this level to add your score!', GAME_WIDTH / 2, startY + 60);
+    } else {
+      entries.forEach((entry, i) => {
+        const y = startY + 30 + i * rowHeight;
+        const isPlayer = entry.isPlayer;
+
+        // Background for player's entry
+        if (isPlayer) {
+          this.ctx.fillStyle = 'rgba(0, 255, 170, 0.15)';
+          this.ctx.fillRect(70, y - 18, GAME_WIDTH - 100, rowHeight - 2);
+        }
+
+        // Rank medal for top 3
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'left';
+        if (entry.rank === 1) {
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.fillText('🥇', 80, y);
+        } else if (entry.rank === 2) {
+          this.ctx.fillStyle = '#c0c0c0';
+          this.ctx.fillText('🥈', 80, y);
+        } else if (entry.rank === 3) {
+          this.ctx.fillStyle = '#cd7f32';
+          this.ctx.fillText('🥉', 80, y);
+        } else {
+          this.ctx.fillStyle = '#666666';
+          this.ctx.fillText(`${entry.rank}`, 85, y);
+        }
+
+        // Player name
+        this.ctx.fillStyle = isPlayer ? '#00ffaa' : '#ffffff';
+        this.ctx.fillText(entry.playerName.substring(0, 12), 150, y);
+
+        // Stats
+        this.ctx.textAlign = 'right';
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText(`${entry.score}`, GAME_WIDTH - 220, y);
+        this.ctx.fillStyle = '#00ffff';
+        this.ctx.fillText(this.formatTime(entry.time), GAME_WIDTH - 120, y);
+        this.ctx.fillStyle = entry.deaths === 0 ? '#00ff00' : '#ff6666';
+        this.ctx.fillText(`${entry.deaths}`, GAME_WIDTH - 40, y);
+      });
+    }
+
+    // Back button
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.fillText('Press ESC or click here to go back', GAME_WIDTH / 2, GAME_HEIGHT - 40);
+
+    this.ctx.restore();
+  }
+
+  private handleLeaderboardsClick(x: number, y: number): void {
+    // Level navigation arrows
+    if (y >= 85 && y <= 115) {
+      if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 - 60 && this.leaderboardLevelId > 1) {
+        this.leaderboardLevelId--;
+        this.audio.playSelect();
+      } else if (x >= GAME_WIDTH / 2 + 60 && x <= GAME_WIDTH / 2 + 100 && this.leaderboardLevelId < TOTAL_LEVELS) {
+        this.leaderboardLevelId++;
+        this.audio.playSelect();
+      }
+    }
+
+    // Back button
+    if (y >= GAME_HEIGHT - 60) {
+      this.state.gameStatus = 'mainMenu';
+      this.audio.playSelect();
+    }
+  }
+
+  private addToLeaderboard(): void {
+    const entry: Omit<LeaderboardEntry, 'rank'> = {
+      playerName: this.save.getPlayerName(),
+      score: this.levelScoreThisRun,
+      time: this.levelElapsedTime,
+      deaths: this.levelDeathCount,
+      date: Date.now(),
+      isPlayer: true,
+    };
+    this.save.addLeaderboardEntry(this.state.currentLevel, entry);
+  }
+
+  private formatTime(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const millis = Math.floor((ms % 1000) / 10);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(2, '0')}`;
+  }
+
+  // =====================================================
+  // LEVEL MASTERY BADGES
+  // =====================================================
+
+  private checkMasteryBadges(): void {
+    const levelId = this.state.currentLevel;
+    const newBadges: MasteryBadge[] = [];
+
+    // Flawless: Complete without dying
+    if (this.levelDeathCount === 0 && !this.save.hasMasteryBadge(levelId, 'flawless')) {
+      if (this.save.addMasteryBadge(levelId, 'flawless')) {
+        newBadges.push('flawless');
+      }
+    }
+
+    // Speed Demon: Beat par time (based on level length estimate)
+    const parTime = this.getParTime(levelId);
+    if (this.levelElapsedTime < parTime && !this.save.hasMasteryBadge(levelId, 'speedDemon')) {
+      if (this.save.addMasteryBadge(levelId, 'speedDemon')) {
+        newBadges.push('speedDemon');
+      }
+    }
+
+    // Collector: Get all coins
+    const totalCoins = this.level.getTotalCoins();
+    if (totalCoins > 0 && this.level.coinsCollected >= totalCoins && !this.save.hasMasteryBadge(levelId, 'collector')) {
+      if (this.save.addMasteryBadge(levelId, 'collector')) {
+        newBadges.push('collector');
+      }
+    }
+
+    // Rhythm Master: 90%+ on-beat jumps
+    const rhythmAccuracy = this.levelRhythmTotal > 0
+      ? (this.levelRhythmHits / this.levelRhythmTotal) * 100
+      : 0;
+    this.save.setRhythmAccuracy(levelId, rhythmAccuracy);
+
+    if (rhythmAccuracy >= 90 && this.levelRhythmTotal >= 10 && !this.save.hasMasteryBadge(levelId, 'rhythmMaster')) {
+      if (this.save.addMasteryBadge(levelId, 'rhythmMaster')) {
+        newBadges.push('rhythmMaster');
+      }
+    }
+
+    // Queue badge notifications
+    for (const badge of newBadges) {
+      this.newBadgesEarned.push({ badge, levelId });
+    }
+    if (newBadges.length > 0) {
+      this.badgeNotificationTimer = 3000;
+    }
+  }
+
+  private getParTime(levelId: number): number {
+    // Par times in milliseconds (roughly 1 minute base, scaling with level)
+    const parTimes: Record<number, number> = {
+      1: 45000,
+      2: 50000,
+      3: 55000,
+      4: 60000,
+      5: 65000,
+      6: 70000,
+      7: 80000,
+      8: 90000,
+    };
+    return parTimes[levelId] || 60000;
+  }
+
+  private renderMasteryBadges(levelId: number, x: number, y: number): void {
+    const badges = this.save.getLevelMasteryBadges(levelId);
+    const badgeSize = 20;
+    const spacing = 5;
+
+    const allBadges: { id: MasteryBadge; icon: string; color: string; name: string }[] = [
+      { id: 'flawless', icon: '💎', color: '#00ffff', name: 'Flawless' },
+      { id: 'speedDemon', icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
+      { id: 'collector', icon: '🪙', color: '#ffd700', name: 'Collector' },
+      { id: 'rhythmMaster', icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
+    ];
+
+    this.ctx.save();
+
+    allBadges.forEach((badge, i) => {
+      const bx = x + i * (badgeSize + spacing);
+      const hasEarned = badges.includes(badge.id);
+
+      // Badge background
+      this.ctx.fillStyle = hasEarned ? badge.color + '33' : 'rgba(50, 50, 50, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Badge icon
+      this.ctx.font = `${hasEarned ? 14 : 10}px "Segoe UI", sans-serif`;
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillStyle = hasEarned ? '#ffffff' : '#444444';
+      this.ctx.fillText(badge.icon, bx, y);
+    });
+
+    this.ctx.restore();
+  }
+
+  private renderBadgeNotification(): void {
+    if (this.newBadgesEarned.length === 0 || this.badgeNotificationTimer <= 0) return;
+
+    const badge = this.newBadgesEarned[0];
+    const fadeIn = Math.min(1, (3000 - this.badgeNotificationTimer) / 300);
+    const fadeOut = Math.min(1, this.badgeNotificationTimer / 500);
+    const alpha = Math.min(fadeIn, fadeOut);
+
+    const badgeInfo: Record<string, { icon: string; name: string; color: string }> = {
+      flawless: { icon: '💎', name: 'FLAWLESS', color: '#00ffff' },
+      speedDemon: { icon: '⚡', name: 'SPEED DEMON', color: '#ffcc00' },
+      collector: { icon: '🪙', name: 'COLLECTOR', color: '#ffd700' },
+      rhythmMaster: { icon: '🎵', name: 'RHYTHM MASTER', color: '#ff00ff' },
+    };
+
+    const info = badgeInfo[badge.badge];
+    if (!info) return;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = 150;
+
+    // Glow
+    const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
+    gradient.addColorStop(0, info.color + '44');
+    gradient.addColorStop(1, 'transparent');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
+
+    // Badge icon
+    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(info.icon, centerX, centerY - 5);
+
+    // Text
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = info.color;
+    this.ctx.shadowColor = info.color;
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('BADGE UNLOCKED!', centerX, centerY + 35);
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText(info.name, centerX, centerY + 55);
+
+    this.ctx.restore();
+  }
+
+  private updateBadgeNotification(deltaTime: number): void {
+    if (this.badgeNotificationTimer > 0) {
+      this.badgeNotificationTimer -= deltaTime;
+      if (this.badgeNotificationTimer <= 0 && this.newBadgesEarned.length > 0) {
+        this.newBadgesEarned.shift();
+        if (this.newBadgesEarned.length > 0) {
+          this.badgeNotificationTimer = 3000;
+        }
+      }
+    }
+  }
+
+  // =====================================================
+  // WEATHER / ENVIRONMENTAL EFFECTS
+  // =====================================================
+
+  private initWeatherForLevel(): void {
+    // Assign weather based on level or random chance
+    const levelWeathers: Record<number, WeatherType> = {
+      3: 'night',  // Space level - night mode
+      4: 'fog',    // Forest level - foggy
+      5: 'heat',   // Volcano level - heat shimmer
+      6: 'rain',   // Ocean level - rain (underwater bubbles from above)
+    };
+
+    this.currentWeather = levelWeathers[this.state.currentLevel] || 'clear';
+
+    // 20% chance for random weather on clear levels
+    if (this.currentWeather === 'clear' && Math.random() < 0.2) {
+      const randomWeathers: WeatherType[] = ['rain', 'wind', 'fog', 'snow'];
+      this.currentWeather = randomWeathers[Math.floor(Math.random() * randomWeathers.length)];
+    }
+
+    this.weatherIntensity = this.currentWeather === 'clear' ? 0 : 0.5 + Math.random() * 0.5;
+    this.weatherDirection = Math.random() > 0.5 ? 1 : -1;
+    this.weatherParticles = [];
+    this.fogOpacity = 0;
+  }
+
+  private updateWeather(deltaTime: number): void {
+    if (!this.weatherEnabled || this.currentWeather === 'clear') return;
+
+    const dt = deltaTime / 1000;
+
+    switch (this.currentWeather) {
+      case 'rain':
+        this.updateRainWeather(dt);
+        break;
+      case 'wind':
+        this.updateWindWeather(dt);
+        break;
+      case 'fog':
+        this.updateFogWeather(dt);
+        break;
+      case 'night':
+        // Night mode is handled in render
+        break;
+      case 'snow':
+        this.updateSnowWeather(dt);
+        break;
+      case 'heat':
+        // Heat shimmer is handled in render
+        break;
+    }
+  }
+
+  private updateRainWeather(dt: number): void {
+    // Spawn new rain particles
+    const spawnRate = this.weatherIntensity * 5;
+    for (let i = 0; i < spawnRate; i++) {
+      if (Math.random() < 0.3) {
+        this.weatherParticles.push({
+          x: Math.random() * (GAME_WIDTH + 200) - 100,
+          y: -20,
+          vx: this.weatherDirection * 50,
+          vy: 400 + Math.random() * 200,
+          size: 2 + Math.random() * 2,
+          alpha: 0.3 + Math.random() * 0.4,
+        });
+      }
+    }
+
+    // Update particles
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      if (p.y > GAME_HEIGHT + 20) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    // Limit particles
+    if (this.weatherParticles.length > 200) {
+      this.weatherParticles = this.weatherParticles.slice(-200);
+    }
+  }
+
+  private updateWindWeather(dt: number): void {
+    // Wind gusts
+    if (Math.random() < 0.01) {
+      this.weatherDirection = Math.random() > 0.5 ? 1 : -1;
+    }
+
+    // Spawn wind streaks
+    if (Math.random() < this.weatherIntensity * 0.5) {
+      this.weatherParticles.push({
+        x: this.weatherDirection > 0 ? -50 : GAME_WIDTH + 50,
+        y: Math.random() * GAME_HEIGHT,
+        vx: this.weatherDirection * (300 + Math.random() * 200),
+        vy: (Math.random() - 0.5) * 50,
+        size: 30 + Math.random() * 50,
+        alpha: 0.1 + Math.random() * 0.2,
+      });
+    }
+
+    // Update particles
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= dt * 0.5;
+
+      if (p.alpha <= 0 || p.x < -100 || p.x > GAME_WIDTH + 100) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 50) {
+      this.weatherParticles = this.weatherParticles.slice(-50);
+    }
+  }
+
+  private updateFogWeather(dt: number): void {
+    // Gradually increase fog
+    this.fogOpacity = Math.min(this.weatherIntensity * 0.4, this.fogOpacity + dt * 0.1);
+
+    // Floating fog wisps
+    if (Math.random() < 0.05) {
+      this.weatherParticles.push({
+        x: Math.random() * GAME_WIDTH,
+        y: GAME_HEIGHT / 2 + (Math.random() - 0.5) * GAME_HEIGHT,
+        vx: (Math.random() - 0.5) * 30,
+        vy: (Math.random() - 0.5) * 20,
+        size: 100 + Math.random() * 150,
+        alpha: 0.1 + Math.random() * 0.15,
+      });
+    }
+
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= dt * 0.02;
+
+      if (p.alpha <= 0) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 20) {
+      this.weatherParticles = this.weatherParticles.slice(-20);
+    }
+  }
+
+  private updateSnowWeather(dt: number): void {
+    // Spawn snowflakes
+    if (Math.random() < this.weatherIntensity * 0.3) {
+      this.weatherParticles.push({
+        x: Math.random() * (GAME_WIDTH + 100) - 50,
+        y: -10,
+        vx: (Math.random() - 0.5) * 50 + this.weatherDirection * 20,
+        vy: 50 + Math.random() * 50,
+        size: 3 + Math.random() * 4,
+        alpha: 0.5 + Math.random() * 0.5,
+      });
+    }
+
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt + Math.sin(Date.now() / 500 + i) * 0.5;
+      p.y += p.vy * dt;
+
+      if (p.y > GAME_HEIGHT + 20) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 150) {
+      this.weatherParticles = this.weatherParticles.slice(-150);
+    }
+  }
+
+  private renderWeatherEffects(): void {
+    if (!this.weatherEnabled || this.currentWeather === 'clear') return;
+
+    this.ctx.save();
+
+    switch (this.currentWeather) {
+      case 'rain':
+        this.renderRainEffect();
+        break;
+      case 'wind':
+        this.renderWindEffect();
+        break;
+      case 'fog':
+        this.renderFogEffect();
+        break;
+      case 'night':
+        this.renderNightEffect();
+        break;
+      case 'snow':
+        this.renderSnowEffect();
+        break;
+      case 'heat':
+        this.renderHeatEffect();
+        break;
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderRainEffect(): void {
+    this.ctx.strokeStyle = 'rgba(150, 180, 255, 0.6)';
+    this.ctx.lineWidth = 1;
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.x, p.y);
+      this.ctx.lineTo(p.x + p.vx * 0.02, p.y + p.size * 3);
+      this.ctx.stroke();
+    }
+
+    // Slight blue overlay
+    this.ctx.globalAlpha = 0.05;
+    this.ctx.fillStyle = '#4488ff';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderWindEffect(): void {
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 2;
+    this.ctx.lineCap = 'round';
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.x, p.y);
+      this.ctx.lineTo(p.x + p.size * this.weatherDirection, p.y);
+      this.ctx.stroke();
+    }
+  }
+
+  private renderFogEffect(): void {
+    // Base fog overlay
+    this.ctx.globalAlpha = this.fogOpacity;
+    this.ctx.fillStyle = '#888899';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Fog wisps
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      const gradient = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+      gradient.addColorStop(0, 'rgba(200, 200, 210, 0.3)');
+      gradient.addColorStop(1, 'transparent');
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+    }
+  }
+
+  private renderNightEffect(): void {
+    // Dark overlay with spotlight around player
+    const playerScreenX = this.player.x - this.cameraX + this.player.width / 2;
+    const playerScreenY = this.player.y + this.player.height / 2;
+
+    // Create spotlight gradient
+    const gradient = this.ctx.createRadialGradient(
+      playerScreenX, playerScreenY, 0,
+      playerScreenX, playerScreenY, this.nightSpotlightRadius
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.5)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.85)');
+
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Subtle vignette
+    this.ctx.globalAlpha = 0.3;
+    const vignette = this.ctx.createRadialGradient(
+      GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT * 0.3,
+      GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT
+    );
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, 'rgba(0, 0, 20, 0.8)');
+    this.ctx.fillStyle = vignette;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderSnowEffect(): void {
+    this.ctx.fillStyle = '#ffffff';
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    // Slight cold overlay
+    this.ctx.globalAlpha = 0.03;
+    this.ctx.fillStyle = '#aaddff';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderHeatEffect(): void {
+    // Heat shimmer effect using wave distortion simulation
+    const time = Date.now() / 1000;
+    this.ctx.globalAlpha = 0.03 * this.weatherIntensity;
+
+    // Wavy heat lines
+    this.ctx.strokeStyle = 'rgba(255, 150, 50, 0.3)';
+    this.ctx.lineWidth = 2;
+
+    for (let y = 0; y < GAME_HEIGHT; y += 30) {
+      this.ctx.beginPath();
+      for (let x = 0; x < GAME_WIDTH; x += 10) {
+        const waveY = y + Math.sin(x / 50 + time * 3 + y / 20) * 5;
+        if (x === 0) {
+          this.ctx.moveTo(x, waveY);
+        } else {
+          this.ctx.lineTo(x, waveY);
+        }
+      }
+      this.ctx.stroke();
+    }
+
+    // Orange/red tint overlay
+    this.ctx.globalAlpha = 0.05;
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private applyWeatherPhysics(): void {
+    if (!this.weatherEnabled || this.player.isDead) return;
+
+    // Wind affects player movement
+    if (this.currentWeather === 'wind') {
+      const windForce = this.weatherDirection * this.weatherIntensity * 50;
+      this.player.x += windForce * 0.016; // Approximate deltaTime
+    }
+
+    // Rain makes platforms slightly slippery (handled in platform physics)
+    // Snow slows down player slightly
+    if (this.currentWeather === 'snow') {
+      // Small slowdown effect is handled in player update
+    }
+  }
+
+  private renderWeatherIndicator(): void {
+    if (this.currentWeather === 'clear') return;
+
+    this.ctx.save();
+
+    const icons: Record<WeatherType, string> = {
+      clear: '',
+      rain: '🌧️',
+      wind: '💨',
+      fog: '🌫️',
+      night: '🌙',
+      snow: '❄️',
+      heat: '🔥',
+    };
+
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.globalAlpha = 0.7;
+    this.ctx.fillText(icons[this.currentWeather], GAME_WIDTH - 20, 65);
 
     this.ctx.restore();
   }
