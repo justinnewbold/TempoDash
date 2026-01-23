@@ -1,4 +1,4 @@
-import { GameState, CustomLevel, Achievement, GameSettings } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
@@ -19,7 +19,7 @@ import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
-import { GhostManager } from '../systems/GhostManager';
+import { GhostManager, encodeReplay } from '../systems/GhostManager';
 import { ScreenEffects } from '../systems/ScreenEffects';
 import { BossManager } from '../systems/BossMode';
 import { FlowMeterManager } from '../systems/FlowMeter';
@@ -183,6 +183,23 @@ export class Game {
   private levelElapsedTime = 0;
   private levelDeathCount = 0;
 
+  // Speed Run Split Times
+  private splitTimes: number[] = []; // Time at each checkpoint
+  private bestSplitTimes: number[] = []; // Best times at each checkpoint
+  private lastCheckpointIndex = -1;
+  private splitDisplay: { time: number; diff: number; isAhead: boolean; timer: number } | null = null;
+
+  // Encouragement System (after repeated deaths)
+  private consecutiveDeaths = 0;
+  private encouragementMessage: { text: string; subtext: string; timer: number } | null = null;
+  private static readonly ENCOURAGEMENT_DURATION = 3000;
+
+  // Level Completion Celebration
+  private celebrationActive = false;
+  private celebrationTimer = 0;
+  private celebrationStars: { x: number; y: number; vx: number; vy: number; size: number; color: string; rotation: number }[] = [];
+  private celebrationCoins: { x: number; y: number; targetX: number; targetY: number; progress: number }[] = [];
+
   // Beat visualization
   private beatTimer = 0;
   private currentBPM = 128;
@@ -199,6 +216,63 @@ export class Game {
   private shareNotification: { message: string; isError: boolean; timer: number } | null = null;
   private pendingImportLevel: import('../types').CustomLevel | null = null;
   private showingTemplateSelect = false;
+
+  // Platform Encyclopedia
+  private encyclopediaScrollOffset = 0;
+  private encyclopediaAnimTime = 0;
+
+  // Milestone Celebration System
+  private milestoneQueue: { type: string; value: number; timer: number }[] = [];
+  private currentMilestone: { type: string; value: number; timer: number } | null = null;
+  private milestoneDuration = 1500; // 1.5 seconds display
+  private lastComboMilestone = 0;
+  private nearMissStreak = 0;
+  private perfectLandingCount = 0;
+
+  // Death Heatmap
+  private showDeathHeatmap = false;
+  private heatmapLevelId = 1;
+
+  // Replay Sharing System
+  private showReplayShare = false;
+  private replayCode: string | null = null;
+  private replayCopied = false;
+  private replayCopyTimer = 0;
+
+  // Adaptive Difficulty / Assist Mode
+  private assistModeEnabled = false;
+  private assistModeOffered = false;
+  private static readonly ASSIST_OFFER_DEATHS = 5; // Offer assist after this many deaths
+  private showAssistOffer = false;
+  private assistCheckpointInterval = 0.1; // Auto-checkpoint every 10% progress
+
+  // Rhythm Sync Visualizer
+  private showBeatVisualizer = true;
+  private beatIndicators: { time: number; intensity: number; x: number }[] = [];
+  private lastBeatTime = 0;
+  private beatAccuracy: { time: number; accuracy: 'perfect' | 'good' | 'miss'; timer: number }[] = [];
+  private rhythmMultiplier = 1;
+  private consecutiveOnBeatJumps = 0;
+  private static readonly BEAT_PERFECT_WINDOW = 50; // ms
+  private static readonly BEAT_GOOD_WINDOW = 150; // ms
+
+  // Leaderboards
+  private leaderboardLevelId = 1;
+
+  // Level Mastery Badges
+  private levelRhythmHits = 0;
+  private levelRhythmTotal = 0;
+  private newBadgesEarned: { badge: string; levelId: number }[] = [];
+  private badgeNotificationTimer = 0;
+
+  // Weather Effects
+  private currentWeather: import('../types').WeatherType = 'clear';
+  private weatherIntensity = 0;
+  private weatherDirection = 0; // For wind: -1 left, 1 right
+  private weatherParticles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number }[] = [];
+  private weatherEnabled = true;
+  private fogOpacity = 0;
+  private nightSpotlightRadius = 150;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -268,6 +342,8 @@ export class Game {
     this.audio.setMusicVolume(settings.musicVolume);
     this.audio.setSfxVolume(settings.sfxVolume);
     this.showGhost = this.save.isShowGhostEnabled();
+    this.showBeatVisualizer = this.save.isBeatVisualizerEnabled();
+    this.assistModeEnabled = this.save.isAssistModeEnabled();
 
     this.loadLevel(1);
 
@@ -362,6 +438,18 @@ export class Game {
       if (beat % 2 === 0) {
         this.beatPulse = 1;
       }
+      // Track beat timing for rhythm visualizer
+      this.lastBeatTime = performance.now();
+      this.currentBeatNumber = beat;
+
+      // Add visual beat indicator
+      if (this.showBeatVisualizer && this.state.gameStatus === 'playing') {
+        this.beatIndicators.push({
+          time: 1.0,
+          intensity: 1.0,
+          x: GAME_WIDTH - 60,
+        });
+      }
     });
 
     // Check URL for shared level
@@ -432,6 +520,13 @@ export class Game {
       15: 'lightning', // Ultimate Challenge - lightning
     };
     this.screenEffects.setWeather(weatherForLevel[levelId] || 'none', 0.8);
+
+    // Initialize environmental weather effects
+    this.initWeatherForLevel();
+
+    // Reset rhythm tracking for mastery badges
+    this.levelRhythmHits = 0;
+    this.levelRhythmTotal = 0;
   }
 
   private handleWheel(e: WheelEvent): void {
@@ -464,6 +559,11 @@ export class Game {
       case 'achievements': {
         const maxScroll = 100; // Some buffer for achievements
         this.achievementsScrollOffset = Math.max(0, Math.min(maxScroll, this.achievementsScrollOffset + delta));
+        break;
+      }
+      case 'platformGuide': {
+        const maxScroll = 600; // Platform guide content is longer
+        this.encyclopediaScrollOffset = Math.max(0, Math.min(maxScroll, this.encyclopediaScrollOffset + delta));
         break;
       }
     }
@@ -509,6 +609,12 @@ export class Game {
       case 'challenges':
         this.handleChallengesClick(x, y);
         break;
+      case 'platformGuide':
+        this.handlePlatformGuideClick(x, y);
+        break;
+      case 'leaderboards':
+        this.handleLeaderboardsClick(x, y);
+        break;
       case 'paused':
         this.handlePausedClick(x, y);
         break;
@@ -516,13 +622,44 @@ export class Game {
         this.handleEditorClick(e);
         break;
       case 'levelComplete':
-        this.nextLevel();
+        this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
         this.endlessDistance = 0; // Reset for next endless run
         this.state.gameStatus = 'mainMenu';
         break;
     }
+  }
+
+  private handleLevelCompleteClick(x: number, y: number): void {
+    // Check replay share modal first
+    if (this.showReplayShare) {
+      if (this.handleReplayShareClick(x, y)) return;
+      return; // Consume click when modal is open
+    }
+
+    // Check assist mode offer
+    if (this.showAssistOffer) {
+      if (this.handleAssistModeOfferClick(x, y)) return;
+      return;
+    }
+
+    // Check share replay button
+    const buttonX = GAME_WIDTH / 2;
+    const buttonY = GAME_HEIGHT / 2 + 165;
+    const buttonWidth = 160;
+    const buttonHeight = 35;
+
+    if (!this.isPracticeMode &&
+        x >= buttonX - buttonWidth / 2 && x <= buttonX + buttonWidth / 2 &&
+        y >= buttonY - buttonHeight / 2 && y <= buttonY + buttonHeight / 2) {
+      this.audio.playSelect();
+      this.generateReplayCode();
+      return;
+    }
+
+    // Default: proceed to next level
+    this.nextLevel();
   }
 
   private handleTouchMenuClick(x: number, y: number): void {
@@ -561,6 +698,12 @@ export class Game {
       case 'challenges':
         this.handleChallengesClick(x, y);
         break;
+      case 'platformGuide':
+        this.handlePlatformGuideClick(x, y);
+        break;
+      case 'leaderboards':
+        this.handleLeaderboardsClick(x, y);
+        break;
       case 'paused':
         this.handlePausedClick(x, y);
         break;
@@ -568,7 +711,7 @@ export class Game {
         // Editor has its own touch handling via TouchHandler
         break;
       case 'levelComplete':
-        this.nextLevel();
+        this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
         this.endlessDistance = 0;
@@ -751,6 +894,24 @@ export class Game {
       }
     }
 
+    // Handle death heatmap panel clicks
+    if (this.showDeathHeatmap) {
+      const panelX = 50;
+      const panelY = 80;
+      const panelW = GAME_WIDTH - 100;
+      const panelH = 380;
+
+      // Check if click is inside the panel
+      if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+        // Just consume the click if inside the panel
+        return;
+      } else {
+        // Click outside panel - close it
+        this.showDeathHeatmap = false;
+        return;
+      }
+    }
+
     // Back button
     if (x >= 20 && x <= 120 && y >= 20 && y <= 60) {
       this.audio.playSelect();
@@ -766,6 +927,7 @@ export class Game {
     if (x >= modBtnX && x <= modBtnX + modBtnW && y >= modBtnY && y <= modBtnY + modBtnH) {
       this.showModifierPanel = !this.showModifierPanel;
       this.showSectionPractice = false; // Close section practice if open
+      this.showDeathHeatmap = false; // Close heatmap if open
       this.audio.playSelect();
       return;
     }
@@ -780,9 +942,27 @@ export class Game {
       if (x >= secBtnX && x <= secBtnX + secBtnW && y >= secBtnY && y <= secBtnY + secBtnH) {
         this.showSectionPractice = !this.showSectionPractice;
         this.showModifierPanel = false; // Close modifiers if open
+        this.showDeathHeatmap = false; // Close heatmap if open
         this.selectedSection = 0; // Reset section selection
         this.audio.playSelect();
         return;
+      }
+
+      // Death Heatmap button (only show if there are deaths recorded)
+      const deathData = this.statistics.getDeathHeatmap(levelId);
+      if (deathData.length > 0) {
+        const heatBtnX = GAME_WIDTH / 2 - 80;
+        const heatBtnY = secBtnY + 35;
+        const heatBtnW = 160;
+        const heatBtnH = 28;
+        if (x >= heatBtnX && x <= heatBtnX + heatBtnW && y >= heatBtnY && y <= heatBtnY + heatBtnH) {
+          this.showDeathHeatmap = !this.showDeathHeatmap;
+          this.showSectionPractice = false; // Close section practice if open
+          this.showModifierPanel = false; // Close modifiers if open
+          this.heatmapLevelId = levelId;
+          this.audio.playSelect();
+          return;
+        }
       }
     }
 
@@ -987,6 +1167,13 @@ export class Game {
         this.audio.playSelect();
       }
     }
+
+    // Platform Guide button (left column)
+    if (x >= leftColX - 45 && x <= leftColX + 45 && y >= 570 && y <= 600) {
+      this.audio.playSelect();
+      this.encyclopediaScrollOffset = 0;
+      this.state.gameStatus = 'platformGuide';
+    }
   }
 
   private handleSkinsClick(x: number, y: number): void {
@@ -1115,6 +1302,26 @@ export class Game {
         if (e.code === 'Escape') {
           this.audio.playSelect();
           this.state.gameStatus = 'mainMenu';
+        }
+        break;
+
+      case 'leaderboards':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'mainMenu';
+        } else if (e.code === 'ArrowLeft' && this.leaderboardLevelId > 1) {
+          this.leaderboardLevelId--;
+          this.audio.playSelect();
+        } else if (e.code === 'ArrowRight' && this.leaderboardLevelId < TOTAL_LEVELS) {
+          this.leaderboardLevelId++;
+          this.audio.playSelect();
+        }
+        break;
+
+      case 'platformGuide':
+        if (e.code === 'Escape') {
+          this.audio.playSelect();
+          this.state.gameStatus = 'settings';
         }
         break;
 
@@ -1255,6 +1462,10 @@ export class Game {
     this.nearMissTimer = 0;
     this.nearMissCount = 0;
     this.comboMeterPulse = 0;
+    // Reset milestone tracking
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
     this.audio.start();
   }
 
@@ -1276,6 +1487,19 @@ export class Game {
     this.levelElapsedTime = 0;
     this.levelDeathCount = 0;
 
+    // Reset split time tracking
+    this.splitTimes = [];
+    this.lastCheckpointIndex = -1;
+    this.splitDisplay = null;
+    // Load best split times for this level (stored in save data)
+    this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
+
+    // Reset encouragement and celebration
+    this.consecutiveDeaths = 0;
+    this.encouragementMessage = null;
+    this.celebrationActive = false;
+    this.celebrationTimer = 0;
+
     // Initialize BPM for beat visualization
     const config = this.level.getConfig();
     this.currentBPM = config.bpm || 128;
@@ -1288,6 +1512,13 @@ export class Game {
     this.timeRewind.reset();
     this.isWaitingForRewindInput = false;
     this.rewindInputWindow = 0;
+
+    // Reset milestone tracking for new level
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
+    this.milestoneQueue = [];
+    this.currentMilestone = null;
 
     // Load beat hazards for this level (example hazards for demo)
     this.loadBeatHazardsForLevel(levelId);
@@ -1610,6 +1841,16 @@ export class Game {
 
   private respawnPlayer(): void {
     this.attempts++;
+    this.consecutiveDeaths++;
+    this.levelDeathCount++;
+
+    // Show encouragement message after repeated deaths
+    if (this.consecutiveDeaths >= 3) {
+      this.showEncouragementMessage();
+    }
+
+    // Check if we should offer assist mode
+    this.checkAssistModeOffer();
 
     // Reset combo on death
     this.comboCount = 0;
@@ -1690,6 +1931,9 @@ export class Game {
     // Update achievement notifications
     this.updateAchievementNotifications(deltaTime);
 
+    // Update milestone celebrations
+    this.updateMilestones(deltaTime);
+
     // Track play time
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'endless' || this.state.gameStatus === 'challengePlaying') {
       this.lastPlayTimeUpdate += deltaTime;
@@ -1703,6 +1947,17 @@ export class Game {
     // Decay beat pulse
     if (this.beatPulse > 0) {
       this.beatPulse = Math.max(0, this.beatPulse - deltaTime / 150);
+    }
+
+    // Update beat indicators for rhythm visualizer
+    this.updateBeatIndicators(deltaTime);
+
+    // Decay replay copy notification
+    if (this.replayCopied && this.replayCopyTimer > 0) {
+      this.replayCopyTimer -= deltaTime;
+      if (this.replayCopyTimer <= 0) {
+        this.replayCopied = false;
+      }
     }
 
     // Decay screen shake
@@ -1734,6 +1989,21 @@ export class Game {
       if (this.shareNotification.timer <= 0) {
         this.shareNotification = null;
       }
+    }
+
+    // Update encouragement messages
+    this.updateEncouragementMessage(deltaTime);
+
+    // Update level completion celebration
+    this.updateCelebration(deltaTime);
+
+    // Update badge notifications
+    this.updateBadgeNotification(deltaTime);
+
+    // Update weather effects
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
+      this.updateWeather(deltaTime);
+      this.applyWeatherPhysics();
     }
 
     // Editor mode has its own update
@@ -1814,10 +2084,14 @@ export class Game {
       for (const platform of platformsToUpdate) {
         platform.triggerBeatPulse();
       }
-      // Check for on-beat jump (for Flow Meter)
+      // Check for on-beat jump (for Flow Meter and Rhythm Visualizer)
       if (inputState.jumpPressed) {
         this.flowMeter.onOnBeatJump();
+        this.onPlayerJump();
       }
+    } else if (inputState.jumpPressed) {
+      // Track off-beat jumps too for rhythm feedback
+      this.onPlayerJump();
     }
     const beatProgress = this.beatTimer / beatInterval; // 0-1 position in beat cycle
     Platform.updateBeatSolidity(beatProgress);
@@ -1908,10 +2182,14 @@ export class Game {
       this.particles.spawnFloatingText(
         this.player.x + this.player.width / 2,
         this.player.y - 10,
-        'SAVE!',
+        'EDGE SAVE!',
         '#ffff00',
-        16
+        18
       );
+      // Screen effect for dramatic moment
+      this.screenEffects.triggerZoomPulse(1.08, 200);
+      this.screenEffects.triggerFreezeFrame(80);
+      this.audio.playSelect(); // Feedback sound
     }
     if (this.player.bounceEvent) {
       this.particles.spawnBounceEffect(
@@ -2007,6 +2285,11 @@ export class Game {
       );
     }
 
+    // Apply assist mode auto-checkpoints
+    if (this.assistModeEnabled && !this.player.isDead) {
+      this.applyAssistModeCheckpoint();
+    }
+
     // Update ghost playback
     this.ghostManager.update(deltaTime);
 
@@ -2068,12 +2351,23 @@ export class Game {
         if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
           // Near miss! Add to combo and Flow Meter
           this.nearMissCount++;
+          this.nearMissStreak++;
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
           this.comboMeterPulse = 1;
+
+          // Trigger milestone celebration for near-miss streaks
+          if (this.nearMissStreak === 3) {
+            this.triggerMilestone('nearmiss', 3);
+          } else if (this.nearMissStreak === 5) {
+            this.triggerMilestone('nearmiss', 5);
+          } else if (this.nearMissStreak === 10) {
+            this.triggerMilestone('nearmiss', 10);
+            this.tryUnlockAchievement('near_miss_pro');
+          }
 
           // Spawn near-miss particle effect
           this.particles.spawnFloatingText(
@@ -2130,26 +2424,31 @@ export class Game {
         this.tryUnlockAchievement('combo_5');
         this.screenEffects.triggerZoomPulse(1.05, 150);
         this.flowMeter.onComboMilestone(5);
+        this.triggerMilestone('combo', 5);
       }
       if (prevCombo < 10 && this.comboCount >= 10) {
         this.tryUnlockAchievement('combo_10');
         this.screenEffects.triggerZoomPulse(1.08, 150);
         this.flowMeter.onComboMilestone(10);
         this.screenEffects.triggerChromaticAberration(4);
+        this.triggerMilestone('combo', 10);
       }
       if (prevCombo < 15 && this.comboCount >= 15) {
         this.screenEffects.triggerZoomPulse(1.1, 200);
         this.screenEffects.triggerBeatDrop(300);
+        this.triggerMilestone('combo', 15);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
         this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
+        this.triggerMilestone('combo', 20);
       }
       if (prevCombo < 25 && this.comboCount >= 25) {
         this.screenEffects.triggerZoomPulse(1.15, 300);
         this.screenEffects.triggerBeatDrop(500);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 3);
+        this.triggerMilestone('combo', 25);
       }
 
       // Update longest combo
@@ -2177,7 +2476,8 @@ export class Game {
       this.audio.playJump();
       // Increase speed by 1% per jump (compound growth)
       this.jumpCount++;
-      this.speedMultiplier *= (1 + Game.SPEED_INCREASE_PER_JUMP);
+      const speedIncrease = Game.SPEED_INCREASE_PER_JUMP * this.getAssistModeSpeedMultiplier();
+      this.speedMultiplier *= (1 + speedIncrease);
       // Sync music tempo with game speed
       this.audio.setGameSpeedMultiplier(this.speedMultiplier);
 
@@ -2194,6 +2494,16 @@ export class Game {
 
       // Perfect landing for Flow Meter
       this.flowMeter.onPerfectLanding();
+
+      // Track perfect landings for milestones
+      this.perfectLandingCount++;
+      if (this.perfectLandingCount === 10) {
+        this.triggerMilestone('landing', 10);
+      } else if (this.perfectLandingCount === 25) {
+        this.triggerMilestone('landing', 25);
+      } else if (this.perfectLandingCount === 50) {
+        this.triggerMilestone('landing', 50);
+      }
 
       // Scale dust intensity based on fall velocity
       const velocityScale = Math.min(Math.abs(prevVelocityY) / 800, 2);
@@ -2302,20 +2612,61 @@ export class Game {
     const targetCameraX = this.player.x - 150;
     this.cameraX = Math.max(0, targetCameraX);
 
-    // Update checkpoints in practice mode (every 25% progress)
+    // Update checkpoints and split times (every 25% progress)
+    const progress = this.level.getProgress(this.player.x);
+    const checkpointInterval = 0.25;
+    const currentCheckpointIndex = Math.floor(progress / checkpointInterval);
+
+    // Track split times at each checkpoint (25%, 50%, 75%)
+    if (currentCheckpointIndex > this.lastCheckpointIndex && currentCheckpointIndex < 4) {
+      const splitTime = this.levelElapsedTime;
+      this.splitTimes[currentCheckpointIndex - 1] = splitTime;
+
+      // Compare to best split time
+      const bestSplit = this.bestSplitTimes[currentCheckpointIndex - 1] || 0;
+      if (bestSplit > 0) {
+        const diff = splitTime - bestSplit;
+        this.splitDisplay = {
+          time: splitTime,
+          diff: diff,
+          isAhead: diff < 0,
+          timer: 2000 // Show for 2 seconds
+        };
+      } else {
+        // First time through - just show the time
+        this.splitDisplay = {
+          time: splitTime,
+          diff: 0,
+          isAhead: true,
+          timer: 2000
+        };
+      }
+
+      this.lastCheckpointIndex = currentCheckpointIndex;
+      this.audio.playCheckpoint();
+      this.input.triggerHaptic('medium');
+      this.checkpointFeedbackTimer = 500;
+
+      // Reset consecutive deaths - player is making progress!
+      this.consecutiveDeaths = 0;
+    }
+
+    // Practice mode checkpoint saving
     if (this.isPracticeMode) {
-      const progress = this.level.getProgress(this.player.x);
-      const checkpointInterval = 0.25;
       const currentCheckpoint = Math.floor(progress / checkpointInterval) * checkpointInterval;
 
       if (currentCheckpoint > this.lastCheckpointProgress && this.player.isGrounded) {
         this.checkpointX = this.player.x;
         this.checkpointY = this.player.y;
         this.lastCheckpointProgress = currentCheckpoint;
-        // Audio and visual feedback for checkpoint
-        this.audio.playCheckpoint();
-        this.input.triggerHaptic('medium');
-        this.checkpointFeedbackTimer = 500; // Show visual feedback for 500ms
+      }
+    }
+
+    // Update split display timer
+    if (this.splitDisplay) {
+      this.splitDisplay.timer -= deltaTime;
+      if (this.splitDisplay.timer <= 0) {
+        this.splitDisplay = null;
       }
     }
 
@@ -2432,10 +2783,18 @@ export class Game {
         this.ghostManager.stopRecording();
       }
 
+      // Save best split times
+      if (this.splitTimes.length > 0) {
+        this.save.setBestSplitTimes(this.state.currentLevel, this.splitTimes);
+      }
+
       this.state.gameStatus = 'levelComplete';
       this.audio.fadeOut(300); // Smooth fade out
       this.audio.playLevelComplete();
       this.input.triggerHapticPattern([30, 50, 30, 50, 100]); // Victory haptic pattern
+
+      // Start level celebration animation
+      this.startLevelCelebration();
 
       // Victory screen effects
       this.screenEffects.triggerVictoryZoom();
@@ -2452,6 +2811,12 @@ export class Game {
         this.particles.spawnConfetti(0, 0, GAME_WIDTH);
         this.screenEffects.triggerFlash('#ffd700', 0.3); // Golden flash
       }
+
+      // Add to leaderboard
+      this.addToLeaderboard();
+
+      // Check and award mastery badges
+      this.checkMasteryBadges();
     }
 
     // End debug update timing
@@ -2664,6 +3029,12 @@ export class Game {
       case 'challenges':
         this.renderChallenges();
         break;
+      case 'platformGuide':
+        this.renderPlatformGuide();
+        break;
+      case 'leaderboards':
+        this.renderLeaderboards();
+        break;
       case 'paused':
         this.renderPaused();
         break;
@@ -2675,8 +3046,41 @@ export class Game {
         break;
     }
 
+    // Weather effects (during gameplay)
+    if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
+      this.renderWeatherEffects();
+      this.renderWeatherIndicator();
+    }
+
+    // Badge unlock notification
+    this.renderBadgeNotification();
+
     // Achievement notification (always on top)
     this.renderAchievementNotification();
+
+    // Milestone celebrations
+    this.renderMilestoneCelebration();
+
+    // Encouragement messages (after repeated deaths)
+    this.renderEncouragementMessage();
+
+    // Level completion celebration effects
+    this.renderCelebration();
+
+    // Rhythm sync visualizer
+    this.renderBeatVisualizer();
+
+    // Assist mode indicator
+    this.renderAssistModeIndicator();
+
+    // Replay share button on level complete
+    this.renderReplayShareButton();
+
+    // Replay share modal (on top of everything)
+    this.renderReplayShareModal();
+
+    // Assist mode offer modal
+    this.renderAssistModeOffer();
 
     // Quick restart progress indicator
     if (this.quickRestartHeld && this.quickRestartTimer > 0) {
@@ -2921,6 +3325,54 @@ export class Game {
       this.ctx.fillText(`Best: ${this.formatSpeedrunTime(bestTime)}`, GAME_WIDTH - 20, GAME_HEIGHT - 38);
     }
 
+    // Split time popup (when passing checkpoints)
+    if (this.splitDisplay) {
+      const fadeProgress = Math.min(1, this.splitDisplay.timer / 500); // Fade out in last 500ms
+      const slideProgress = Math.min(1, (2000 - this.splitDisplay.timer) / 300); // Slide in first 300ms
+
+      this.ctx.save();
+      this.ctx.globalAlpha = fadeProgress;
+
+      const splitX = GAME_WIDTH / 2;
+      const splitY = 150 + (1 - slideProgress) * 20;
+
+      // Background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(splitX - 80, splitY - 25, 160, 50, 10);
+      this.ctx.fill();
+
+      // Border color based on ahead/behind
+      this.ctx.strokeStyle = this.splitDisplay.isAhead ? '#00ff88' : '#ff6666';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Checkpoint label
+      const checkpointNum = this.lastCheckpointIndex;
+      this.ctx.textAlign = 'center';
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(`SPLIT ${checkpointNum} (${checkpointNum * 25}%)`, splitX, splitY - 8);
+
+      // Split time and difference
+      this.ctx.font = 'bold 16px "Courier New", monospace';
+      const timeStr = this.formatSpeedrunTime(this.splitDisplay.time);
+
+      if (this.splitDisplay.diff !== 0) {
+        const diffStr = this.splitDisplay.isAhead
+          ? `-${this.formatSpeedrunTime(Math.abs(this.splitDisplay.diff))}`
+          : `+${this.formatSpeedrunTime(this.splitDisplay.diff)}`;
+
+        this.ctx.fillStyle = this.splitDisplay.isAhead ? '#00ff88' : '#ff6666';
+        this.ctx.fillText(`${timeStr} (${diffStr})`, splitX, splitY + 12);
+      } else {
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText(timeStr, splitX, splitY + 12);
+      }
+
+      this.ctx.restore();
+    }
+
     // Combo counter and meter (center, when active)
     if (this.comboCount > 1) {
       const meterWidth = 200;
@@ -3051,6 +3503,9 @@ export class Game {
     // Flow Meter UI (left side, vertical bar)
     this.renderFlowMeterUI();
 
+    // Rescue Window indicator (when player hits edge and can tap to save)
+    this.renderRescueWindowIndicator();
+
     // Time Rewind counter (bottom-left)
     this.renderRewindCounter();
 
@@ -3130,6 +3585,62 @@ export class Game {
       this.ctx.fillText('OVERDRIVE!', meterX + meterWidth / 2 + 40, meterY + meterHeight / 2);
       this.ctx.shadowBlur = 0;
     }
+  }
+
+  private renderRescueWindowIndicator(): void {
+    if (!this.player.isInRescueWindow) return;
+
+    // Dramatic "TAP TO DASH!" indicator near the player
+    const playerScreenX = this.player.x - this.cameraX + this.player.width / 2;
+    const playerScreenY = this.player.y;
+
+    // Pulsing effect
+    const pulse = Math.sin(performance.now() * 0.015) * 0.3 + 0.7;
+    const scale = 1 + pulse * 0.2;
+
+    this.ctx.save();
+
+    // Background glow
+    const gradient = this.ctx.createRadialGradient(
+      playerScreenX, playerScreenY - 60,
+      0,
+      playerScreenX, playerScreenY - 60,
+      80
+    );
+    gradient.addColorStop(0, 'rgba(255, 200, 0, 0.4)');
+    gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(playerScreenX - 80, playerScreenY - 140, 160, 100);
+
+    // Text background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.beginPath();
+    this.ctx.roundRect(playerScreenX - 70 * scale, playerScreenY - 90, 140 * scale, 45, 10);
+    this.ctx.fill();
+
+    // Border
+    this.ctx.strokeStyle = '#ffcc00';
+    this.ctx.lineWidth = 3;
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 15 * pulse;
+    this.ctx.stroke();
+
+    // Main text
+    this.ctx.textAlign = 'center';
+    this.ctx.font = `bold ${Math.round(22 * scale)}px "Segoe UI", sans-serif`;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowColor = '#ffcc00';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('TAP TO DASH!', playerScreenX, playerScreenY - 60);
+
+    // Sub text
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffcc00';
+    this.ctx.shadowBlur = 5;
+    this.ctx.fillText('RESCUE SAVE', playerScreenX, playerScreenY - 42);
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.restore();
   }
 
   private renderRewindCounter(): void {
@@ -3665,11 +4176,14 @@ export class Game {
         this.ctx.fillStyle = '#ffd700';
         this.ctx.fillText(highScore > 0 ? `Best: ${highScore}` : 'Not completed', cardCenterX, scaledCardY + 125 * scale);
 
+        // Mastery badges
+        this.renderMasteryBadges(levelId, cardCenterX - 40 * scale, scaledCardY + 145 * scale);
+
         // Click to play (only show on selected)
         if (isSelected) {
           this.ctx.font = `${Math.round(12 * scale)}px "Segoe UI", sans-serif`;
           this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 160 * scale);
+          this.ctx.fillText('Click to play', cardCenterX, scaledCardY + 175 * scale);
         }
       } else {
         // Lock icon
@@ -3752,6 +4266,27 @@ export class Game {
       this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffffff';
       this.ctx.fillText('SECTION PRACTICE', GAME_WIDTH / 2, secBtnY + 18);
+
+      // Death Heatmap button (only show if there are deaths recorded)
+      const deathData = this.statistics.getDeathHeatmap(levelId);
+      if (deathData.length > 0) {
+        const heatBtnX = GAME_WIDTH / 2 - 80;
+        const heatBtnY = secBtnY + 35;
+        const heatBtnW = 160;
+        const heatBtnH = 28;
+
+        this.ctx.fillStyle = this.showDeathHeatmap ? '#ff4444' : 'rgba(255, 68, 68, 0.6)';
+        this.ctx.strokeStyle = '#ff4444';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.roundRect(heatBtnX, heatBtnY, heatBtnW, heatBtnH, 6);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(`DEATH HEATMAP (${deathData.length})`, GAME_WIDTH / 2, heatBtnY + 18);
+      }
     }
 
     // Render modifier panel if open
@@ -3762,6 +4297,11 @@ export class Game {
     // Render section practice panel if open
     if (this.showSectionPractice) {
       this.renderSectionPracticePanel();
+    }
+
+    // Render death heatmap panel if open
+    if (this.showDeathHeatmap) {
+      this.renderDeathHeatmapPanel();
     }
 
     // Level features hint
@@ -3961,6 +4501,223 @@ export class Game {
     this.ctx.fillText('Click section to select | Click outside to close', GAME_WIDTH / 2, panelY + panelH - 10);
   }
 
+  private renderDeathHeatmapPanel(): void {
+    const panelX = 50;
+    const panelY = 80;
+    const panelW = GAME_WIDTH - 100;
+    const panelH = 380;
+
+    // Panel background
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    this.ctx.strokeStyle = '#ff4444';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(panelX, panelY, panelW, panelH, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff4444';
+    this.ctx.shadowColor = '#ff4444';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('💀 DEATH HEATMAP', GAME_WIDTH / 2, panelY + 30);
+    this.ctx.shadowBlur = 0;
+
+    // Get death data
+    const deathData = this.statistics.getDeathHeatmap(this.heatmapLevelId);
+    const levelStats = this.statistics.getLevelStats(this.heatmapLevelId);
+
+    // Stats summary
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(
+      `Level ${this.heatmapLevelId} - ${deathData.length} deaths recorded${levelStats ? ` (${levelStats.attempts} attempts)` : ''}`,
+      GAME_WIDTH / 2,
+      panelY + 55
+    );
+
+    // Heatmap visualization area
+    const mapX = panelX + 20;
+    const mapY = panelY + 75;
+    const mapW = panelW - 40;
+    const mapH = 200;
+
+    // Background for the map
+    this.ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.roundRect(mapX, mapY, mapW, mapH, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Calculate level bounds from death locations
+    if (deathData.length > 0) {
+      const xCoords = deathData.map(d => d.x);
+      const yCoords = deathData.map(d => d.y);
+      const minX = Math.min(...xCoords);
+      const maxX = Math.max(...xCoords);
+      const minY = Math.min(...yCoords);
+      const maxY = Math.max(...yCoords);
+
+      // Add padding
+      const padding = 100;
+      const levelMinX = Math.max(0, minX - padding);
+      const levelMaxX = maxX + padding;
+      const levelMinY = Math.max(0, minY - padding);
+      const levelMaxY = Math.min(GAME_HEIGHT, maxY + padding);
+
+      // Scale factors
+      const scaleX = mapW / (levelMaxX - levelMinX || 1);
+      const scaleY = mapH / (levelMaxY - levelMinY || 1);
+      const scale = Math.min(scaleX, scaleY);
+
+      // Center offset
+      const offsetX = mapX + (mapW - (levelMaxX - levelMinX) * scale) / 2;
+      const offsetY = mapY + (mapH - (levelMaxY - levelMinY) * scale) / 2;
+
+      // Draw heatmap spots with varying intensity
+      // First, count deaths per grid cell
+      const gridSize = 50;
+      const heatGrid: Map<string, number> = new Map();
+      for (const death of deathData) {
+        const gridX = Math.floor(death.x / gridSize);
+        const gridY = Math.floor(death.y / gridSize);
+        const key = `${gridX},${gridY}`;
+        heatGrid.set(key, (heatGrid.get(key) || 0) + 1);
+      }
+
+      // Find max intensity for normalization
+      const maxIntensity = Math.max(...heatGrid.values());
+
+      // Draw heat spots
+      for (const [key, count] of heatGrid) {
+        const [gx, gy] = key.split(',').map(Number);
+        const worldX = gx * gridSize + gridSize / 2;
+        const worldY = gy * gridSize + gridSize / 2;
+
+        const screenX = offsetX + (worldX - levelMinX) * scale;
+        const screenY = offsetY + (worldY - levelMinY) * scale;
+
+        // Skip if off the map area
+        if (screenX < mapX || screenX > mapX + mapW || screenY < mapY || screenY > mapY + mapH) continue;
+
+        // Intensity gradient (red to yellow for hotspots)
+        const intensity = count / maxIntensity;
+        const radius = 15 + intensity * 20;
+
+        // Gradient for heat spot
+        const gradient = this.ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radius);
+        if (intensity > 0.7) {
+          // Hotspot - bright yellow/white center
+          gradient.addColorStop(0, `rgba(255, 255, 100, ${0.8 * intensity})`);
+          gradient.addColorStop(0.3, `rgba(255, 200, 50, ${0.6 * intensity})`);
+          gradient.addColorStop(0.7, `rgba(255, 100, 50, ${0.3 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        } else if (intensity > 0.4) {
+          // Medium - orange
+          gradient.addColorStop(0, `rgba(255, 150, 50, ${0.6 * intensity})`);
+          gradient.addColorStop(0.5, `rgba(255, 80, 30, ${0.4 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        } else {
+          // Low - red
+          gradient.addColorStop(0, `rgba(255, 50, 50, ${0.4 + 0.3 * intensity})`);
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        }
+
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Add death count for high intensity spots
+        if (count >= 3) {
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = 'bold 10px "Segoe UI", sans-serif';
+          this.ctx.fillText(`${count}`, screenX, screenY + 4);
+        }
+      }
+
+      // Draw individual death markers for clarity
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      for (const death of deathData) {
+        const screenX = offsetX + (death.x - levelMinX) * scale;
+        const screenY = offsetY + (death.y - levelMinY) * scale;
+
+        if (screenX >= mapX && screenX <= mapX + mapW && screenY >= mapY && screenY <= mapY + mapH) {
+          this.ctx.beginPath();
+          this.ctx.arc(screenX, screenY, 2, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
+
+      // Legend
+      this.ctx.textAlign = 'left';
+      this.ctx.font = '11px "Segoe UI", sans-serif';
+
+      // Legend gradient bar
+      const legendX = mapX + 10;
+      const legendY = mapY + mapH - 25;
+      const legendW = 100;
+      const legendH = 10;
+
+      const legendGrad = this.ctx.createLinearGradient(legendX, legendY, legendX + legendW, legendY);
+      legendGrad.addColorStop(0, 'rgba(255, 50, 50, 0.5)');
+      legendGrad.addColorStop(0.5, 'rgba(255, 150, 50, 0.7)');
+      legendGrad.addColorStop(1, 'rgba(255, 255, 100, 0.9)');
+      this.ctx.fillStyle = legendGrad;
+      this.ctx.fillRect(legendX, legendY, legendW, legendH);
+
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText('Low', legendX, legendY - 3);
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText('High', legendX + legendW, legendY - 3);
+    } else {
+      // No death data
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      this.ctx.textAlign = 'center';
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillText('No death data recorded yet', GAME_WIDTH / 2, mapY + mapH / 2);
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillText('Play the level to start tracking deaths', GAME_WIDTH / 2, mapY + mapH / 2 + 25);
+    }
+
+    // Tips section
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText('💡 Tips for Improvement', GAME_WIDTH / 2, panelY + panelH - 80);
+
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+
+    if (deathData.length >= 5) {
+      // Analyze death patterns and give tips
+      const yCoords = deathData.map(d => d.y);
+      const highDeaths = yCoords.filter(y => y < GAME_HEIGHT / 2).length;
+      const lowDeaths = yCoords.filter(y => y >= GAME_HEIGHT / 2).length;
+
+      let tip = '';
+      if (highDeaths > lowDeaths * 1.5) {
+        tip = 'Many deaths at high altitudes - focus on precise jumps and timing';
+      } else if (lowDeaths > highDeaths * 1.5) {
+        tip = 'Many deaths near ground - watch for spikes and lava hazards';
+      } else {
+        tip = 'Deaths spread evenly - practice the whole level in sections';
+      }
+      this.ctx.fillText(tip, GAME_WIDTH / 2, panelY + panelH - 55);
+    } else {
+      this.ctx.fillText('Play more to get personalized tips!', GAME_WIDTH / 2, panelY + panelH - 55);
+    }
+
+    // Close hint
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Click outside to close', GAME_WIDTH / 2, panelY + panelH - 15);
+  }
+
   private getCheckpointsForLevel(levelId: number): { x: number; y: number; name?: string }[] {
     // Get the level config checkpoints
     const levelConfigs: Record<number, { checkpoints?: { x: number; y: number; name?: string }[] }> = {
@@ -4122,6 +4879,14 @@ export class Game {
     // Reset button
     this.ctx.fillStyle = '#ff4444';
     this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
+
+    // Platform Guide button (help section)
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.fillText('HELP', leftColX, 555);
+
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.renderSettingsButton('Platform Guide', leftColX, 585, '#00ffff');
 
     this.ctx.restore();
   }
@@ -4568,6 +5333,436 @@ export class Game {
         this.startChallenge(challenge);
         return;
       }
+    }
+  }
+
+  // Platform Encyclopedia - comprehensive guide to all platform types
+  private renderPlatformGuide(): void {
+    this.renderOverlay();
+    this.ctx.save();
+
+    // Update animation time
+    this.encyclopediaAnimTime += 16;
+
+    // Title
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 32px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText('PLATFORM ENCYCLOPEDIA', GAME_WIDTH / 2, 50);
+
+    // Back button
+    this.ctx.textAlign = 'left';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText('< Back (ESC)', 20, 35);
+
+    // Scrollable content area
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, 70, GAME_WIDTH, GAME_HEIGHT - 90);
+    this.ctx.clip();
+
+    const scrollY = -this.encyclopediaScrollOffset;
+
+    // Platform data with comprehensive info
+    const platforms = [
+      { type: 'solid', name: 'SOLID', color: '#5a6a7a', icon: '■',
+        desc: 'Standard safe platforms - the foundation of every level.',
+        tip: 'Always safe to land on. Use as reference points.' },
+      { type: 'bounce', name: 'BOUNCE', color: '#ffc107', icon: '▲',
+        desc: 'Spring platforms that launch you 1.3x higher than normal jump.',
+        tip: 'Time your landing for maximum height. Great for reaching coins!' },
+      { type: 'ice', name: 'ICE', color: '#88ddff', icon: '❄',
+        desc: 'Slippery platforms with reduced friction. Hard to stop!',
+        tip: 'Jump early to avoid sliding off edges. Momentum is key.' },
+      { type: 'lava', name: 'LAVA', color: '#ff4400', icon: '☠',
+        desc: 'DEADLY! Instant death on contact. Avoid at all costs.',
+        tip: 'Watch for bubbling animation. Shield power-up protects you once.' },
+      { type: 'spike', name: 'SPIKE', color: '#ffffff', icon: '△',
+        desc: 'DEADLY! Sharp triangular obstacles that kill instantly.',
+        tip: 'Jump over or dash through. White color makes them visible.' },
+      { type: 'crumble', name: 'CRUMBLE', color: '#a0522d', icon: '▤',
+        desc: 'Falls apart shortly after you land on it.',
+        tip: 'Jump quickly! You have about 0.5 seconds before it crumbles.' },
+      { type: 'moving', name: 'MOVING', color: '#4fc3f7', icon: '↔',
+        desc: 'Platforms that move in patterns (horizontal, vertical, circular).',
+        tip: 'Study the pattern first. Land in the center for safety.' },
+      { type: 'phase', name: 'PHASE', color: '#e040fb', icon: '◌',
+        desc: 'Appears and disappears on a regular cycle.',
+        tip: 'Watch the timing! Jump when the platform is solidifying.' },
+      { type: 'conveyor', name: 'CONVEYOR', color: '#38a169', icon: '»',
+        desc: 'Moves you horizontally while standing. Check arrow direction!',
+        tip: 'Can help or hinder - use momentum for longer jumps.' },
+      { type: 'gravity', name: 'GRAVITY', color: '#d53f8c', icon: '⇅',
+        desc: 'Flips your gravity on contact! Up becomes down.',
+        tip: 'Disorienting at first. Jump immediately after flip for control.' },
+      { type: 'sticky', name: 'STICKY', color: '#ecc94b', icon: '●',
+        desc: 'Slows your movement significantly. Jump to escape!',
+        tip: 'Press jump repeatedly to break free faster.' },
+      { type: 'glass', name: 'GLASS', color: '#e2e8f0', icon: '□',
+        desc: 'Transparent platform that breaks after 2 landings.',
+        tip: 'First landing cracks it. Use sparingly or plan your route.' },
+      { type: 'slowmo', name: 'SLOW-MO ZONE', color: '#00c8ff', icon: '⏱',
+        desc: 'Time slows down while inside this zone.',
+        tip: 'Great for precise jumps. Score multiplier unaffected!' },
+      { type: 'wall', name: 'WALL', color: '#718096', icon: '║',
+        desc: 'Vertical surface for wall-jumping. Slide down slowly.',
+        tip: 'Press jump while touching to wall-jump away.' },
+      { type: 'secret', name: 'SECRET', color: '#ffd700', icon: '?',
+        desc: 'Hidden platform! Only appears when you get close.',
+        tip: 'Look for faint shimmers. Often lead to bonus coins!' },
+    ];
+
+    let y = 90 + scrollY;
+    const cardHeight = 85;
+    const cardWidth = GAME_WIDTH - 40;
+    const startX = 20;
+
+    for (let i = 0; i < platforms.length; i++) {
+      const p = platforms[i];
+      const cardY = y + i * (cardHeight + 10);
+
+      // Skip if off screen
+      if (cardY + cardHeight < 70 || cardY > GAME_HEIGHT) continue;
+
+      // Card background
+      this.ctx.fillStyle = 'rgba(20, 20, 40, 0.9)';
+      this.ctx.strokeStyle = p.color;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.roundRect(startX, cardY, cardWidth, cardHeight, 10);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Live animated platform preview (left side)
+      const previewX = startX + 15;
+      const previewY = cardY + 25;
+      const previewW = 70;
+      const previewH = 35;
+
+      this.renderPlatformPreview(p.type, previewX, previewY, previewW, previewH, this.encyclopediaAnimTime);
+
+      // Platform name and icon
+      this.ctx.textAlign = 'left';
+      this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = p.color;
+      this.ctx.shadowColor = p.color;
+      this.ctx.shadowBlur = 8;
+      this.ctx.fillText(`${p.icon} ${p.name}`, startX + 100, cardY + 25);
+      this.ctx.shadowBlur = 0;
+
+      // Description
+      this.ctx.font = '13px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(p.desc, startX + 100, cardY + 45);
+
+      // Tip
+      this.ctx.font = '12px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ff88';
+      this.ctx.fillText(`💡 ${p.tip}`, startX + 100, cardY + 68);
+
+      // Danger indicator for lethal platforms
+      if (p.type === 'lava' || p.type === 'spike') {
+        this.ctx.fillStyle = '#ff4444';
+        this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText('⚠ DEADLY', startX + cardWidth - 15, cardY + 25);
+      }
+    }
+
+    this.ctx.restore();
+
+    // Scroll indicator
+    const totalHeight = platforms.length * (cardHeight + 10);
+    const visibleHeight = GAME_HEIGHT - 90;
+    if (totalHeight > visibleHeight) {
+      const scrollbarHeight = (visibleHeight / totalHeight) * visibleHeight;
+      const scrollbarY = 70 + (this.encyclopediaScrollOffset / (totalHeight - visibleHeight)) * (visibleHeight - scrollbarHeight);
+
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      this.ctx.fillRect(GAME_WIDTH - 8, 70, 4, visibleHeight);
+      this.ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+      this.ctx.fillRect(GAME_WIDTH - 8, scrollbarY, 4, scrollbarHeight);
+    }
+
+    // Scroll hint
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText('Scroll or swipe to see all platforms', GAME_WIDTH / 2, GAME_HEIGHT - 10);
+
+    this.ctx.restore();
+  }
+
+  // Render animated platform preview for encyclopedia
+  private renderPlatformPreview(type: string, x: number, y: number, w: number, h: number, time: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    switch (type) {
+      case 'solid':
+        const solidGrad = ctx.createLinearGradient(x, y, x, y + h);
+        solidGrad.addColorStop(0, '#5a6a7a');
+        solidGrad.addColorStop(1, '#3a4a5a');
+        ctx.fillStyle = solidGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(x, y, w, 3);
+        break;
+
+      case 'bounce':
+        const bounceGrad = ctx.createLinearGradient(x, y, x, y + h);
+        bounceGrad.addColorStop(0, '#ffc107');
+        bounceGrad.addColorStop(1, '#ff9800');
+        ctx.fillStyle = bounceGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated bounce lines
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        const bounceOffset = Math.sin(time * 0.005) * 3;
+        for (let i = 0; i < 3; i++) {
+          const lx = x + (w / 4) * (i + 1);
+          ctx.beginPath();
+          ctx.moveTo(lx - 4, y + h / 2 + bounceOffset);
+          ctx.lineTo(lx, y + 4 + bounceOffset);
+          ctx.lineTo(lx + 4, y + h / 2 + bounceOffset);
+          ctx.stroke();
+        }
+        break;
+
+      case 'ice':
+        const iceGrad = ctx.createLinearGradient(x, y, x, y + h);
+        iceGrad.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
+        iceGrad.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
+        ctx.fillStyle = iceGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.fillRect(x + 5, y + 3, w * 0.4, 4);
+        break;
+
+      case 'lava':
+        const lavaGrad = ctx.createLinearGradient(x, y, x, y + h);
+        lavaGrad.addColorStop(0, '#ff4444');
+        lavaGrad.addColorStop(0.5, '#ff6600');
+        lavaGrad.addColorStop(1, '#ff2200');
+        ctx.fillStyle = lavaGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated bubbles
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
+        for (let i = 0; i < 3; i++) {
+          const bx = x + (w / 4) * (i + 1);
+          const by = y + 8 + Math.sin(time * 0.003 + i) * 4;
+          ctx.beginPath();
+          ctx.arc(bx, by, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'spike':
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 8;
+        const spikeCount = 4;
+        const spikeW = w / spikeCount;
+        for (let i = 0; i < spikeCount; i++) {
+          ctx.beginPath();
+          ctx.moveTo(x + i * spikeW, y + h);
+          ctx.lineTo(x + i * spikeW + spikeW / 2, y);
+          ctx.lineTo(x + (i + 1) * spikeW, y + h);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        break;
+
+      case 'crumble':
+        const crumbleGrad = ctx.createLinearGradient(x, y, x, y + h);
+        crumbleGrad.addColorStop(0, '#a0522d');
+        crumbleGrad.addColorStop(1, '#8b4513');
+        ctx.fillStyle = crumbleGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.3, y);
+        ctx.lineTo(x + w * 0.4, y + h);
+        ctx.moveTo(x + w * 0.7, y);
+        ctx.lineTo(x + w * 0.6, y + h);
+        ctx.stroke();
+        break;
+
+      case 'moving':
+        const moveOffset = Math.sin(time * 0.003) * 10;
+        const moveGrad = ctx.createLinearGradient(x + moveOffset, y, x + moveOffset, y + h);
+        moveGrad.addColorStop(0, '#4fc3f7');
+        moveGrad.addColorStop(1, '#0288d1');
+        ctx.fillStyle = moveGrad;
+        ctx.fillRect(x + moveOffset, y, w - 20, h);
+        // Movement arrows
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(x + moveOffset + 8, y + h / 2);
+        ctx.lineTo(x + moveOffset + 15, y + h / 2 - 4);
+        ctx.lineTo(x + moveOffset + 15, y + h / 2 + 4);
+        ctx.fill();
+        break;
+
+      case 'phase':
+        const phaseAlpha = 0.3 + Math.abs(Math.sin(time * 0.003)) * 0.7;
+        ctx.globalAlpha = phaseAlpha;
+        const phaseGrad = ctx.createLinearGradient(x, y, x + w, y);
+        phaseGrad.addColorStop(0, '#9c27b0');
+        phaseGrad.addColorStop(0.5, '#e040fb');
+        phaseGrad.addColorStop(1, '#9c27b0');
+        ctx.fillStyle = phaseGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 1;
+        break;
+
+      case 'conveyor':
+        const convGrad = ctx.createLinearGradient(x, y, x, y + h);
+        convGrad.addColorStop(0, '#38a169');
+        convGrad.addColorStop(1, '#276749');
+        ctx.fillStyle = convGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated lines
+        ctx.strokeStyle = '#2d3748';
+        ctx.lineWidth = 2;
+        const lineOffset = (time * 0.05) % 15;
+        for (let lx = -15 + lineOffset; lx < w + 15; lx += 15) {
+          ctx.beginPath();
+          ctx.moveTo(x + lx, y);
+          ctx.lineTo(x + lx + 8, y + h);
+          ctx.stroke();
+        }
+        break;
+
+      case 'gravity':
+        const gravGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+        gravGrad.addColorStop(0, '#d53f8c');
+        gravGrad.addColorStop(0.5, '#805ad5');
+        gravGrad.addColorStop(1, '#d53f8c');
+        ctx.fillStyle = gravGrad;
+        ctx.fillRect(x, y, w, h);
+        // Floating particles
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        for (let i = 0; i < 3; i++) {
+          const px = x + (w / 4) * (i + 1);
+          const py = y + h / 2 + Math.sin(time * 0.004 + i) * 8;
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'sticky':
+        const stickyGrad = ctx.createLinearGradient(x, y, x, y + h);
+        stickyGrad.addColorStop(0, '#ecc94b');
+        stickyGrad.addColorStop(1, '#d69e2e');
+        ctx.fillStyle = stickyGrad;
+        ctx.fillRect(x, y, w, h);
+        // Dripping animation
+        ctx.fillStyle = '#d69e2e';
+        for (let i = 0; i < 3; i++) {
+          const dx = x + (w / 4) * (i + 1);
+          const dripH = 4 + Math.sin(time * 0.002 + i) * 3;
+          ctx.beginPath();
+          ctx.ellipse(dx, y + h + dripH / 2, 3, dripH, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      case 'glass':
+        ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.fillRect(x + 3, y + 2, w * 0.5, 3);
+        ctx.strokeStyle = 'rgba(200, 220, 240, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        break;
+
+      case 'slowmo':
+        const slowGrad = ctx.createRadialGradient(x + w / 2, y + h / 2, 0, x + w / 2, y + h / 2, w);
+        slowGrad.addColorStop(0, 'rgba(0, 200, 255, 0.5)');
+        slowGrad.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
+        ctx.fillStyle = slowGrad;
+        ctx.fillRect(x, y, w, h);
+        // Clock
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        const clockX = x + w / 2;
+        const clockY = y + h / 2;
+        ctx.beginPath();
+        ctx.arc(clockX, clockY, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(clockX, clockY);
+        ctx.lineTo(clockX + Math.cos(time * 0.001) * 8, clockY + Math.sin(time * 0.001) * 8);
+        ctx.stroke();
+        break;
+
+      case 'wall':
+        const wallGrad = ctx.createLinearGradient(x, y, x + w, y);
+        wallGrad.addColorStop(0, '#4a5568');
+        wallGrad.addColorStop(0.5, '#718096');
+        wallGrad.addColorStop(1, '#4a5568');
+        ctx.fillStyle = wallGrad;
+        ctx.fillRect(x, y, w, h);
+        // Grip lines
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        for (let wy = y + 8; wy < y + h; wy += 10) {
+          ctx.beginPath();
+          ctx.moveTo(x + 3, wy);
+          ctx.lineTo(x + w - 3, wy);
+          ctx.stroke();
+        }
+        break;
+
+      case 'secret':
+        const shimmer = 0.15 + Math.sin(time * 0.003) * 0.1;
+        ctx.globalAlpha = shimmer;
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 0.8;
+        const secretGrad = ctx.createLinearGradient(x, y, x, y + h);
+        secretGrad.addColorStop(0, '#ffd700');
+        secretGrad.addColorStop(0.5, '#ffec8b');
+        secretGrad.addColorStop(1, '#ffd700');
+        ctx.fillStyle = secretGrad;
+        ctx.fillRect(x, y, w, h);
+        ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        ctx.fillStyle = 'rgba(139, 69, 19, 0.8)';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', x + w / 2, y + h / 2 + 5);
+        ctx.globalAlpha = 1;
+        break;
+
+      default:
+        ctx.fillStyle = '#5a6a7a';
+        ctx.fillRect(x, y, w, h);
+    }
+
+    // Border
+    if (type !== 'spike') {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    ctx.restore();
+  }
+
+  private handlePlatformGuideClick(x: number, y: number): void {
+    // Back button
+    if (x >= 20 && x <= 140 && y >= 20 && y <= 55) {
+      this.audio.playSelect();
+      this.state.gameStatus = 'settings';
+      return;
     }
   }
 
@@ -6345,6 +7540,112 @@ export class Game {
     this.ctx.restore();
   }
 
+  // Milestone Celebration System
+  private triggerMilestone(type: string, value: number): void {
+    // Don't queue same milestone twice in quick succession
+    if (this.lastComboMilestone === value && type === 'combo') return;
+    if (type === 'combo') this.lastComboMilestone = value;
+
+    this.milestoneQueue.push({ type, value, timer: 0 });
+    this.audio.playUnlock();
+  }
+
+  private updateMilestones(deltaTime: number): void {
+    // Process milestone queue
+    if (!this.currentMilestone && this.milestoneQueue.length > 0) {
+      this.currentMilestone = this.milestoneQueue.shift()!;
+    }
+
+    // Update current milestone timer
+    if (this.currentMilestone) {
+      this.currentMilestone.timer += deltaTime;
+      if (this.currentMilestone.timer >= this.milestoneDuration) {
+        this.currentMilestone = null;
+      }
+    }
+  }
+
+  private renderMilestoneCelebration(): void {
+    if (!this.currentMilestone) return;
+
+    const milestone = this.currentMilestone;
+    const progress = milestone.timer / this.milestoneDuration;
+
+    // Animation phases
+    const scaleIn = Math.min(progress / 0.15, 1); // Scale up in first 15%
+    const fadeOut = progress > 0.7 ? (progress - 0.7) / 0.3 : 0; // Fade in last 30%
+
+    // Position at center-top of screen
+    const centerX = GAME_WIDTH / 2;
+    const baseY = 100;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = 1 - fadeOut;
+
+    // Bounce/scale effect
+    const bounceScale = scaleIn < 1 ? 1.3 * scaleIn : 1 + Math.sin(progress * Math.PI * 4) * 0.05;
+
+    this.ctx.translate(centerX, baseY);
+    this.ctx.scale(bounceScale, bounceScale);
+    this.ctx.translate(-centerX, -baseY);
+
+    // Get milestone text and color
+    let text = '';
+    let subtext = '';
+    let color = '#ffcc00';
+    let icon = '';
+
+    switch (milestone.type) {
+      case 'combo':
+        icon = '🔥';
+        text = `${milestone.value}x COMBO!`;
+        subtext = milestone.value >= 20 ? 'INCREDIBLE!' : milestone.value >= 15 ? 'AMAZING!' : milestone.value >= 10 ? 'GREAT!' : 'NICE!';
+        color = milestone.value >= 20 ? '#ff00ff' : milestone.value >= 15 ? '#ff6600' : milestone.value >= 10 ? '#ffaa00' : '#ffcc00';
+        break;
+      case 'nearmiss':
+        icon = '😱';
+        text = `${milestone.value}x NEAR MISSES!`;
+        subtext = milestone.value >= 10 ? 'DAREDEVIL!' : milestone.value >= 5 ? 'RISKY!' : 'CLOSE CALL!';
+        color = '#ff4444';
+        break;
+      case 'landing':
+        icon = '✨';
+        text = `${milestone.value} PERFECT LANDINGS!`;
+        subtext = milestone.value >= 50 ? 'MASTER!' : milestone.value >= 25 ? 'SKILLED!' : 'SMOOTH!';
+        color = '#00ffaa';
+        break;
+    }
+
+    // Glow background
+    const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
+    glowGrad.addColorStop(0, color.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/[0-9a-f]{2}/gi, (m, i) => i === 0 ? '' : parseInt(m, 16) + ','));
+    glowGrad.addColorStop(0, `${color}33`);
+    glowGrad.addColorStop(1, 'transparent');
+    this.ctx.fillStyle = glowGrad;
+    this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
+
+    // Icon
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(icon, centerX, baseY - 15);
+
+    // Main text with shadow
+    this.ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = color;
+    this.ctx.shadowColor = color;
+    this.ctx.shadowBlur = 20;
+    this.ctx.fillText(text, centerX, baseY + 20);
+    this.ctx.shadowBlur = 0;
+
+    // Subtext
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(subtext, centerX, baseY + 45);
+
+    this.ctx.restore();
+  }
+
   private checkAchievements(): void {
     // Check all-levels achievement
     if (this.save.getTotalLevelsCompleted() >= TOTAL_LEVELS) {
@@ -6373,5 +7674,1387 @@ export class Game {
     if (this.save.getTotalPlayTime() >= 3600000) {
       this.tryUnlockAchievement('dedicated');
     }
+  }
+
+  // Encouragement System - motivational messages after repeated deaths
+  private showEncouragementMessage(): void {
+    const messages = [
+      { text: "You've got this!", subtext: "Every master was once a beginner" },
+      { text: "Keep going!", subtext: "Practice makes perfect" },
+      { text: "Don't give up!", subtext: "You're learning the patterns" },
+      { text: "Almost there!", subtext: "Try timing your jumps to the beat" },
+      { text: "Stay focused!", subtext: "Watch the platform colors for clues" },
+      { text: "You can do it!", subtext: "Each death teaches something new" },
+      { text: "Take a breath", subtext: "Sometimes a pause helps" },
+      { text: "Great effort!", subtext: "The checkpoint system can help - try Practice mode" },
+      { text: "Persistence pays off!", subtext: "Use the death heatmap to see trouble spots" },
+      { text: "Keep trying!", subtext: "Double-tap for air jumps!" },
+    ];
+
+    // Add specific tips based on death count
+    const progress = this.level.getProgress(this.player.x);
+    let specificTip = '';
+
+    if (progress < 0.25) {
+      specificTip = "Tip: The start is always the hardest!";
+    } else if (progress < 0.5) {
+      specificTip = "Tip: You're getting further! Keep it up!";
+    } else if (progress < 0.75) {
+      specificTip = "Tip: Over halfway! The finish is in sight!";
+    } else {
+      specificTip = "Tip: So close! You've got the skills!";
+    }
+
+    // Pick a random message
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+
+    this.encouragementMessage = {
+      text: msg.text,
+      subtext: this.consecutiveDeaths >= 5 ? specificTip : msg.subtext,
+      timer: Game.ENCOURAGEMENT_DURATION
+    };
+
+    // Reset death counter after showing message
+    if (this.consecutiveDeaths >= 10) {
+      this.consecutiveDeaths = 3; // Keep showing messages but less frequently
+    }
+  }
+
+  private updateEncouragementMessage(deltaTime: number): void {
+    if (this.encouragementMessage) {
+      this.encouragementMessage.timer -= deltaTime;
+      if (this.encouragementMessage.timer <= 0) {
+        this.encouragementMessage = null;
+      }
+    }
+  }
+
+  private renderEncouragementMessage(): void {
+    if (!this.encouragementMessage) return;
+
+    const fadeIn = Math.min(1, (Game.ENCOURAGEMENT_DURATION - this.encouragementMessage.timer) / 300);
+    const fadeOut = Math.min(1, this.encouragementMessage.timer / 500);
+    const alpha = Math.min(fadeIn, fadeOut);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2 - 50;
+
+    // Background glow
+    const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 150);
+    gradient.addColorStop(0, 'rgba(0, 200, 150, 0.3)');
+    gradient.addColorStop(1, 'rgba(0, 200, 150, 0)');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(centerX - 150, centerY - 60, 300, 120);
+
+    // Background box
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.strokeStyle = '#00ffaa';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 140, centerY - 45, 280, 90, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Icon
+    this.ctx.font = '32px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText('💪', centerX, centerY - 10);
+
+    // Main message
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowColor = '#00ffaa';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(this.encouragementMessage.text, centerX, centerY + 18);
+    this.ctx.shadowBlur = 0;
+
+    // Sub message
+    this.ctx.font = '13px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.fillText(this.encouragementMessage.subtext, centerX, centerY + 38);
+
+    this.ctx.restore();
+  }
+
+  // Level Completion Celebration
+  private startLevelCelebration(): void {
+    this.celebrationActive = true;
+    this.celebrationTimer = 0;
+    this.celebrationStars = [];
+    this.celebrationCoins = [];
+
+    // Spawn celebration stars
+    for (let i = 0; i < 30; i++) {
+      this.celebrationStars.push({
+        x: Math.random() * GAME_WIDTH,
+        y: GAME_HEIGHT + 20,
+        vx: (Math.random() - 0.5) * 200,
+        vy: -300 - Math.random() * 400,
+        size: 10 + Math.random() * 20,
+        color: ['#ffcc00', '#ff00ff', '#00ffaa', '#ff6600', '#00ffff'][Math.floor(Math.random() * 5)],
+        rotation: Math.random() * 360
+      });
+    }
+
+    // Create coin collection animation
+    const coinsCollected = this.level.coinsCollected;
+    for (let i = 0; i < Math.min(coinsCollected, 15); i++) {
+      this.celebrationCoins.push({
+        x: 50 + Math.random() * (GAME_WIDTH - 100),
+        y: 100 + Math.random() * (GAME_HEIGHT - 200),
+        targetX: GAME_WIDTH - 80,
+        targetY: 30,
+        progress: -i * 0.1 // Stagger the animations
+      });
+    }
+  }
+
+  private updateCelebration(deltaTime: number): void {
+    if (!this.celebrationActive) return;
+
+    this.celebrationTimer += deltaTime;
+
+    // Update stars
+    for (const star of this.celebrationStars) {
+      star.x += star.vx * (deltaTime / 1000);
+      star.y += star.vy * (deltaTime / 1000);
+      star.vy += 500 * (deltaTime / 1000); // Gravity
+      star.rotation += 180 * (deltaTime / 1000);
+    }
+
+    // Update coin animations
+    for (const coin of this.celebrationCoins) {
+      if (coin.progress < 0) {
+        coin.progress += deltaTime / 1000;
+      } else if (coin.progress < 1) {
+        coin.progress += deltaTime / 800; // Take ~800ms to fly to corner
+      }
+    }
+
+    // End celebration after 3 seconds
+    if (this.celebrationTimer > 3000) {
+      this.celebrationActive = false;
+    }
+  }
+
+  private renderCelebration(): void {
+    if (!this.celebrationActive) return;
+
+    this.ctx.save();
+
+    // Render stars
+    for (const star of this.celebrationStars) {
+      if (star.y < GAME_HEIGHT + 50) {
+        this.ctx.save();
+        this.ctx.translate(star.x, star.y);
+        this.ctx.rotate(star.rotation * Math.PI / 180);
+        this.ctx.fillStyle = star.color;
+        this.ctx.shadowColor = star.color;
+        this.ctx.shadowBlur = 10;
+
+        // Draw star shape
+        this.ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = (i * 144 - 90) * Math.PI / 180;
+          const r = star.size;
+          if (i === 0) {
+            this.ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          } else {
+            this.ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          }
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+    }
+
+    // Render flying coins
+    for (const coin of this.celebrationCoins) {
+      if (coin.progress >= 0 && coin.progress <= 1) {
+        // Ease out curve
+        const t = 1 - Math.pow(1 - coin.progress, 3);
+        const x = coin.x + (coin.targetX - coin.x) * t;
+        const y = coin.y + (coin.targetY - coin.y) * t - Math.sin(t * Math.PI) * 100;
+
+        this.ctx.fillStyle = '#ffd700';
+        this.ctx.shadowColor = '#ffd700';
+        this.ctx.shadowBlur = 15;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 12 * (1 - t * 0.5), 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Inner shine
+        this.ctx.fillStyle = '#fff8dc';
+        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.arc(x - 3, y - 3, 4 * (1 - t * 0.5), 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+
+    this.ctx.shadowBlur = 0;
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // RHYTHM SYNC VISUALIZER
+  // =====================================================
+
+  private updateBeatIndicators(deltaTime: number): void {
+    // Update existing indicators
+    for (let i = this.beatIndicators.length - 1; i >= 0; i--) {
+      this.beatIndicators[i].time -= deltaTime / 1000;
+      this.beatIndicators[i].intensity -= deltaTime / 500;
+      if (this.beatIndicators[i].time <= 0) {
+        this.beatIndicators.splice(i, 1);
+      }
+    }
+
+    // Update beat accuracy feedback
+    for (let i = this.beatAccuracy.length - 1; i >= 0; i--) {
+      this.beatAccuracy[i].timer -= deltaTime;
+      if (this.beatAccuracy[i].timer <= 0) {
+        this.beatAccuracy.splice(i, 1);
+      }
+    }
+
+    // Calculate rhythm multiplier based on consecutive on-beat jumps
+    if (this.consecutiveOnBeatJumps > 0) {
+      this.rhythmMultiplier = 1 + Math.min(this.consecutiveOnBeatJumps * 0.1, 0.5);
+    } else {
+      this.rhythmMultiplier = Math.max(1, this.rhythmMultiplier - deltaTime / 2000);
+    }
+  }
+
+  private checkBeatTiming(): 'perfect' | 'good' | 'miss' {
+    const now = performance.now();
+    const timeSinceBeat = now - this.lastBeatTime;
+    const beatInterval = 60000 / this.currentBPM;
+    const timeToNextBeat = beatInterval - (timeSinceBeat % beatInterval);
+    const distanceFromBeat = Math.min(timeSinceBeat % beatInterval, timeToNextBeat);
+
+    if (distanceFromBeat <= Game.BEAT_PERFECT_WINDOW) {
+      return 'perfect';
+    } else if (distanceFromBeat <= Game.BEAT_GOOD_WINDOW) {
+      return 'good';
+    }
+    return 'miss';
+  }
+
+  private onPlayerJump(): void {
+    // Track rhythm for mastery badges (regardless of visualizer setting)
+    this.levelRhythmTotal++;
+
+    if (!this.showBeatVisualizer) return;
+
+    const timing = this.checkBeatTiming();
+    this.beatAccuracy.push({
+      time: performance.now(),
+      accuracy: timing,
+      timer: 800 // Show for 800ms
+    });
+
+    // Track rhythm hits for mastery badges
+    if (timing === 'perfect' || timing === 'good') {
+      this.levelRhythmHits++;
+    }
+
+    if (timing === 'perfect') {
+      this.consecutiveOnBeatJumps++;
+      this.flowMeter.onOnBeatJump();
+      // Trigger milestone for rhythm streak
+      if (this.consecutiveOnBeatJumps >= 10 && this.consecutiveOnBeatJumps % 5 === 0) {
+        this.triggerMilestone('rhythm', this.consecutiveOnBeatJumps);
+      }
+    } else if (timing === 'good') {
+      this.consecutiveOnBeatJumps = Math.max(0, this.consecutiveOnBeatJumps - 1);
+    } else {
+      this.consecutiveOnBeatJumps = 0;
+    }
+  }
+
+  private renderBeatVisualizer(): void {
+    if (!this.showBeatVisualizer) return;
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice') return;
+
+    this.ctx.save();
+
+    const baseX = GAME_WIDTH - 60;
+    const baseY = GAME_HEIGHT - 80;
+
+    // Beat ring background
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(baseX, baseY, 25, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    // Pulsing beat indicator
+    const beatInterval = 60000 / this.currentBPM;
+    const now = performance.now();
+    const beatProgress = ((now - this.lastBeatTime) % beatInterval) / beatInterval;
+    const pulseSize = 25 - beatProgress * 20;
+
+    if (pulseSize > 5) {
+      this.ctx.strokeStyle = `rgba(0, 255, 170, ${1 - beatProgress})`;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.arc(baseX, baseY, pulseSize, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    // Center beat indicator
+    const beatGlow = this.beatPulse;
+    if (beatGlow > 0) {
+      this.ctx.fillStyle = `rgba(0, 255, 170, ${beatGlow})`;
+      this.ctx.shadowColor = '#00ffaa';
+      this.ctx.shadowBlur = 20 * beatGlow;
+      this.ctx.beginPath();
+      this.ctx.arc(baseX, baseY, 8 + beatGlow * 5, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Inner dot
+    this.ctx.fillStyle = '#00ffaa';
+    this.ctx.beginPath();
+    this.ctx.arc(baseX, baseY, 5, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Rhythm multiplier display
+    if (this.rhythmMultiplier > 1) {
+      this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#ffcc00';
+      this.ctx.shadowColor = '#ffcc00';
+      this.ctx.shadowBlur = 5;
+      this.ctx.fillText(`${this.rhythmMultiplier.toFixed(1)}x`, baseX, baseY - 35);
+      this.ctx.shadowBlur = 0;
+    }
+
+    // Beat accuracy feedback (floating text)
+    for (const feedback of this.beatAccuracy) {
+      const age = 800 - feedback.timer;
+      const alpha = 1 - age / 800;
+      const yOffset = age / 10;
+
+      this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+      this.ctx.textAlign = 'center';
+
+      if (feedback.accuracy === 'perfect') {
+        this.ctx.fillStyle = `rgba(0, 255, 170, ${alpha})`;
+        this.ctx.fillText('PERFECT!', baseX, baseY - 50 - yOffset);
+      } else if (feedback.accuracy === 'good') {
+        this.ctx.fillStyle = `rgba(255, 200, 0, ${alpha})`;
+        this.ctx.fillText('GOOD', baseX, baseY - 50 - yOffset);
+      }
+    }
+
+    // Rhythm streak indicator
+    if (this.consecutiveOnBeatJumps >= 3) {
+      this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffff';
+      this.ctx.fillText(`${this.consecutiveOnBeatJumps} streak`, baseX, baseY + 40);
+    }
+
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // REPLAY SHARING SYSTEM
+  // =====================================================
+
+  private generateReplayCode(): void {
+    const replayData = this.ghostManager.createReplayData(
+      this.state.currentLevel,
+      'Player', // Could allow custom names later
+      this.levelElapsedTime,
+      this.level.coinsCollected,
+      this.levelDeathCount
+    );
+    this.replayCode = encodeReplay(replayData);
+    this.showReplayShare = true;
+  }
+
+  private copyReplayToClipboard(): void {
+    if (!this.replayCode) return;
+
+    navigator.clipboard.writeText(this.replayCode).then(() => {
+      this.replayCopied = true;
+      this.replayCopyTimer = 2000;
+    }).catch(() => {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = this.replayCode!;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      this.replayCopied = true;
+      this.replayCopyTimer = 2000;
+    });
+  }
+
+  private renderReplayShareButton(): void {
+    // Only show on level complete screen (non-practice mode)
+    if (this.state.gameStatus !== 'levelComplete' || this.isPracticeMode) return;
+
+    const buttonX = GAME_WIDTH / 2;
+    const buttonY = GAME_HEIGHT / 2 + 165;
+    const buttonWidth = 160;
+    const buttonHeight = 35;
+
+    this.ctx.save();
+
+    // Share replay button
+    this.ctx.fillStyle = '#6644ff';
+    this.ctx.strokeStyle = '#aa88ff';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('📤 Share Replay', buttonX, buttonY);
+
+    this.ctx.restore();
+  }
+
+  private renderReplayShareModal(): void {
+    if (!this.showReplayShare || !this.replayCode) return;
+
+    this.ctx.save();
+
+    // Overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Modal box
+    this.ctx.fillStyle = '#1a1a2e';
+    this.ctx.strokeStyle = '#6644ff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 200, centerY - 120, 400, 240, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Title
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Share Your Replay', centerX, centerY - 80);
+
+    // Replay code box
+    this.ctx.fillStyle = '#0d0d1a';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 180, centerY - 50, 360, 50, 8);
+    this.ctx.fill();
+
+    // Truncated code display
+    this.ctx.font = '12px monospace';
+    this.ctx.fillStyle = '#88ff88';
+    const displayCode = this.replayCode.length > 45
+      ? this.replayCode.substring(0, 42) + '...'
+      : this.replayCode;
+    this.ctx.fillText(displayCode, centerX, centerY - 22);
+
+    // Copy button
+    const copyY = centerY + 30;
+    this.ctx.fillStyle = this.replayCopied ? '#00aa66' : '#00ffaa';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 80, copyY - 18, 160, 36, 8);
+    this.ctx.fill();
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillText(this.replayCopied ? '✓ Copied!' : '📋 Copy Code', centerX, copyY + 5);
+
+    // Close button
+    const closeY = centerY + 85;
+    this.ctx.fillStyle = '#444466';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 60, closeY - 15, 120, 30, 8);
+    this.ctx.fill();
+
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Close', centerX, closeY + 5);
+
+    this.ctx.restore();
+  }
+
+  private handleReplayShareClick(x: number, y: number): boolean {
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Check copy button
+    if (x >= centerX - 80 && x <= centerX + 80 && y >= centerY + 12 && y <= centerY + 48) {
+      this.copyReplayToClipboard();
+      return true;
+    }
+
+    // Check close button
+    if (x >= centerX - 60 && x <= centerX + 60 && y >= centerY + 70 && y <= centerY + 100) {
+      this.showReplayShare = false;
+      this.replayCode = null;
+      return true;
+    }
+
+    return false;
+  }
+
+  // =====================================================
+  // ADAPTIVE DIFFICULTY / ASSIST MODE
+  // =====================================================
+
+  private checkAssistModeOffer(): void {
+    // Only offer assist if not already enabled and player is struggling
+    if (this.assistModeEnabled || this.assistModeOffered) return;
+    if (this.consecutiveDeaths < Game.ASSIST_OFFER_DEATHS) return;
+
+    this.showAssistOffer = true;
+    this.assistModeOffered = true;
+  }
+
+  private enableAssistMode(): void {
+    this.assistModeEnabled = true;
+    this.save.setAssistMode(true);
+    this.showAssistOffer = false;
+
+    // Reset some difficulty factors
+    this.speedMultiplier = Math.max(1, this.speedMultiplier * 0.8);
+
+    // Show confirmation
+    this.encouragementMessage = {
+      text: 'Assist Mode Enabled!',
+      subtext: 'Auto-checkpoints every 10% • Slower speed buildup',
+      timer: 3000
+    };
+  }
+
+  private renderAssistModeOffer(): void {
+    if (!this.showAssistOffer) return;
+
+    this.ctx.save();
+
+    // Overlay
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Modal box with friendly color
+    this.ctx.fillStyle = '#1a2a3a';
+    this.ctx.strokeStyle = '#00aaff';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 220, centerY - 140, 440, 280, 15);
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Icon
+    this.ctx.font = '48px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('🤝', centerX, centerY - 85);
+
+    // Title
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Need Some Help?', centerX, centerY - 40);
+
+    // Description
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#aaccff';
+    this.ctx.fillText('Assist Mode gives you a gentler experience:', centerX, centerY - 10);
+
+    this.ctx.fillStyle = '#88ffaa';
+    this.ctx.fillText('• Auto-checkpoints every 10% progress', centerX, centerY + 15);
+    this.ctx.fillText('• Slower speed buildup (50% rate)', centerX, centerY + 35);
+    this.ctx.fillText('• Extra visual cues for timing', centerX, centerY + 55);
+
+    // Enable button
+    const enableY = centerY + 95;
+    this.ctx.fillStyle = '#00aa66';
+    this.ctx.beginPath();
+    this.ctx.roundRect(centerX - 90, enableY - 18, 180, 36, 8);
+    this.ctx.fill();
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Enable Assist', centerX, enableY + 5);
+
+    // Decline button
+    const declineY = centerY + 135;
+    this.ctx.font = '14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888899';
+    this.ctx.fillText('No thanks, I\'ve got this!', centerX, declineY);
+
+    this.ctx.restore();
+  }
+
+  private handleAssistModeOfferClick(x: number, y: number): boolean {
+    if (!this.showAssistOffer) return false;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 2;
+
+    // Enable button
+    if (x >= centerX - 90 && x <= centerX + 90 && y >= centerY + 77 && y <= centerY + 113) {
+      this.enableAssistMode();
+      return true;
+    }
+
+    // Decline text area
+    if (y >= centerY + 120 && y <= centerY + 150) {
+      this.showAssistOffer = false;
+      return true;
+    }
+
+    return false;
+  }
+
+  private applyAssistModeCheckpoint(): void {
+    if (!this.assistModeEnabled) return;
+
+    const progress = this.level.getProgress(this.player.x);
+    const checkpointIndex = Math.floor(progress / this.assistCheckpointInterval);
+
+    // Save checkpoint if we've passed a new threshold
+    if (checkpointIndex > Math.floor(this.lastCheckpointProgress / this.assistCheckpointInterval)) {
+      this.checkpointX = this.player.x;
+      this.checkpointY = this.player.y;
+      this.lastCheckpointProgress = progress;
+      this.checkpointFeedbackTimer = 500;
+
+      // Visual feedback
+      this.particles.spawnPowerUpCollect(
+        this.player.x - this.cameraX,
+        this.player.y,
+        '#00ffaa'
+      );
+    }
+  }
+
+  private getAssistModeSpeedMultiplier(): number {
+    if (!this.assistModeEnabled) return 1;
+    return 0.5; // 50% speed buildup rate
+  }
+
+  private renderAssistModeIndicator(): void {
+    if (!this.assistModeEnabled) return;
+    if (this.state.gameStatus !== 'playing' && this.state.gameStatus !== 'practice') return;
+
+    this.ctx.save();
+
+    // Small indicator in corner
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillText('ASSIST', 20, GAME_HEIGHT - 15);
+
+    // Auto-checkpoint progress indicator
+    const progress = this.level.getProgress(this.player.x);
+    const nextCheckpoint = Math.ceil(progress / this.assistCheckpointInterval) * this.assistCheckpointInterval;
+    const progressToNext = (nextCheckpoint - progress) / this.assistCheckpointInterval;
+
+    this.ctx.fillStyle = 'rgba(0, 170, 255, 0.3)';
+    this.ctx.fillRect(60, GAME_HEIGHT - 20, 50, 8);
+    this.ctx.fillStyle = '#00aaff';
+    this.ctx.fillRect(60, GAME_HEIGHT - 20, 50 * (1 - progressToNext), 8);
+
+    this.ctx.restore();
+  }
+
+  // =====================================================
+  // LEADERBOARDS SYSTEM
+  // =====================================================
+
+  private renderLeaderboards(): void {
+    this.renderOverlay();
+
+    this.ctx.save();
+    this.ctx.textAlign = 'center';
+
+    // Title
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.shadowColor = '#ffd700';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText('LEADERBOARDS', GAME_WIDTH / 2, 60);
+    this.ctx.shadowBlur = 0;
+
+    // Level selector
+    this.ctx.font = '18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(`Level ${this.leaderboardLevelId}`, GAME_WIDTH / 2, 100);
+
+    // Arrow buttons
+    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = this.leaderboardLevelId > 1 ? '#00ffaa' : '#555555';
+    this.ctx.fillText('<', GAME_WIDTH / 2 - 80, 100);
+    this.ctx.fillStyle = this.leaderboardLevelId < TOTAL_LEVELS ? '#00ffaa' : '#555555';
+    this.ctx.fillText('>', GAME_WIDTH / 2 + 80, 100);
+
+    // Leaderboard entries
+    const entries = this.save.getLocalLeaderboard(this.leaderboardLevelId);
+    const startY = 140;
+    const rowHeight = 35;
+
+    // Header
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillText('RANK', 80, startY);
+    this.ctx.fillText('PLAYER', 150, startY);
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText('SCORE', GAME_WIDTH - 220, startY);
+    this.ctx.fillText('TIME', GAME_WIDTH - 120, startY);
+    this.ctx.fillText('DEATHS', GAME_WIDTH - 40, startY);
+
+    if (entries.length === 0) {
+      this.ctx.textAlign = 'center';
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#666666';
+      this.ctx.fillText('No entries yet. Complete this level to add your score!', GAME_WIDTH / 2, startY + 60);
+    } else {
+      entries.forEach((entry, i) => {
+        const y = startY + 30 + i * rowHeight;
+        const isPlayer = entry.isPlayer;
+
+        // Background for player's entry
+        if (isPlayer) {
+          this.ctx.fillStyle = 'rgba(0, 255, 170, 0.15)';
+          this.ctx.fillRect(70, y - 18, GAME_WIDTH - 100, rowHeight - 2);
+        }
+
+        // Rank medal for top 3
+        this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+        this.ctx.textAlign = 'left';
+        if (entry.rank === 1) {
+          this.ctx.fillStyle = '#ffd700';
+          this.ctx.fillText('🥇', 80, y);
+        } else if (entry.rank === 2) {
+          this.ctx.fillStyle = '#c0c0c0';
+          this.ctx.fillText('🥈', 80, y);
+        } else if (entry.rank === 3) {
+          this.ctx.fillStyle = '#cd7f32';
+          this.ctx.fillText('🥉', 80, y);
+        } else {
+          this.ctx.fillStyle = '#666666';
+          this.ctx.fillText(`${entry.rank}`, 85, y);
+        }
+
+        // Player name
+        this.ctx.fillStyle = isPlayer ? '#00ffaa' : '#ffffff';
+        this.ctx.fillText(entry.playerName.substring(0, 12), 150, y);
+
+        // Stats
+        this.ctx.textAlign = 'right';
+        this.ctx.fillStyle = '#ffcc00';
+        this.ctx.fillText(`${entry.score}`, GAME_WIDTH - 220, y);
+        this.ctx.fillStyle = '#00ffff';
+        this.ctx.fillText(this.formatTime(entry.time), GAME_WIDTH - 120, y);
+        this.ctx.fillStyle = entry.deaths === 0 ? '#00ff00' : '#ff6666';
+        this.ctx.fillText(`${entry.deaths}`, GAME_WIDTH - 40, y);
+      });
+    }
+
+    // Back button
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#888888';
+    this.ctx.fillText('Press ESC or click here to go back', GAME_WIDTH / 2, GAME_HEIGHT - 40);
+
+    this.ctx.restore();
+  }
+
+  private handleLeaderboardsClick(x: number, y: number): void {
+    // Level navigation arrows
+    if (y >= 85 && y <= 115) {
+      if (x >= GAME_WIDTH / 2 - 100 && x <= GAME_WIDTH / 2 - 60 && this.leaderboardLevelId > 1) {
+        this.leaderboardLevelId--;
+        this.audio.playSelect();
+      } else if (x >= GAME_WIDTH / 2 + 60 && x <= GAME_WIDTH / 2 + 100 && this.leaderboardLevelId < TOTAL_LEVELS) {
+        this.leaderboardLevelId++;
+        this.audio.playSelect();
+      }
+    }
+
+    // Back button
+    if (y >= GAME_HEIGHT - 60) {
+      this.state.gameStatus = 'mainMenu';
+      this.audio.playSelect();
+    }
+  }
+
+  private addToLeaderboard(): void {
+    const entry: Omit<LeaderboardEntry, 'rank'> = {
+      playerName: this.save.getPlayerName(),
+      score: this.levelScoreThisRun,
+      time: this.levelElapsedTime,
+      deaths: this.levelDeathCount,
+      date: Date.now(),
+      isPlayer: true,
+    };
+    this.save.addLeaderboardEntry(this.state.currentLevel, entry);
+  }
+
+  private formatTime(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const millis = Math.floor((ms % 1000) / 10);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(2, '0')}`;
+  }
+
+  // =====================================================
+  // LEVEL MASTERY BADGES
+  // =====================================================
+
+  private checkMasteryBadges(): void {
+    const levelId = this.state.currentLevel;
+    const newBadges: MasteryBadge[] = [];
+
+    // Flawless: Complete without dying
+    if (this.levelDeathCount === 0 && !this.save.hasMasteryBadge(levelId, 'flawless')) {
+      if (this.save.addMasteryBadge(levelId, 'flawless')) {
+        newBadges.push('flawless');
+      }
+    }
+
+    // Speed Demon: Beat par time (based on level length estimate)
+    const parTime = this.getParTime(levelId);
+    if (this.levelElapsedTime < parTime && !this.save.hasMasteryBadge(levelId, 'speedDemon')) {
+      if (this.save.addMasteryBadge(levelId, 'speedDemon')) {
+        newBadges.push('speedDemon');
+      }
+    }
+
+    // Collector: Get all coins
+    const totalCoins = this.level.getTotalCoins();
+    if (totalCoins > 0 && this.level.coinsCollected >= totalCoins && !this.save.hasMasteryBadge(levelId, 'collector')) {
+      if (this.save.addMasteryBadge(levelId, 'collector')) {
+        newBadges.push('collector');
+      }
+    }
+
+    // Rhythm Master: 90%+ on-beat jumps
+    const rhythmAccuracy = this.levelRhythmTotal > 0
+      ? (this.levelRhythmHits / this.levelRhythmTotal) * 100
+      : 0;
+    this.save.setRhythmAccuracy(levelId, rhythmAccuracy);
+
+    if (rhythmAccuracy >= 90 && this.levelRhythmTotal >= 10 && !this.save.hasMasteryBadge(levelId, 'rhythmMaster')) {
+      if (this.save.addMasteryBadge(levelId, 'rhythmMaster')) {
+        newBadges.push('rhythmMaster');
+      }
+    }
+
+    // Queue badge notifications
+    for (const badge of newBadges) {
+      this.newBadgesEarned.push({ badge, levelId });
+    }
+    if (newBadges.length > 0) {
+      this.badgeNotificationTimer = 3000;
+    }
+  }
+
+  private getParTime(levelId: number): number {
+    // Par times in milliseconds (roughly 1 minute base, scaling with level)
+    const parTimes: Record<number, number> = {
+      1: 45000,
+      2: 50000,
+      3: 55000,
+      4: 60000,
+      5: 65000,
+      6: 70000,
+      7: 80000,
+      8: 90000,
+    };
+    return parTimes[levelId] || 60000;
+  }
+
+  private renderMasteryBadges(levelId: number, x: number, y: number): void {
+    const badges = this.save.getLevelMasteryBadges(levelId);
+    const badgeSize = 20;
+    const spacing = 5;
+
+    const allBadges: { id: MasteryBadge; icon: string; color: string; name: string }[] = [
+      { id: 'flawless', icon: '💎', color: '#00ffff', name: 'Flawless' },
+      { id: 'speedDemon', icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
+      { id: 'collector', icon: '🪙', color: '#ffd700', name: 'Collector' },
+      { id: 'rhythmMaster', icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
+    ];
+
+    this.ctx.save();
+
+    allBadges.forEach((badge, i) => {
+      const bx = x + i * (badgeSize + spacing);
+      const hasEarned = badges.includes(badge.id);
+
+      // Badge background
+      this.ctx.fillStyle = hasEarned ? badge.color + '33' : 'rgba(50, 50, 50, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Badge icon
+      this.ctx.font = `${hasEarned ? 14 : 10}px "Segoe UI", sans-serif`;
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillStyle = hasEarned ? '#ffffff' : '#444444';
+      this.ctx.fillText(badge.icon, bx, y);
+    });
+
+    this.ctx.restore();
+  }
+
+  private renderBadgeNotification(): void {
+    if (this.newBadgesEarned.length === 0 || this.badgeNotificationTimer <= 0) return;
+
+    const badge = this.newBadgesEarned[0];
+    const fadeIn = Math.min(1, (3000 - this.badgeNotificationTimer) / 300);
+    const fadeOut = Math.min(1, this.badgeNotificationTimer / 500);
+    const alpha = Math.min(fadeIn, fadeOut);
+
+    const badgeInfo: Record<string, { icon: string; name: string; color: string }> = {
+      flawless: { icon: '💎', name: 'FLAWLESS', color: '#00ffff' },
+      speedDemon: { icon: '⚡', name: 'SPEED DEMON', color: '#ffcc00' },
+      collector: { icon: '🪙', name: 'COLLECTOR', color: '#ffd700' },
+      rhythmMaster: { icon: '🎵', name: 'RHYTHM MASTER', color: '#ff00ff' },
+    };
+
+    const info = badgeInfo[badge.badge];
+    if (!info) return;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+
+    const centerX = GAME_WIDTH / 2;
+    const centerY = 150;
+
+    // Glow
+    const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
+    gradient.addColorStop(0, info.color + '44');
+    gradient.addColorStop(1, 'transparent');
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
+
+    // Badge icon
+    this.ctx.font = 'bold 48px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(info.icon, centerX, centerY - 5);
+
+    // Text
+    this.ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = info.color;
+    this.ctx.shadowColor = info.color;
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText('BADGE UNLOCKED!', centerX, centerY + 35);
+
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillText(info.name, centerX, centerY + 55);
+
+    this.ctx.restore();
+  }
+
+  private updateBadgeNotification(deltaTime: number): void {
+    if (this.badgeNotificationTimer > 0) {
+      this.badgeNotificationTimer -= deltaTime;
+      if (this.badgeNotificationTimer <= 0 && this.newBadgesEarned.length > 0) {
+        this.newBadgesEarned.shift();
+        if (this.newBadgesEarned.length > 0) {
+          this.badgeNotificationTimer = 3000;
+        }
+      }
+    }
+  }
+
+  // =====================================================
+  // WEATHER / ENVIRONMENTAL EFFECTS
+  // =====================================================
+
+  private initWeatherForLevel(): void {
+    // Assign weather based on level or random chance
+    const levelWeathers: Record<number, WeatherType> = {
+      3: 'night',  // Space level - night mode
+      4: 'fog',    // Forest level - foggy
+      5: 'heat',   // Volcano level - heat shimmer
+      6: 'rain',   // Ocean level - rain (underwater bubbles from above)
+    };
+
+    this.currentWeather = levelWeathers[this.state.currentLevel] || 'clear';
+
+    // 20% chance for random weather on clear levels
+    if (this.currentWeather === 'clear' && Math.random() < 0.2) {
+      const randomWeathers: WeatherType[] = ['rain', 'wind', 'fog', 'snow'];
+      this.currentWeather = randomWeathers[Math.floor(Math.random() * randomWeathers.length)];
+    }
+
+    this.weatherIntensity = this.currentWeather === 'clear' ? 0 : 0.5 + Math.random() * 0.5;
+    this.weatherDirection = Math.random() > 0.5 ? 1 : -1;
+    this.weatherParticles = [];
+    this.fogOpacity = 0;
+  }
+
+  private updateWeather(deltaTime: number): void {
+    if (!this.weatherEnabled || this.currentWeather === 'clear') return;
+
+    const dt = deltaTime / 1000;
+
+    switch (this.currentWeather) {
+      case 'rain':
+        this.updateRainWeather(dt);
+        break;
+      case 'wind':
+        this.updateWindWeather(dt);
+        break;
+      case 'fog':
+        this.updateFogWeather(dt);
+        break;
+      case 'night':
+        // Night mode is handled in render
+        break;
+      case 'snow':
+        this.updateSnowWeather(dt);
+        break;
+      case 'heat':
+        // Heat shimmer is handled in render
+        break;
+    }
+  }
+
+  private updateRainWeather(dt: number): void {
+    // Spawn new rain particles
+    const spawnRate = this.weatherIntensity * 5;
+    for (let i = 0; i < spawnRate; i++) {
+      if (Math.random() < 0.3) {
+        this.weatherParticles.push({
+          x: Math.random() * (GAME_WIDTH + 200) - 100,
+          y: -20,
+          vx: this.weatherDirection * 50,
+          vy: 400 + Math.random() * 200,
+          size: 2 + Math.random() * 2,
+          alpha: 0.3 + Math.random() * 0.4,
+        });
+      }
+    }
+
+    // Update particles
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      if (p.y > GAME_HEIGHT + 20) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    // Limit particles
+    if (this.weatherParticles.length > 200) {
+      this.weatherParticles = this.weatherParticles.slice(-200);
+    }
+  }
+
+  private updateWindWeather(dt: number): void {
+    // Wind gusts
+    if (Math.random() < 0.01) {
+      this.weatherDirection = Math.random() > 0.5 ? 1 : -1;
+    }
+
+    // Spawn wind streaks
+    if (Math.random() < this.weatherIntensity * 0.5) {
+      this.weatherParticles.push({
+        x: this.weatherDirection > 0 ? -50 : GAME_WIDTH + 50,
+        y: Math.random() * GAME_HEIGHT,
+        vx: this.weatherDirection * (300 + Math.random() * 200),
+        vy: (Math.random() - 0.5) * 50,
+        size: 30 + Math.random() * 50,
+        alpha: 0.1 + Math.random() * 0.2,
+      });
+    }
+
+    // Update particles
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= dt * 0.5;
+
+      if (p.alpha <= 0 || p.x < -100 || p.x > GAME_WIDTH + 100) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 50) {
+      this.weatherParticles = this.weatherParticles.slice(-50);
+    }
+  }
+
+  private updateFogWeather(dt: number): void {
+    // Gradually increase fog
+    this.fogOpacity = Math.min(this.weatherIntensity * 0.4, this.fogOpacity + dt * 0.1);
+
+    // Floating fog wisps
+    if (Math.random() < 0.05) {
+      this.weatherParticles.push({
+        x: Math.random() * GAME_WIDTH,
+        y: GAME_HEIGHT / 2 + (Math.random() - 0.5) * GAME_HEIGHT,
+        vx: (Math.random() - 0.5) * 30,
+        vy: (Math.random() - 0.5) * 20,
+        size: 100 + Math.random() * 150,
+        alpha: 0.1 + Math.random() * 0.15,
+      });
+    }
+
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.alpha -= dt * 0.02;
+
+      if (p.alpha <= 0) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 20) {
+      this.weatherParticles = this.weatherParticles.slice(-20);
+    }
+  }
+
+  private updateSnowWeather(dt: number): void {
+    // Spawn snowflakes
+    if (Math.random() < this.weatherIntensity * 0.3) {
+      this.weatherParticles.push({
+        x: Math.random() * (GAME_WIDTH + 100) - 50,
+        y: -10,
+        vx: (Math.random() - 0.5) * 50 + this.weatherDirection * 20,
+        vy: 50 + Math.random() * 50,
+        size: 3 + Math.random() * 4,
+        alpha: 0.5 + Math.random() * 0.5,
+      });
+    }
+
+    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+      const p = this.weatherParticles[i];
+      p.x += p.vx * dt + Math.sin(Date.now() / 500 + i) * 0.5;
+      p.y += p.vy * dt;
+
+      if (p.y > GAME_HEIGHT + 20) {
+        this.weatherParticles.splice(i, 1);
+      }
+    }
+
+    if (this.weatherParticles.length > 150) {
+      this.weatherParticles = this.weatherParticles.slice(-150);
+    }
+  }
+
+  private renderWeatherEffects(): void {
+    if (!this.weatherEnabled || this.currentWeather === 'clear') return;
+
+    this.ctx.save();
+
+    switch (this.currentWeather) {
+      case 'rain':
+        this.renderRainEffect();
+        break;
+      case 'wind':
+        this.renderWindEffect();
+        break;
+      case 'fog':
+        this.renderFogEffect();
+        break;
+      case 'night':
+        this.renderNightEffect();
+        break;
+      case 'snow':
+        this.renderSnowEffect();
+        break;
+      case 'heat':
+        this.renderHeatEffect();
+        break;
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderRainEffect(): void {
+    this.ctx.strokeStyle = 'rgba(150, 180, 255, 0.6)';
+    this.ctx.lineWidth = 1;
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.x, p.y);
+      this.ctx.lineTo(p.x + p.vx * 0.02, p.y + p.size * 3);
+      this.ctx.stroke();
+    }
+
+    // Slight blue overlay
+    this.ctx.globalAlpha = 0.05;
+    this.ctx.fillStyle = '#4488ff';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderWindEffect(): void {
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    this.ctx.lineWidth = 2;
+    this.ctx.lineCap = 'round';
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.x, p.y);
+      this.ctx.lineTo(p.x + p.size * this.weatherDirection, p.y);
+      this.ctx.stroke();
+    }
+  }
+
+  private renderFogEffect(): void {
+    // Base fog overlay
+    this.ctx.globalAlpha = this.fogOpacity;
+    this.ctx.fillStyle = '#888899';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Fog wisps
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      const gradient = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+      gradient.addColorStop(0, 'rgba(200, 200, 210, 0.3)');
+      gradient.addColorStop(1, 'transparent');
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+    }
+  }
+
+  private renderNightEffect(): void {
+    // Dark overlay with spotlight around player
+    const playerScreenX = this.player.x - this.cameraX + this.player.width / 2;
+    const playerScreenY = this.player.y + this.player.height / 2;
+
+    // Create spotlight gradient
+    const gradient = this.ctx.createRadialGradient(
+      playerScreenX, playerScreenY, 0,
+      playerScreenX, playerScreenY, this.nightSpotlightRadius
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.5)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.85)');
+
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Subtle vignette
+    this.ctx.globalAlpha = 0.3;
+    const vignette = this.ctx.createRadialGradient(
+      GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT * 0.3,
+      GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT
+    );
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, 'rgba(0, 0, 20, 0.8)');
+    this.ctx.fillStyle = vignette;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderSnowEffect(): void {
+    this.ctx.fillStyle = '#ffffff';
+
+    for (const p of this.weatherParticles) {
+      this.ctx.globalAlpha = p.alpha;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+
+    // Slight cold overlay
+    this.ctx.globalAlpha = 0.03;
+    this.ctx.fillStyle = '#aaddff';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private renderHeatEffect(): void {
+    // Heat shimmer effect using wave distortion simulation
+    const time = Date.now() / 1000;
+    this.ctx.globalAlpha = 0.03 * this.weatherIntensity;
+
+    // Wavy heat lines
+    this.ctx.strokeStyle = 'rgba(255, 150, 50, 0.3)';
+    this.ctx.lineWidth = 2;
+
+    for (let y = 0; y < GAME_HEIGHT; y += 30) {
+      this.ctx.beginPath();
+      for (let x = 0; x < GAME_WIDTH; x += 10) {
+        const waveY = y + Math.sin(x / 50 + time * 3 + y / 20) * 5;
+        if (x === 0) {
+          this.ctx.moveTo(x, waveY);
+        } else {
+          this.ctx.lineTo(x, waveY);
+        }
+      }
+      this.ctx.stroke();
+    }
+
+    // Orange/red tint overlay
+    this.ctx.globalAlpha = 0.05;
+    this.ctx.fillStyle = '#ff6600';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private applyWeatherPhysics(): void {
+    if (!this.weatherEnabled || this.player.isDead) return;
+
+    // Wind affects player movement
+    if (this.currentWeather === 'wind') {
+      const windForce = this.weatherDirection * this.weatherIntensity * 50;
+      this.player.x += windForce * 0.016; // Approximate deltaTime
+    }
+
+    // Rain makes platforms slightly slippery (handled in platform physics)
+    // Snow slows down player slightly
+    if (this.currentWeather === 'snow') {
+      // Small slowdown effect is handled in player update
+    }
+  }
+
+  private renderWeatherIndicator(): void {
+    if (this.currentWeather === 'clear') return;
+
+    this.ctx.save();
+
+    const icons: Record<WeatherType, string> = {
+      clear: '',
+      rain: '🌧️',
+      wind: '💨',
+      fog: '🌫️',
+      night: '🌙',
+      snow: '❄️',
+      heat: '🔥',
+    };
+
+    this.ctx.font = '16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'right';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.globalAlpha = 0.7;
+    this.ctx.fillText(icons[this.currentWeather], GAME_WIDTH - 20, 65);
+
+    this.ctx.restore();
   }
 }

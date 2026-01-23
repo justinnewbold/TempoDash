@@ -67,8 +67,16 @@ export class Player {
 
   // Boomerang bounce state (when hitting platform edge)
   private boomerangVelocityX = 0;
-  private static readonly BOOMERANG_INITIAL_VELOCITY = -250; // Initial backward velocity
-  private static readonly BOOMERANG_RETURN_ACCEL = 500; // Forward acceleration to create boomerang curve
+  private boomerangActive = false;
+  private boomerangTimer = 0;
+  private static readonly BOOMERANG_INITIAL_VELOCITY = -350; // Initial backward velocity (more dramatic)
+  private static readonly BOOMERANG_RETURN_ACCEL = 400; // Forward acceleration to create boomerang curve
+  private static readonly BOOMERANG_WINDOW = 800; // ms window to tap for rescue dash
+  private static readonly RESCUE_DASH_SPEED = 500; // Forward burst speed for rescue
+
+  // Rescue dash state
+  isInRescueWindow = false; // Exposed so Game can show indicator
+  private rescueDashTriggered = false;
 
   // Slow-mo zone state
   isInSlowMo = false;
@@ -130,6 +138,10 @@ export class Player {
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
     this.boomerangVelocityX = 0;
+    this.boomerangActive = false;
+    this.boomerangTimer = 0;
+    this.isInRescueWindow = false;
+    this.rescueDashTriggered = false;
     this.clearEvents();
   }
 
@@ -189,16 +201,43 @@ export class Player {
     this.x += PLAYER.SPEED * speedMult * speedMultiplier * stickySlow * (deltaTime / 1000);
 
     // Boomerang physics: when hit platform edge, player moves back then forward again
-    if (this.boomerangVelocityX !== 0) {
+    if (this.boomerangActive) {
+      this.boomerangTimer += deltaTime;
+
+      // Check for rescue dash input during the rescue window
+      if (this.boomerangTimer < Player.BOOMERANG_WINDOW) {
+        this.isInRescueWindow = true;
+
+        // If player taps jump during rescue window, trigger rescue dash
+        if (input.jumpPressed && !this.rescueDashTriggered) {
+          this.rescueDashTriggered = true;
+          // Cancel boomerang backward motion and dash forward
+          this.boomerangVelocityX = Player.RESCUE_DASH_SPEED;
+          // Give extra upward boost for the save
+          this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
+          // Trigger a dash effect
+          this.isDashing = true;
+          this.dashTimer = 300; // Short dash
+        }
+      } else {
+        this.isInRescueWindow = false;
+      }
+
       // Apply boomerang velocity to position
       this.x += this.boomerangVelocityX * (deltaTime / 1000);
 
       // Accelerate forward to create boomerang curve (back -> forward)
-      this.boomerangVelocityX += Player.BOOMERANG_RETURN_ACCEL * (deltaTime / 1000);
+      // If rescue dash was triggered, accelerate faster
+      const accelMult = this.rescueDashTriggered ? 2.0 : 1.0;
+      this.boomerangVelocityX += Player.BOOMERANG_RETURN_ACCEL * accelMult * (deltaTime / 1000);
 
-      // Once we've swung back forward past the starting point, end the boomerang
-      if (this.boomerangVelocityX >= 150) {
+      // Once we've swung back forward past a threshold, end the boomerang
+      if (this.boomerangVelocityX >= 200) {
         this.boomerangVelocityX = 0;
+        this.boomerangActive = false;
+        this.boomerangTimer = 0;
+        this.isInRescueWindow = false;
+        this.rescueDashTriggered = false;
       }
     }
 
@@ -419,11 +458,15 @@ export class Player {
         // If at least 25% of player height is above platform top, trigger boomerang bounce
         if (overlapAbove >= this.height * 0.25) {
           // Push back from the platform edge
-          this.x = bounds.x + bounds.width + 2;
-          // Give upward velocity - enough to potentially clear platform with a jump
-          this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
+          this.x = bounds.x + bounds.width + 5;
+          // Give strong upward velocity - arcs up dramatically
+          this.velocityY = -PLAYER.JUMP_FORCE * 1.1;
           // Trigger boomerang effect - player swings backwards then forwards
           this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
+          this.boomerangActive = true;
+          this.boomerangTimer = 0;
+          this.isInRescueWindow = true;
+          this.rescueDashTriggered = false;
           // Reset all jumps - give player full air jumps to recover
           this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback
@@ -443,11 +486,15 @@ export class Player {
 
         if (overlapAbove >= this.height * 0.25) {
           // Push back from the platform edge
-          this.x = bounds.x - this.width - 2;
-          // Give upward velocity for recovery
-          this.velocityY = -PLAYER.JUMP_FORCE * 0.7;
+          this.x = bounds.x - this.width - 5;
+          // Give strong upward velocity - arcs up dramatically
+          this.velocityY = -PLAYER.JUMP_FORCE * 1.1;
           // Trigger boomerang effect - player swings backwards then forwards
           this.boomerangVelocityX = Player.BOOMERANG_INITIAL_VELOCITY;
+          this.boomerangActive = true;
+          this.boomerangTimer = 0;
+          this.isInRescueWindow = true;
+          this.rescueDashTriggered = false;
           // Reset all jumps - give player full air jumps to recover
           this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback

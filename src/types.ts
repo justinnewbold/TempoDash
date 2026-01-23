@@ -145,6 +145,9 @@ export type MenuState =
   | 'skins'
   | 'achievements'
   | 'challenges'
+  | 'platformGuide'
+  | 'replays'
+  | 'leaderboards'
   | 'playing'
   | 'practice'
   | 'endless'
@@ -168,12 +171,19 @@ export interface SaveData {
   levelStars: Record<number, number>; // levelId -> stars earned (1-3)
   levelDeaths: Record<number, number>; // levelId -> best run death count
   bestTimes: Record<number, number>; // levelId -> best completion time (ms)
+  splitTimes?: Record<number, number[]>; // levelId -> best split times at checkpoints
   ghostRuns: Record<number, GhostFrame[]>; // levelId -> ghost data
   totalDeaths: number;
   totalCoinsCollected: number;
   totalLevelsCompleted: number;
   totalPlayTime: number; // in milliseconds
   longestCombo: number;
+  // Mastery badges
+  levelMastery?: Record<number, MasteryBadge[]>; // levelId -> earned badges
+  rhythmAccuracy?: Record<number, number>; // levelId -> best rhythm accuracy (0-100)
+  // Leaderboard
+  playerName?: string;
+  localLeaderboards?: Record<number, LeaderboardEntry[]>; // levelId -> local entries
 }
 
 // Ghost replay frame
@@ -238,6 +248,8 @@ export interface GameSettings {
   reduceFlash: boolean;  // Reduce screen flash effects (death/power-up)
   showGhost: boolean;    // Show ghost replay in levels
   highContrast: boolean; // High contrast mode for better visibility
+  assistMode: boolean;   // Assist mode for struggling players
+  showBeatVisualizer: boolean; // Show rhythm sync visualizer
 }
 
 export interface PlayerSkin {
@@ -306,4 +318,43 @@ export interface EditorAction {
   elementType: 'platform' | 'coin' | 'playerStart' | 'goal' | 'background';
   before: unknown;
   after: unknown;
+}
+
+// Leaderboard Entry
+export interface LeaderboardEntry {
+  rank: number;
+  playerName: string;
+  score: number;
+  time: number;
+  deaths: number;
+  date: number;
+  isPlayer?: boolean; // Highlight current player's entry
+}
+
+// Level Mastery Badges
+export type MasteryBadge = 'flawless' | 'speedDemon' | 'collector' | 'rhythmMaster';
+
+export interface LevelMastery {
+  levelId: number;
+  badges: MasteryBadge[];
+  bestTime: number;
+  bestDeaths: number;
+  bestCoins: number;
+  rhythmAccuracy: number; // 0-100 percentage
+}
+
+// Weather/Environmental Effects
+export type WeatherType = 'clear' | 'rain' | 'wind' | 'fog' | 'night' | 'snow' | 'heat';
+
+export interface WeatherEffect {
+  type: WeatherType;
+  intensity: number; // 0-1
+  direction?: number; // For wind: -1 left, 1 right
+}
+
+export interface WeatherConfig {
+  enabled: boolean;
+  type: WeatherType;
+  intensity: number;
+  affectsGameplay: boolean; // Whether weather affects physics
 }
