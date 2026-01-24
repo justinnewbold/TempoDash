@@ -313,9 +313,20 @@ export class AudioManager {
   private scheduler(): void {
     if (!this.audioContext) return;
 
-    while (this.nextNoteTime < this.audioContext.currentTime + this.scheduleAheadTime) {
+    // Safety: limit iterations to prevent freeze if nextNoteTime falls too far behind
+    // This can happen when tab is inactive or speed multiplier changes rapidly
+    const maxIterations = 32;
+    let iterations = 0;
+
+    // If we've fallen too far behind, skip ahead to catch up instead of processing all missed notes
+    if (this.nextNoteTime < this.audioContext.currentTime - 0.5) {
+      this.nextNoteTime = this.audioContext.currentTime;
+    }
+
+    while (this.nextNoteTime < this.audioContext.currentTime + this.scheduleAheadTime && iterations < maxIterations) {
       this.scheduleNote(this.noteIndex, this.nextNoteTime);
       this.nextNote();
+      iterations++;
     }
     this.timerID = window.setTimeout(() => this.scheduler(), this.lookahead);
   }

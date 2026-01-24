@@ -617,6 +617,10 @@ export class Player {
     return this.isWallSliding;
   }
 
+  getAirJumpsRemaining(): number {
+    return this.airJumpsRemaining;
+  }
+
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     const screenX = this.x - cameraX;
     const screenY = this.y;
