@@ -54,6 +54,8 @@ export class BeatHazard {
     this.animationTime += deltaTime;
 
     // Determine if hazard should be active based on pattern
+    // Guard against empty pattern to prevent division by zero
+    if (this.pattern.length === 0) return;
     const patternIndex = (currentBeat + this.patternOffset) % this.pattern.length;
     const shouldBeActive = this.pattern[patternIndex] === 1;
 

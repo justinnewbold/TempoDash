@@ -66,10 +66,14 @@ export class TimeRewindManager {
       cameraX,
     });
 
-    // Remove old frames beyond max rewind time
+    // Remove old frames beyond max rewind time using index search instead of shift()
     const cutoffTime = now - TimeRewindManager.MAX_REWIND_TIME;
-    while (this.frames.length > 0 && this.frames[0].timestamp < cutoffTime) {
-      this.frames.shift();
+    let cutoffIndex = 0;
+    while (cutoffIndex < this.frames.length && this.frames[cutoffIndex].timestamp < cutoffTime) {
+      cutoffIndex++;
+    }
+    if (cutoffIndex > 0) {
+      this.frames = this.frames.slice(cutoffIndex);
     }
   }
 
