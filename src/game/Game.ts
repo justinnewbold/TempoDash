@@ -120,9 +120,10 @@ export class Game {
   // High-DPI support
   private dpr = 1;
 
-  // Speed increase system - each jump increases speed by 1%
+  // Speed increase system - each flip (any jump) increases speed by 1%
   private speedMultiplier = 1.0;
   private jumpCount = 0;
+  private prevAirJumpsRemaining = 4; // Track air jumps for speed increase on flips
   private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
 
   // Orientation and screen sizing
@@ -475,6 +476,7 @@ export class Game {
     // Reset speed multiplier for new level
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
     this.audio.resetGameSpeed();
 
     // Enable flying mode if level config specifies it
@@ -1444,6 +1446,7 @@ export class Game {
       this.attempts = 1;
       this.speedMultiplier = 1.0;
       this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
       this.audio.resetGameSpeed();
     } else {
       // Restart current level
@@ -1617,6 +1620,7 @@ export class Game {
     this.attempts++;
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
     this.audio.setGameSpeedMultiplier(1.0);
     this.comboCount = 0;
     this.comboTimer = 0;
@@ -1863,6 +1867,7 @@ export class Game {
     // Reset speed multiplier on death
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
     this.audio.resetGameSpeed();
 
     if (this.state.gameStatus === 'editorTest' && this.editingLevel) {
@@ -2056,6 +2061,7 @@ export class Game {
     const wasAliveBefore = !this.player.isDead;
     const prevVelocityY = this.player.velocityY;
     const wasDashing = this.player.isDashing;
+    const prevAirJumps = this.prevAirJumpsRemaining;
 
     // Update modifiers (for time attack countdown)
     this.modifiers.update(deltaTime);
@@ -2472,20 +2478,32 @@ export class Game {
       this.comboMeterPulse -= deltaTime / 200;
     }
 
-    if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
-      this.audio.playJump();
-      // Increase speed by 1% per jump (compound growth)
+    // Helper to increase speed on any flip (ground or air jump)
+    const applyFlipSpeedIncrease = () => {
       this.jumpCount++;
       const speedIncrease = Game.SPEED_INCREASE_PER_JUMP * this.getAssistModeSpeedMultiplier();
       this.speedMultiplier *= (1 + speedIncrease);
       // Sync music tempo with game speed
       this.audio.setGameSpeedMultiplier(this.speedMultiplier);
+    };
+
+    // Ground jump - leaving the ground
+    if (wasGroundedBefore && !this.player.isGrounded && !this.player.isDead) {
+      this.audio.playJump();
+      applyFlipSpeedIncrease();
 
       // Spawn jump dust particles
       const jumpX = this.player.x + this.player.width / 2;
       const jumpY = this.player.y + this.player.height;
       this.particles.spawnJumpDust(jumpX, jumpY);
     }
+
+    // Air jump - speed increase on every flip, not just landed jumps
+    const currentAirJumps = this.player.getAirJumpsRemaining();
+    if (currentAirJumps < prevAirJumps && !this.player.isDead) {
+      applyFlipSpeedIncrease();
+    }
+    this.prevAirJumpsRemaining = currentAirJumps;
 
     // Landing dust when player hits ground
     if (!wasGroundedBefore && this.player.isGrounded && !this.player.isDead) {
@@ -5775,6 +5793,7 @@ export class Game {
     this.endlessDistance = 0;
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
     this.audio.resetGameSpeed();
 
     // Generate procedural platforms using the challenge seed
@@ -5812,6 +5831,7 @@ export class Game {
     this.endlessDistance = 0;
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
     this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
