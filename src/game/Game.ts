@@ -2079,6 +2079,9 @@ export class Game {
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
 
+    // Cache active platforms once per frame to avoid repeated filtering
+    const activePlatforms = this.isEndlessMode ? this.endlessPlatforms : this.level.getActivePlatforms();
+
     // Update beat timer and rhythm lock state BEFORE player update (affects platform.isCollidable())
     this.beatTimer += deltaTime;
     const beatInterval = 60000 / this.currentBPM; // ms per beat
@@ -2086,8 +2089,7 @@ export class Game {
       this.beatTimer -= beatInterval;
       this.currentBeatNumber++;
       // Trigger beat pulse on all platforms
-      const platformsToUpdate = this.isEndlessMode ? this.endlessPlatforms : this.level.getActivePlatforms();
-      for (const platform of platformsToUpdate) {
+      for (const platform of activePlatforms) {
         platform.triggerBeatPulse();
       }
       // Check for on-beat jump (for Flow Meter and Rhythm Visualizer)
@@ -2172,10 +2174,18 @@ export class Game {
       // Generate more platforms ahead
       this.generateEndlessPlatforms(this.cameraX + 1500);
 
-      // Clean up platforms behind camera
-      this.endlessPlatforms = this.endlessPlatforms.filter((p) => p.x + p.width > this.cameraX - 200);
+      // Clean up platforms behind camera using in-place removal to avoid array allocation
+      const cleanupThreshold = this.cameraX - 200;
+      let writeIdx = 0;
+      for (let i = 0; i < this.endlessPlatforms.length; i++) {
+        const p = this.endlessPlatforms[i];
+        if (p.x + p.width > cleanupThreshold) {
+          this.endlessPlatforms[writeIdx++] = p;
+        }
+      }
+      this.endlessPlatforms.length = writeIdx;
     } else {
-      this.player.update(deltaTime, inputState, this.level.getActivePlatforms(), effectiveSpeedMultiplier, allowAirJumps);
+      this.player.update(deltaTime, inputState, activePlatforms, effectiveSpeedMultiplier, allowAirJumps);
     }
 
     // Handle player particle events
@@ -2302,7 +2312,7 @@ export class Game {
     // Check secret platform reveals
     const playerCenterX = this.player.x + this.player.width / 2;
     const playerCenterY = this.player.y + this.player.height / 2;
-    for (const platform of this.level.getActivePlatforms()) {
+    for (const platform of activePlatforms) {
       if (platform.checkSecretReveal(playerCenterX, playerCenterY)) {
         // Secret platform revealed! Add feedback
         this.audio.playCoinCollect();
@@ -2347,7 +2357,7 @@ export class Game {
     // Near-miss detection - check if player is close to spikes/lava without dying
     const nearMissDistance = 15; // pixels
     const playerBounds = this.player.getBounds();
-    for (const platform of this.level.getActivePlatforms()) {
+    for (const platform of activePlatforms) {
       if (platform.type === 'spike' || platform.type === 'lava') {
         const platBounds = platform.getBounds();
         const dx = Math.max(0, Math.max(platBounds.x - (playerBounds.x + playerBounds.width), playerBounds.x - (platBounds.x + platBounds.width)));
@@ -8775,21 +8785,18 @@ export class Game {
       }
     }
 
-    // Update particles
-    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+    // Update particles using swap-and-pop to avoid O(n²) splice
+    let writeIdx = 0;
+    for (let i = 0; i < this.weatherParticles.length; i++) {
       const p = this.weatherParticles[i];
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      if (p.y > GAME_HEIGHT + 20) {
-        this.weatherParticles.splice(i, 1);
+      if (p.y <= GAME_HEIGHT + 20) {
+        this.weatherParticles[writeIdx++] = p;
       }
     }
-
-    // Limit particles
-    if (this.weatherParticles.length > 200) {
-      this.weatherParticles = this.weatherParticles.slice(-200);
-    }
+    this.weatherParticles.length = Math.min(writeIdx, 200);
   }
 
   private updateWindWeather(dt: number): void {
@@ -8810,21 +8817,19 @@ export class Game {
       });
     }
 
-    // Update particles
-    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+    // Update particles using swap-and-pop
+    let writeIdx = 0;
+    for (let i = 0; i < this.weatherParticles.length; i++) {
       const p = this.weatherParticles[i];
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.alpha -= dt * 0.5;
 
-      if (p.alpha <= 0 || p.x < -100 || p.x > GAME_WIDTH + 100) {
-        this.weatherParticles.splice(i, 1);
+      if (p.alpha > 0 && p.x >= -100 && p.x <= GAME_WIDTH + 100) {
+        this.weatherParticles[writeIdx++] = p;
       }
     }
-
-    if (this.weatherParticles.length > 50) {
-      this.weatherParticles = this.weatherParticles.slice(-50);
-    }
+    this.weatherParticles.length = Math.min(writeIdx, 50);
   }
 
   private updateFogWeather(dt: number): void {
@@ -8843,23 +8848,25 @@ export class Game {
       });
     }
 
-    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+    // Update particles using swap-and-pop
+    let writeIdx = 0;
+    for (let i = 0; i < this.weatherParticles.length; i++) {
       const p = this.weatherParticles[i];
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.alpha -= dt * 0.02;
 
-      if (p.alpha <= 0) {
-        this.weatherParticles.splice(i, 1);
+      if (p.alpha > 0) {
+        this.weatherParticles[writeIdx++] = p;
       }
     }
-
-    if (this.weatherParticles.length > 20) {
-      this.weatherParticles = this.weatherParticles.slice(-20);
-    }
+    this.weatherParticles.length = Math.min(writeIdx, 20);
   }
 
   private updateSnowWeather(dt: number): void {
+    // Cache Date.now() outside loop for performance
+    const now = Date.now();
+
     // Spawn snowflakes
     if (Math.random() < this.weatherIntensity * 0.3) {
       this.weatherParticles.push({
@@ -8872,19 +8879,18 @@ export class Game {
       });
     }
 
-    for (let i = this.weatherParticles.length - 1; i >= 0; i--) {
+    // Update particles using swap-and-pop
+    let writeIdx = 0;
+    for (let i = 0; i < this.weatherParticles.length; i++) {
       const p = this.weatherParticles[i];
-      p.x += p.vx * dt + Math.sin(Date.now() / 500 + i) * 0.5;
+      p.x += p.vx * dt + Math.sin(now / 500 + i) * 0.5;
       p.y += p.vy * dt;
 
-      if (p.y > GAME_HEIGHT + 20) {
-        this.weatherParticles.splice(i, 1);
+      if (p.y <= GAME_HEIGHT + 20) {
+        this.weatherParticles[writeIdx++] = p;
       }
     }
-
-    if (this.weatherParticles.length > 150) {
-      this.weatherParticles = this.weatherParticles.slice(-150);
-    }
+    this.weatherParticles.length = Math.min(writeIdx, 150);
   }
 
   private renderWeatherEffects(): void {
