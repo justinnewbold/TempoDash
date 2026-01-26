@@ -156,7 +156,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
           {/* Platforms */}
           {engine.getVisiblePlatforms().map((platform, index) => (
             <PlatformRenderer
-              key={`platform-${index}-${tick}`}
+              key={platform.getStableKey()}
               platform={platform}
               cameraY={engine.cameraY}
             />
@@ -165,7 +165,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
           {/* Coins */}
           {engine.getVisibleCoins().map((coin, index) => (
             <CoinRenderer
-              key={`coin-${index}-${tick}`}
+              key={coin.getStableKey()}
               coin={coin}
               cameraY={engine.cameraY}
             />

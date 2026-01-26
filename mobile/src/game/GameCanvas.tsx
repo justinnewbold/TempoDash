@@ -166,7 +166,7 @@ export function GameCanvas({
           {/* Render platforms */}
           {engine.getVisiblePlatforms().map((platform, index) => (
             <PlatformRenderer
-              key={`platform-${index}-${tick}`}
+              key={platform.getStableKey()}
               platform={platform}
               cameraY={engine.cameraY}
             />
@@ -175,7 +175,7 @@ export function GameCanvas({
           {/* Render coins */}
           {engine.getVisibleCoins().map((coin, index) => (
             <CoinRenderer
-              key={`coin-${index}-${tick}`}
+              key={coin.getStableKey()}
               coin={coin}
               cameraY={engine.cameraY}
             />
