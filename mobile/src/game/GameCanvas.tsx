@@ -54,6 +54,7 @@ export function GameCanvas({
 
   // Initialize level
   useEffect(() => {
+    console.log(`🎮 GameCanvas: Loading level ${level.id} - ${level.name}`);
     engineRef.current.loadLevel(level);
     lastTimeRef.current = Date.now();
     gameOverCalledRef.current = false;
@@ -62,17 +63,34 @@ export function GameCanvas({
 
     // Enable performance logging in development
     if (__DEV__) {
+      console.log('🎮 DEV MODE ENABLED - Starting performance monitoring');
       const logInterval = perfMonitor.startPeriodicLogging(2000);
       return () => clearInterval(logInterval);
+    } else {
+      console.log('⚠️ NOT IN DEV MODE - Performance monitor disabled');
     }
   }, [level]);
 
   // Game loop using requestAnimationFrame
   useEffect(() => {
     let isRunning = true;
+    let frameCount = 0;
+    let lastLogTime = Date.now();
+
+    console.log('🎮 Game loop starting...');
 
     const gameLoop = () => {
       if (!isRunning) return;
+
+      frameCount++;
+
+      // Log every 60 frames (once per second at 60fps)
+      if (frameCount % 60 === 0) {
+        const now = Date.now();
+        const actualFPS = 1000 / ((now - lastLogTime) / 60);
+        console.log(`🎮 Frame ${frameCount} - FPS: ${actualFPS.toFixed(1)}`);
+        lastLogTime = now;
+      }
 
       // Performance monitoring - start frame
       perfMonitor.startFrame();
@@ -83,7 +101,13 @@ export function GameCanvas({
       lastTimeRef.current = now;
 
       const engine = engineRef.current;
-      engine.update(deltaTime);
+
+      try {
+        engine.update(deltaTime);
+      } catch (error) {
+        console.error('🚨 Error in engine.update:', error);
+        return;
+      }
 
       // Record update time
       perfMonitor.recordUpdateTime(Date.now() - updateStartTime);
