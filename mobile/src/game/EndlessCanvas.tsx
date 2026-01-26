@@ -46,6 +46,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
   const [fps, setFps] = useState(60);
 
   useEffect(() => {
+    console.log('🎮 EndlessCanvas: Component mounted');
     engineRef.current.start();
     lastTimeRef.current = Date.now();
     lastUIUpdateRef.current = Date.now();
@@ -54,17 +55,33 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
 
     // Enable performance logging in development
     if (__DEV__) {
+      console.log('🎮 DEV MODE ENABLED - Starting performance monitoring');
       const logInterval = perfMonitor.startPeriodicLogging(2000);
       return () => clearInterval(logInterval);
+    } else {
+      console.log('⚠️ NOT IN DEV MODE - Performance monitor disabled');
     }
   }, []);
 
   useEffect(() => {
     let isRunning = true;
     let frameCount = 0;
+    let lastLogTime = Date.now();
+
+    console.log('🎮 Game loop starting...');
 
     const gameLoop = () => {
       if (!isRunning) return;
+
+      frameCount++;
+
+      // Log every 60 frames (once per second at 60fps)
+      if (frameCount % 60 === 0) {
+        const now = Date.now();
+        const actualFPS = 1000 / ((now - lastLogTime) / 60);
+        console.log(`🎮 Frame ${frameCount} - FPS: ${actualFPS.toFixed(1)}`);
+        lastLogTime = now;
+      }
 
       // Performance monitoring - start frame
       perfMonitor.startFrame();
@@ -75,7 +92,13 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
       lastTimeRef.current = now;
 
       const engine = engineRef.current;
-      engine.update(deltaTime);
+
+      try {
+        engine.update(deltaTime);
+      } catch (error) {
+        console.error('🚨 Error in engine.update:', error);
+        return;
+      }
 
       // Record update time
       perfMonitor.recordUpdateTime(Date.now() - updateStartTime);
@@ -158,9 +181,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         <View style={styles.hudLeft}>
           <Text style={styles.distanceText}>{distance}m</Text>
           <Text style={styles.distanceLabel}>DISTANCE</Text>
-          {__DEV__ && (
-            <Text style={styles.fpsText}>FPS: {fps}</Text>
-          )}
+          <Text style={styles.fpsText}>FPS: {fps}</Text>
         </View>
         <View style={styles.hudRight}>
           <View style={styles.coinContainer}>
