@@ -27,6 +27,7 @@ import { COLORS, PLAYER, GAME } from '../constants';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { AudioManager } from '../systems/AudioManager';
+import { perfMonitor } from '../utils/PerformanceMonitor';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -48,7 +49,8 @@ export function GameCanvas({
   const animationFrameRef = useRef<number | null>(null);
   const gameOverCalledRef = useRef(false);
   const completeCalledRef = useRef(false);
-  const [tick, setTick] = useState(0);
+  const forceUpdateRef = useRef(0);
+  const [, setForceUpdate] = useState(0);
 
   // Initialize level
   useEffect(() => {
@@ -56,6 +58,13 @@ export function GameCanvas({
     lastTimeRef.current = Date.now();
     gameOverCalledRef.current = false;
     completeCalledRef.current = false;
+    perfMonitor.reset();
+
+    // Enable performance logging in development
+    if (__DEV__) {
+      const logInterval = perfMonitor.startPeriodicLogging(2000);
+      return () => clearInterval(logInterval);
+    }
   }, [level]);
 
   // Game loop using requestAnimationFrame
@@ -65,6 +74,10 @@ export function GameCanvas({
     const gameLoop = () => {
       if (!isRunning) return;
 
+      // Performance monitoring - start frame
+      perfMonitor.startFrame();
+      const updateStartTime = Date.now();
+
       const now = Date.now();
       const deltaTime = Math.min(now - lastTimeRef.current, 32);
       lastTimeRef.current = now;
@@ -72,7 +85,10 @@ export function GameCanvas({
       const engine = engineRef.current;
       engine.update(deltaTime);
 
-      // Handle events for haptics and audio
+      // Record update time
+      perfMonitor.recordUpdateTime(Date.now() - updateStartTime);
+
+      // Handle events for haptics and audio (non-blocking)
       if (engine.player.jumpEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         AudioManager.playSound('jump');
@@ -108,8 +124,13 @@ export function GameCanvas({
         );
       }
 
-      // Force re-render
-      setTick((t) => t + 1);
+      // CRITICAL FIX: Throttle re-renders to every 150ms instead of every frame
+      // Only trigger re-render when needed (e.g., for canvas updates)
+      forceUpdateRef.current++;
+      if (forceUpdateRef.current % 9 === 0) {
+        // ~150ms at 60fps
+        setForceUpdate((v) => v + 1);
+      }
 
       animationFrameRef.current = requestAnimationFrame(gameLoop);
     };
@@ -121,6 +142,7 @@ export function GameCanvas({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      perfMonitor.disableLogging();
     };
   }, [onGameOver, onLevelComplete]);
 
