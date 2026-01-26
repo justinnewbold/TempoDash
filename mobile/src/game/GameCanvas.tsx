@@ -205,6 +205,7 @@ export function GameCanvas({
 
           {/* Render player trail */}
           {engine.player.getTrail().map((point, index) => {
+            if (!point.active || point.alpha <= 0) return null;
             const screenPos = engine.worldToScreen(point.x, point.y);
             const size = PLAYER.SIZE * point.alpha * 0.8;
             return (

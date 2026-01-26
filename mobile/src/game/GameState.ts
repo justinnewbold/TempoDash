@@ -58,8 +58,12 @@ export class GameEngine {
       return;
     }
 
+    // CRITICAL OPTIMIZATION: Only pass nearby platforms for collision detection
+    // instead of all platforms in the level
+    const nearbyPlatforms = this.getNearbyPlatforms();
+
     // Update player
-    this.player.update(deltaTime, this.jumpPressed, this.jumpHeld, this.platforms);
+    this.player.update(deltaTime, this.jumpPressed, this.jumpHeld, nearbyPlatforms);
 
     // Clear jump pressed flag (only active for one frame)
     this.jumpPressed = false;
@@ -114,6 +118,22 @@ export class GameEngine {
     if (this.level) {
       this.loadLevel(this.level);
     }
+  }
+
+  // Get platforms near player for collision detection (smaller range)
+  private getNearbyPlatforms(): Platform[] {
+    const margin = 150; // Only check platforms within 150px of player
+    const minY = this.player.y - margin;
+    const maxY = this.player.y + margin;
+
+    const nearby: Platform[] = [];
+    for (const p of this.platforms) {
+      const bounds = p.getBounds();
+      if (bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed) {
+        nearby.push(p);
+      }
+    }
+    return nearby;
   }
 
   // Get entities visible on screen for rendering

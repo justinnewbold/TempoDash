@@ -108,8 +108,11 @@ export class EndlessGameEngine {
     // Update platforms and coins based on player position
     this.updatePlatformsAndCoins();
 
+    // CRITICAL OPTIMIZATION: Only pass nearby platforms for collision detection
+    const nearbyPlatforms = this.getNearbyPlatforms();
+
     // Update player
-    this.player.update(deltaTime, this.jumpPressed, this.jumpHeld, this.platforms);
+    this.player.update(deltaTime, this.jumpPressed, this.jumpHeld, nearbyPlatforms);
     this.jumpPressed = false;
 
     // Check for death
@@ -159,6 +162,22 @@ export class EndlessGameEngine {
 
   restart(): void {
     this.start();
+  }
+
+  // Get platforms near player for collision detection (smaller range, optimized)
+  private getNearbyPlatforms(): Platform[] {
+    const margin = 150; // Only check platforms within 150px of player
+    const minY = this.player.y - margin;
+    const maxY = this.player.y + margin;
+
+    const nearby: Platform[] = [];
+    for (const p of this.platforms) {
+      const bounds = p.getBounds();
+      if (bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed) {
+        nearby.push(p);
+      }
+    }
+    return nearby;
   }
 
   getVisiblePlatforms(): Platform[] {
