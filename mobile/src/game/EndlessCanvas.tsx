@@ -26,6 +26,7 @@ import { COLORS, PLAYER, GAME } from '../constants';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { AudioManager } from '../systems/AudioManager';
+import { perfMonitor } from '../utils/PerformanceMonitor';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -39,21 +40,35 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
   const lastTimeRef = useRef<number>(Date.now());
   const animationFrameRef = useRef<number | null>(null);
   const gameOverCalledRef = useRef(false);
-  const [tick, setTick] = useState(0);
+  const lastUIUpdateRef = useRef<number>(0);
   const [distance, setDistance] = useState(0);
   const [coins, setCoins] = useState(0);
+  const [fps, setFps] = useState(60);
 
   useEffect(() => {
     engineRef.current.start();
     lastTimeRef.current = Date.now();
+    lastUIUpdateRef.current = Date.now();
     gameOverCalledRef.current = false;
+    perfMonitor.reset();
+
+    // Enable performance logging in development
+    if (__DEV__) {
+      const logInterval = perfMonitor.startPeriodicLogging(2000);
+      return () => clearInterval(logInterval);
+    }
   }, []);
 
   useEffect(() => {
     let isRunning = true;
+    let frameCount = 0;
 
     const gameLoop = () => {
       if (!isRunning) return;
+
+      // Performance monitoring - start frame
+      perfMonitor.startFrame();
+      const updateStartTime = Date.now();
 
       const now = Date.now();
       const deltaTime = Math.min(now - lastTimeRef.current, 32);
@@ -62,7 +77,10 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
       const engine = engineRef.current;
       engine.update(deltaTime);
 
-      // Handle haptics and audio
+      // Record update time
+      perfMonitor.recordUpdateTime(Date.now() - updateStartTime);
+
+      // Handle haptics and audio (non-blocking)
       if (engine.player.jumpEvent) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         AudioManager.playSound('jump');
@@ -83,9 +101,15 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         AudioManager.playSound('coin');
       }
 
-      // Update UI state
-      setDistance(engine.getDistance());
-      setCoins(engine.state.coinsCollected);
+      // CRITICAL FIX: Throttle UI updates to every 100ms instead of every frame
+      // This prevents blocking the JS thread with state updates
+      const timeSinceLastUIUpdate = now - lastUIUpdateRef.current;
+      if (timeSinceLastUIUpdate >= 100) {
+        setDistance(engine.getDistance());
+        setCoins(engine.state.coinsCollected);
+        setFps(perfMonitor.getStats().fps);
+        lastUIUpdateRef.current = now;
+      }
 
       // Check game over
       if (engine.state.isDead && !gameOverCalledRef.current) {
@@ -96,7 +120,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         );
       }
 
-      setTick((t) => t + 1);
+      frameCount++;
       animationFrameRef.current = requestAnimationFrame(gameLoop);
     };
 
@@ -107,6 +131,7 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      perfMonitor.disableLogging();
     };
   }, [onGameOver]);
 
@@ -133,6 +158,9 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         <View style={styles.hudLeft}>
           <Text style={styles.distanceText}>{distance}m</Text>
           <Text style={styles.distanceLabel}>DISTANCE</Text>
+          {__DEV__ && (
+            <Text style={styles.fpsText}>FPS: {fps}</Text>
+          )}
         </View>
         <View style={styles.hudRight}>
           <View style={styles.coinContainer}>
@@ -469,6 +497,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.5)',
     letterSpacing: 2,
+  },
+  fpsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(0, 255, 170, 0.8)',
+    marginTop: 4,
   },
   coinContainer: {
     flexDirection: 'row',
