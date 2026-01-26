@@ -293,7 +293,9 @@ export class Player {
   }
 
   getTrail(): TrailPoint[] {
-    return this.trailBuffer.filter((p) => p.active);
+    // OPTIMIZED: Return buffer directly instead of filtering every frame
+    // Rendering will skip inactive points
+    return this.trailBuffer;
   }
 
   // Convert world Y to screen Y (for rendering)
