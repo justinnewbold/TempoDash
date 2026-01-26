@@ -176,18 +176,12 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* HUD Overlay */}
+      {/* HUD Overlay - EMERGENCY DEBUG VERSION */}
       <View style={styles.hud}>
         <View style={styles.hudLeft}>
-          <Text style={styles.distanceText}>{distance}m</Text>
-          <Text style={styles.distanceLabel}>DISTANCE</Text>
-          <Text style={styles.fpsText}>FPS: {fps}</Text>
-        </View>
-        <View style={styles.hudRight}>
-          <View style={styles.coinContainer}>
-            <View style={styles.coinIcon} />
-            <Text style={styles.coinText}>{coins}</Text>
-          </View>
+          <Text style={styles.emergencyDebug}>FPS: {fps}</Text>
+          <Text style={styles.emergencyDebug}>Dist: {distance}m</Text>
+          <Text style={styles.emergencyDebug}>Coins: {coins}</Text>
         </View>
       </View>
 
@@ -501,7 +495,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    zIndex: 10,
+    zIndex: 10000, // Very high z-index
+    backgroundColor: 'rgba(255, 0, 0, 0.8)', // Red background to see if it shows
+    padding: 10,
+  },
+  emergencyDebug: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#ffffff',
+    backgroundColor: '#000000',
+    padding: 5,
+    marginBottom: 5,
   },
   hudLeft: {
     alignItems: 'flex-start',
