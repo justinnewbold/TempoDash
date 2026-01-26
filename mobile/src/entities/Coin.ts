@@ -58,4 +58,9 @@ export class Coin {
   getRotation(): number {
     return Math.sin(this.animationTime * 0.003) * 0.2;
   }
+
+  // Get stable key for React rendering
+  getStableKey(): string {
+    return `${this.x}-${this.y}`;
+  }
 }

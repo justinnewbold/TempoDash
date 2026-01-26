@@ -108,6 +108,11 @@ export class Platform {
     };
   }
 
+  // Get stable position for use in React keys
+  getStableKey(): string {
+    return `${this.startX}-${this.startY}-${this.type}-${this.width}`;
+  }
+
   isCollidable(): boolean {
     return !this.isDestroyed && !this.isPhased;
   }

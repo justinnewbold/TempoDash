@@ -179,6 +179,12 @@ export class EndlessGenerator {
     while (this.generatedUpTo < targetY + buffer) {
       this.generateNextPlatform();
     }
+
+    // Clean up old platforms and coins to prevent memory leak
+    // Keep platforms within 2000px of current target
+    const minY = targetY - 2000;
+    this.platforms = this.platforms.filter((p) => p.y >= minY);
+    this.coins = this.coins.filter((c) => c.y >= minY);
   }
 
   // Get platforms in a Y range
