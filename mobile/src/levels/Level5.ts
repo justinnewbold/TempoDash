@@ -10,6 +10,8 @@ const STANDARD_WIDTH = 90;
 export const Level5: LevelConfig = {
   id: 5,
   name: 'The Gauntlet',
+  description: 'A brutal combination of every mechanic. Only the skilled survive.',
+  difficulty: 'hard',
   backgroundColor: '#1a0520',
   accentColor: '#ffd700',
 

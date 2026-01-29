@@ -10,6 +10,8 @@ const STANDARD_WIDTH = 100;
 export const Level3: LevelConfig = {
   id: 3,
   name: 'Danger Zone',
+  description: 'Dodge deadly spikes and leap across crumbling platforms.',
+  difficulty: 'medium',
   backgroundColor: '#1a0a0a',
   accentColor: '#ff4444',
 

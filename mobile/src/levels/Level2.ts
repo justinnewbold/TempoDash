@@ -10,6 +10,8 @@ const STANDARD_WIDTH = 100;
 export const Level2: LevelConfig = {
   id: 2,
   name: 'Double Trouble',
+  description: 'Master the double jump and ride moving platforms.',
+  difficulty: 'easy',
   backgroundColor: '#0d0221',
   accentColor: '#ff00ff',
 

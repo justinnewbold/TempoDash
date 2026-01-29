@@ -8,6 +8,7 @@ export class Platform {
   height: number;
   type: PlatformType;
   movePattern?: MovePattern;
+  conveyorSpeed: number;
 
   private startX: number;
   private startY: number;
@@ -23,6 +24,18 @@ export class Platform {
   private phaseTimer = 0;
   isPhased = false;
 
+  // Glass state
+  glassHits = 0;
+  private readonly glassMaxHits = 3;
+  isGlassBroken = false;
+
+  // Secret state
+  isRevealed = false;
+
+  // Lava state
+  private lavaTimer = 0;
+  lavaPulse = 0;
+
   constructor(config: PlatformConfig) {
     this.x = config.x;
     this.y = config.y;
@@ -30,6 +43,7 @@ export class Platform {
     this.height = config.height;
     this.type = config.type;
     this.movePattern = config.movePattern;
+    this.conveyorSpeed = config.conveyorSpeed || 0;
 
     this.startX = config.x;
     this.startY = config.y;
@@ -44,10 +58,10 @@ export class Platform {
   }
 
   update(deltaTime: number): void {
-    if (this.isDestroyed) return;
+    if (this.isDestroyed || this.isGlassBroken) return;
 
     // Handle movement
-    if (this.movePattern && this.type === 'moving') {
+    if (this.movePattern && (this.type === 'moving' || this.movePattern)) {
       this.updateMovement(deltaTime);
     }
 
@@ -71,6 +85,12 @@ export class Platform {
       const cycleTime = PLATFORM.PHASE_ON_TIME + PLATFORM.PHASE_OFF_TIME;
       const cyclePosition = this.phaseTimer % cycleTime;
       this.isPhased = cyclePosition > PLATFORM.PHASE_ON_TIME;
+    }
+
+    // Handle lava pulse
+    if (this.type === 'lava') {
+      this.lavaTimer += deltaTime;
+      this.lavaPulse = Math.sin(this.lavaTimer * 0.005) * 0.3 + 0.7;
     }
   }
 
@@ -99,6 +119,23 @@ export class Platform {
     }
   }
 
+  hitGlass(): boolean {
+    if (this.type === 'glass') {
+      this.glassHits++;
+      if (this.glassHits >= this.glassMaxHits) {
+        this.isGlassBroken = true;
+        return true; // Glass broke
+      }
+    }
+    return false;
+  }
+
+  reveal(): void {
+    if (this.type === 'secret') {
+      this.isRevealed = true;
+    }
+  }
+
   getBounds(): Rectangle {
     return {
       x: this.x,
@@ -108,24 +145,51 @@ export class Platform {
     };
   }
 
-  // Get stable position for use in React keys
   getStableKey(): string {
     return `${this.startX}-${this.startY}-${this.type}-${this.width}`;
   }
 
   isCollidable(): boolean {
-    return !this.isDestroyed && !this.isPhased;
+    if (this.isDestroyed || this.isGlassBroken) return false;
+    if (this.isPhased) return false;
+    if (this.type === 'secret' && !this.isRevealed) return false;
+    return true;
   }
 
-  // Get the color for this platform type
   getColor(): string {
-    return COLORS.PLATFORM[this.type] || COLORS.PLATFORM.solid;
+    const colorMap: Record<string, string> = {
+      solid: COLORS.PLATFORM.solid,
+      bounce: COLORS.PLATFORM.bounce,
+      crumble: COLORS.PLATFORM.crumble,
+      moving: COLORS.PLATFORM.moving,
+      spike: COLORS.PLATFORM.spike,
+      phase: COLORS.PLATFORM.phase,
+      conveyor: COLORS.PLATFORM.conveyor,
+      gravity: COLORS.PLATFORM.gravity,
+      sticky: COLORS.PLATFORM.sticky,
+      glass: COLORS.PLATFORM.glass,
+      slowmo: COLORS.PLATFORM.slowmo,
+      wall: COLORS.PLATFORM.wall,
+      secret: COLORS.PLATFORM.secret,
+      ice: COLORS.PLATFORM.ice,
+      lava: COLORS.PLATFORM.lava,
+    };
+    return colorMap[this.type] || COLORS.PLATFORM.solid;
   }
 
   getHighlightColor(): string {
     const highlights: Record<string, string> = {
       solid: COLORS.PLATFORM.solidHighlight,
       bounce: COLORS.PLATFORM.bounceHighlight,
+      conveyor: COLORS.PLATFORM.conveyorHighlight,
+      gravity: COLORS.PLATFORM.gravityHighlight,
+      sticky: COLORS.PLATFORM.stickyHighlight,
+      glass: COLORS.PLATFORM.glassHighlight,
+      slowmo: COLORS.PLATFORM.slowmoHighlight,
+      wall: COLORS.PLATFORM.wallHighlight,
+      secret: COLORS.PLATFORM.secretHighlight,
+      ice: COLORS.PLATFORM.iceHighlight,
+      lava: COLORS.PLATFORM.lavaHighlight,
     };
     return highlights[this.type] || this.getColor();
   }

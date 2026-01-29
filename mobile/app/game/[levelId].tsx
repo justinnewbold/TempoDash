@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCanvas } from '../../src/game/GameCanvas';
 import { EndlessCanvas } from '../../src/game/EndlessCanvas';
 import { getLevel, LEVELS } from '../../src/levels';
+import { SaveManager } from '../../src/systems/SaveManager';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -75,26 +76,44 @@ export default function GameScreen() {
     }
   }, [levelId]);
 
-  const handleGameOver = useCallback((finalScore: number) => {
+  const handleGameOver = useCallback(async (finalScore: number) => {
     setScore(finalScore);
     setIsGameOver(true);
+    await SaveManager.incrementDeaths();
   }, []);
 
   const handleEndlessGameOver = useCallback(
-    (finalScore: number, finalDistance: number, finalCoins: number) => {
+    async (finalScore: number, finalDistance: number, finalCoins: number) => {
       setScore(finalScore);
       setDistance(finalDistance);
       setCoins(finalCoins);
       setIsGameOver(true);
+
+      // Save endless high score
+      await SaveManager.setEndlessHighScore(finalScore, finalDistance);
+      await SaveManager.addCoins(finalCoins);
+      await SaveManager.incrementDeaths();
     },
     []
   );
 
-  const handleLevelComplete = useCallback((finalScore: number, totalCoins: number) => {
+  const handleLevelComplete = useCallback(async (finalScore: number, totalCoins: number) => {
     setScore(finalScore);
     setCoins(totalCoins);
     setIsComplete(true);
-  }, []);
+
+    // Save high score and unlock next level
+    const currentId = parseInt(levelId || '1', 10);
+    await SaveManager.setHighScore(currentId, finalScore);
+    await SaveManager.addCoins(totalCoins);
+    await SaveManager.addPoints(finalScore);
+
+    // Unlock next level
+    const nextLevelId = currentId + 1;
+    if (nextLevelId <= LEVELS.length) {
+      await SaveManager.unlockLevel(nextLevelId);
+    }
+  }, [levelId]);
 
   if (!level && !isEndless) {
     return (

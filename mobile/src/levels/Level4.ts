@@ -10,6 +10,8 @@ const STANDARD_WIDTH = 100;
 export const Level4: LevelConfig = {
   id: 4,
   name: 'Phase Shift',
+  description: 'Time your jumps with phasing platforms that blink in and out.',
+  difficulty: 'medium',
   backgroundColor: '#0a1a2a',
   accentColor: '#b794f4',
 
