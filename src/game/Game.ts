@@ -126,6 +126,7 @@ export class Game {
   private jumpCount = 0;
   private prevAirJumpsRemaining = 4; // Track air jumps for speed increase on flips
   private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
+  private static readonly MAX_SPEED_MULTIPLIER = 3.0; // Cap to prevent runaway speed
 
   // Orientation and screen sizing
   private isPortrait = false;
@@ -642,7 +643,7 @@ export class Game {
         break;
       case 'gameOver':
         this.endlessDistance = 0; // Reset for next endless run
-        this.state.gameStatus = 'mainMenu';
+        this.returnToMainMenu();
         break;
     }
   }
@@ -731,7 +732,7 @@ export class Game {
         break;
       case 'gameOver':
         this.endlessDistance = 0;
-        this.state.gameStatus = 'mainMenu';
+        this.returnToMainMenu();
         break;
     }
   }
@@ -1397,10 +1398,7 @@ export class Game {
           }
           this.audio.start();
         } else if (e.code === 'KeyQ') {
-          this.isEndlessMode = false;
-          this.isPracticeMode = false;
-          this.currentChallenge = null;
-          this.state.gameStatus = 'mainMenu';
+          this.returnToMainMenu();
         }
         break;
 
@@ -1413,7 +1411,7 @@ export class Game {
       case 'gameOver':
         if (e.code === 'Enter' || e.code === 'Space') {
           this.endlessDistance = 0; // Reset for next endless run
-          this.state.gameStatus = 'mainMenu';
+          this.returnToMainMenu();
         }
         break;
     }
@@ -1529,6 +1527,7 @@ export class Game {
     this.timeRewind.reset();
     this.isWaitingForRewindInput = false;
     this.rewindInputWindow = 0;
+    this.deathTimer = 0;
 
     // Reset milestone tracking for new level
     this.nearMissStreak = 0;
@@ -1768,6 +1767,8 @@ export class Game {
     this.nextPlatformX = 0;
     this.cameraX = 0;
     this.attempts = 1;
+    this.deathTimer = 0;
+    this.isWaitingForRewindInput = false;
 
     // Load level 1 as base but we'll use procedural platforms
     this.loadLevel(1);
@@ -1906,18 +1907,51 @@ export class Game {
     }
   }
 
+  // Safely transition to the main menu, resetting all gameplay state
+  private returnToMainMenu(): void {
+    this.state.gameStatus = 'mainMenu';
+    this.isEndlessMode = false;
+    this.isPracticeMode = false;
+    this.currentChallenge = null;
+    this.deathTimer = 0;
+    this.isWaitingForRewindInput = false;
+    this.rewindInputWindow = 0;
+    this.screenEffects.reset();
+    this.audio.stop();
+  }
+
   start(): void {
     this.lastTime = performance.now();
     this.gameLoop();
   }
 
   private gameLoop = (): void => {
-    const currentTime = performance.now();
-    const deltaTime = Math.min(currentTime - this.lastTime, 50);
-    this.lastTime = currentTime;
+    try {
+      const currentTime = performance.now();
+      const rawDeltaTime = Math.min(currentTime - this.lastTime, 50);
+      this.lastTime = currentTime;
 
-    this.update(deltaTime);
-    this.render();
+      // Update screen effects with raw time (so animations always play)
+      this.screenEffects.update(rawDeltaTime);
+
+      // Get gameplay delta (0 during freeze-frame, scaled during slow-mo)
+      const deltaTime = this.screenEffects.getEffectiveDelta(rawDeltaTime);
+
+      this.update(deltaTime);
+      this.render();
+    } catch (e) {
+      console.error('Game loop error:', e);
+      // Recover: reset to a safe state if the game is broken
+      try {
+        this.state.gameStatus = 'mainMenu';
+        this.isEndlessMode = false;
+        this.isPracticeMode = false;
+        this.isWaitingForRewindInput = false;
+        this.deathTimer = 0;
+      } catch {
+        // Last resort: at least keep the loop alive
+      }
+    }
 
     requestAnimationFrame(this.gameLoop);
   };
@@ -1926,10 +1960,9 @@ export class Game {
     // Update debug frame timing
     this.debug.beginUpdate();
 
-    // Update new systems
+    // Update new systems (screenEffects is updated in gameLoop with raw delta)
     this.particles.update(deltaTime);
     this.transition.update(deltaTime);
-    this.screenEffects.update(deltaTime);
 
     // Handle quick restart (hold R key)
     if (this.quickRestartHeld) {
@@ -2218,7 +2251,7 @@ export class Game {
       );
       // Screen effect for dramatic moment
       this.screenEffects.triggerZoomPulse(1.08, 200);
-      this.screenEffects.triggerFreezeFrame(80);
+      this.screenEffects.triggerFreezeFrame(4); // Brief hitstop for edge save
       this.audio.playSelect(); // Feedback sound
     }
     if (this.player.bounceEvent) {
@@ -2573,7 +2606,10 @@ export class Game {
     const applyFlipSpeedIncrease = () => {
       this.jumpCount++;
       const speedIncrease = Game.SPEED_INCREASE_PER_JUMP * this.getAssistModeSpeedMultiplier();
-      this.speedMultiplier *= (1 + speedIncrease);
+      this.speedMultiplier = Math.min(
+        this.speedMultiplier * (1 + speedIncrease),
+        Game.MAX_SPEED_MULTIPLIER
+      );
       // Sync music tempo with game speed
       this.audio.setGameSpeedMultiplier(this.speedMultiplier);
     };
@@ -3955,9 +3991,7 @@ export class Game {
     const homeX = pauseX - buttonSize - buttonPadding;
     if (x >= homeX && x <= homeX + buttonSize && y >= topY && y <= topY + buttonSize) {
       this.audio.playSelect();
-      this.audio.stop();
-      this.state.gameStatus = 'mainMenu';
-      this.isPracticeMode = false;
+      this.returnToMainMenu();
       return true;
     }
 
@@ -4003,9 +4037,7 @@ export class Game {
     // Main Menu button
     if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY + btnGap * 2 && y <= btnStartY + btnGap * 2 + btnHeight) {
       this.audio.playSelect();
-      this.audio.stop();
-      this.state.gameStatus = 'mainMenu';
-      this.isPracticeMode = false;
+      this.returnToMainMenu();
       return;
     }
   }
