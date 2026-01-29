@@ -26,7 +26,6 @@ import { COLORS, PLAYER, GAME } from '../constants';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { AudioManager } from '../systems/AudioManager';
-import { perfMonitor } from '../utils/PerformanceMonitor';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -43,65 +42,26 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
   const lastUIUpdateRef = useRef<number>(0);
   const [distance, setDistance] = useState(0);
   const [coins, setCoins] = useState(0);
-  const [fps, setFps] = useState(60);
 
   useEffect(() => {
-    console.log('🎮 EndlessCanvas: Component mounted');
     engineRef.current.start();
     lastTimeRef.current = Date.now();
     lastUIUpdateRef.current = Date.now();
     gameOverCalledRef.current = false;
-    perfMonitor.reset();
-
-    // Enable performance logging in development
-    if (__DEV__) {
-      console.log('🎮 DEV MODE ENABLED - Starting performance monitoring');
-      const logInterval = perfMonitor.startPeriodicLogging(2000);
-      return () => clearInterval(logInterval);
-    } else {
-      console.log('⚠️ NOT IN DEV MODE - Performance monitor disabled');
-    }
   }, []);
 
   useEffect(() => {
     let isRunning = true;
-    let frameCount = 0;
-    let lastLogTime = Date.now();
-
-    console.log('🎮 Game loop starting...');
 
     const gameLoop = () => {
       if (!isRunning) return;
-
-      frameCount++;
-
-      // Log every 60 frames (once per second at 60fps)
-      if (frameCount % 60 === 0) {
-        const now = Date.now();
-        const actualFPS = 1000 / ((now - lastLogTime) / 60);
-        console.log(`🎮 Frame ${frameCount} - FPS: ${actualFPS.toFixed(1)}`);
-        lastLogTime = now;
-      }
-
-      // Performance monitoring - start frame
-      perfMonitor.startFrame();
-      const updateStartTime = Date.now();
 
       const now = Date.now();
       const deltaTime = Math.min(now - lastTimeRef.current, 32);
       lastTimeRef.current = now;
 
       const engine = engineRef.current;
-
-      try {
-        engine.update(deltaTime);
-      } catch (error) {
-        console.error('🚨 Error in engine.update:', error);
-        return;
-      }
-
-      // Record update time
-      perfMonitor.recordUpdateTime(Date.now() - updateStartTime);
+      engine.update(deltaTime);
 
       // Handle haptics and audio (non-blocking)
       if (engine.player.jumpEvent) {
@@ -124,13 +84,11 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         AudioManager.playSound('coin');
       }
 
-      // CRITICAL FIX: Throttle UI updates to every 100ms instead of every frame
-      // This prevents blocking the JS thread with state updates
+      // Throttle UI updates to every 100ms
       const timeSinceLastUIUpdate = now - lastUIUpdateRef.current;
       if (timeSinceLastUIUpdate >= 100) {
         setDistance(engine.getDistance());
         setCoins(engine.state.coinsCollected);
-        setFps(perfMonitor.getStats().fps);
         lastUIUpdateRef.current = now;
       }
 
@@ -143,7 +101,6 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
         );
       }
 
-      frameCount++;
       animationFrameRef.current = requestAnimationFrame(gameLoop);
     };
 
@@ -154,7 +111,6 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      perfMonitor.disableLogging();
     };
   }, [onGameOver]);
 
@@ -176,12 +132,17 @@ export function EndlessCanvas({ onGameOver }: EndlessCanvasProps) {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* HUD Overlay - EMERGENCY DEBUG VERSION */}
+      {/* HUD Overlay */}
       <View style={styles.hud}>
         <View style={styles.hudLeft}>
-          <Text style={styles.emergencyDebug}>FPS: {fps}</Text>
-          <Text style={styles.emergencyDebug}>Dist: {distance}m</Text>
-          <Text style={styles.emergencyDebug}>Coins: {coins}</Text>
+          <Text style={styles.distanceText}>{distance}</Text>
+          <Text style={styles.distanceLabel}>METERS</Text>
+        </View>
+        <View style={styles.hudRight}>
+          <View style={styles.coinContainer}>
+            <View style={styles.coinIcon} />
+            <Text style={styles.coinText}>{coins}</Text>
+          </View>
         </View>
       </View>
 
@@ -495,17 +456,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    zIndex: 10000, // Very high z-index
-    backgroundColor: 'rgba(255, 0, 0, 0.8)', // Red background to see if it shows
-    padding: 10,
-  },
-  emergencyDebug: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#ffffff',
-    backgroundColor: '#000000',
-    padding: 5,
-    marginBottom: 5,
+    zIndex: 100,
   },
   hudLeft: {
     alignItems: 'flex-start',

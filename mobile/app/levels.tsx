@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,14 +14,30 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LEVELS } from '../src/levels';
+import { SaveManager } from '../src/systems/SaveManager';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 60) / 2;
 
 export default function LevelSelect() {
   const insets = useSafeAreaInsets();
+  const [unlockedLevels, setUnlockedLevels] = useState<number[]>([1]);
+  const [highScores, setHighScores] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    const loadData = async () => {
+      const data = await SaveManager.load();
+      setUnlockedLevels(data.unlockedLevels);
+      setHighScores(data.highScores);
+    };
+    loadData();
+  }, []);
 
   const handleLevelSelect = (levelId: number) => {
+    if (!unlockedLevels.includes(levelId)) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push(`/game/${levelId}`);
   };
@@ -34,6 +50,16 @@ export default function LevelSelect() {
   const handleEndless = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push('/game/endless');
+  };
+
+  const getDifficultyColor = (difficulty?: string): string => {
+    switch (difficulty) {
+      case 'easy': return '#4caf50';
+      case 'medium': return '#ff9800';
+      case 'hard': return '#f44336';
+      case 'extreme': return '#9c27b0';
+      default: return '#4caf50';
+    }
   };
 
   return (
@@ -55,30 +81,66 @@ export default function LevelSelect() {
         {/* Campaign Levels */}
         <Text style={styles.sectionTitle}>CAMPAIGN</Text>
         <View style={styles.levelsGrid}>
-          {LEVELS.map((level, index) => (
-            <TouchableOpacity
-              key={level.id}
-              style={styles.levelCard}
-              onPress={() => handleLevelSelect(level.id)}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[level.backgroundColor, '#1a1a2e']}
-                style={styles.levelCardGradient}
+          {LEVELS.map((level) => {
+            const isUnlocked = unlockedLevels.includes(level.id);
+            const score = highScores[level.id];
+            const isCompleted = score !== undefined && score > 0;
+
+            return (
+              <TouchableOpacity
+                key={level.id}
+                style={[styles.levelCard, !isUnlocked && styles.levelCardLocked]}
+                onPress={() => handleLevelSelect(level.id)}
+                activeOpacity={isUnlocked ? 0.8 : 1}
               >
-                <View style={styles.levelNumber}>
-                  <Text style={styles.levelNumberText}>{level.id}</Text>
-                </View>
-                <Text style={styles.levelName}>{level.name}</Text>
-                <View style={styles.levelInfo}>
-                  <Ionicons name="star" size={14} color="#ffd700" />
-                  <Text style={styles.levelInfoText}>
-                    {level.coins.length} coins
+                <LinearGradient
+                  colors={isUnlocked
+                    ? [level.backgroundColor, '#1a1a2e']
+                    : ['#1a1a1a', '#111111']
+                  }
+                  style={styles.levelCardGradient}
+                >
+                  <View style={styles.levelHeader}>
+                    <View style={[styles.levelNumber, !isUnlocked && styles.levelNumberLocked]}>
+                      {isUnlocked ? (
+                        <Text style={styles.levelNumberText}>{level.id}</Text>
+                      ) : (
+                        <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.3)" />
+                      )}
+                    </View>
+                    {isCompleted && (
+                      <Ionicons name="checkmark-circle" size={20} color="#4caf50" />
+                    )}
+                  </View>
+
+                  <Text style={[styles.levelName, !isUnlocked && styles.levelNameLocked]}>
+                    {isUnlocked ? level.name : '???'}
                   </Text>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          ))}
+
+                  {level.difficulty && isUnlocked && (
+                    <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(level.difficulty) + '33' }]}>
+                      <Text style={[styles.difficultyText, { color: getDifficultyColor(level.difficulty) }]}>
+                        {level.difficulty.toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.levelInfo}>
+                    <Ionicons name="star" size={14} color={isUnlocked ? '#ffd700' : '#333'} />
+                    <Text style={[styles.levelInfoText, !isUnlocked && { color: '#333' }]}>
+                      {isUnlocked ? `${level.coins.length} coins` : 'Locked'}
+                    </Text>
+                  </View>
+
+                  {score !== undefined && score > 0 && (
+                    <Text style={styles.highScoreText}>
+                      Best: {score}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Endless Mode */}
@@ -162,9 +224,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
+  levelCardLocked: {
+    opacity: 0.6,
+  },
   levelCardGradient: {
     padding: 16,
-    minHeight: 140,
+    minHeight: 150,
+  },
+  levelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   levelNumber: {
     width: 36,
@@ -173,7 +244,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+  },
+  levelNumberLocked: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   levelNumberText: {
     fontSize: 18,
@@ -186,6 +259,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 8,
   },
+  levelNameLocked: {
+    color: 'rgba(255, 255, 255, 0.3)',
+  },
+  difficultyBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  difficultyText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
   levelInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -194,6 +282,12 @@ const styles = StyleSheet.create({
   levelInfoText: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.6)',
+  },
+  highScoreText: {
+    fontSize: 11,
+    color: '#00ffaa',
+    marginTop: 4,
+    fontWeight: '600',
   },
   endlessCard: {
     borderRadius: 16,

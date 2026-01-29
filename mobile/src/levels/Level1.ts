@@ -12,6 +12,8 @@ const STANDARD_WIDTH = 120;
 export const Level1: LevelConfig = {
   id: 1,
   name: 'First Steps',
+  description: 'Learn the basics of jumping and navigating platforms.',
+  difficulty: 'easy',
   backgroundColor: '#1a1a2e',
   accentColor: '#00ffaa',
 

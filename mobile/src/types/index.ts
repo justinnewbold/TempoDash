@@ -27,13 +27,30 @@ export type PlatformType =
   | 'crumble'
   | 'moving'
   | 'spike'
-  | 'phase';
+  | 'phase'
+  | 'conveyor'
+  | 'gravity'
+  | 'sticky'
+  | 'glass'
+  | 'slowmo'
+  | 'wall'
+  | 'secret'
+  | 'ice'
+  | 'lava';
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
   distance: number;
   speed: number;
   startOffset?: number;
+}
+
+export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
+
+export interface PowerUpConfig {
+  x: number;
+  y: number;
+  type: PowerUpType;
 }
 
 export interface CoinConfig {
@@ -46,10 +63,13 @@ export interface LevelConfig {
   name: string;
   platforms: PlatformConfig[];
   coins: CoinConfig[];
+  powerUps?: PowerUpConfig[];
   playerStart: Vector2;
   goalY: number; // Y position of goal line (top of level)
   backgroundColor: string;
   accentColor: string;
+  description?: string;
+  difficulty?: 'easy' | 'medium' | 'hard' | 'extreme';
 }
 
 export interface GameState {
@@ -58,6 +78,12 @@ export interface GameState {
   isPlaying: boolean;
   isDead: boolean;
   isComplete: boolean;
+  combo: number;
+  maxCombo: number;
+  scoreMultiplier: number;
+  activePowerUp: PowerUpType | null;
+  powerUpTimeRemaining: number;
+  hasShield: boolean;
 }
 
 export interface SaveData {

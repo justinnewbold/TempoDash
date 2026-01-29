@@ -53,6 +53,31 @@ export const COLORS = {
     moving: '#4fc3f7',
     spike: '#ffffff',
     phase: '#b794f4',
+    conveyor: '#00bcd4',
+    conveyorHighlight: '#26c6da',
+    gravity: '#9c27b0',
+    gravityHighlight: '#ba68c8',
+    sticky: '#8bc34a',
+    stickyHighlight: '#aed581',
+    glass: '#e0e0e0',
+    glassHighlight: '#ffffff',
+    slowmo: '#2196f3',
+    slowmoHighlight: '#64b5f6',
+    wall: '#795548',
+    wallHighlight: '#a1887f',
+    secret: '#607d8b',
+    secretHighlight: '#90a4ae',
+    ice: '#b3e5fc',
+    iceHighlight: '#e1f5fe',
+    lava: '#ff5722',
+    lavaHighlight: '#ff8a65',
+  },
+
+  POWERUP: {
+    shield: '#2196f3',
+    magnet: '#e91e63',
+    slowmo: '#9c27b0',
+    doublePoints: '#ff9800',
   },
 
   COIN: {
@@ -80,6 +105,24 @@ export const ANIMATION = {
   BUTTON_PRESS: 100,
   DEATH_DELAY: 800,
   LEVEL_COMPLETE_DELAY: 1000,
+};
+
+// Combo system
+export const COMBO = {
+  TIMEOUT: 2000, // ms between coins to maintain combo
+  MULTIPLIER_INCREMENT: 0.25, // Each combo step adds 0.25x
+  MAX_MULTIPLIER: 4.0,
+};
+
+// Power-up durations (ms)
+export const POWERUP = {
+  SHIELD_DURATION: 10000,
+  MAGNET_DURATION: 8000,
+  MAGNET_RADIUS: 200,
+  SLOWMO_DURATION: 6000,
+  SLOWMO_FACTOR: 0.5,
+  DOUBLE_POINTS_DURATION: 8000,
+  SIZE: 32,
 };
 
 // Haptic patterns
