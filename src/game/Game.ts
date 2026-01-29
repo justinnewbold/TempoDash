@@ -25,6 +25,7 @@ import { BossManager } from '../systems/BossMode';
 import { FlowMeterManager } from '../systems/FlowMeter';
 import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
 import { TimeRewindManager } from '../systems/TimeRewind';
+import { GravityWellManager } from '../systems/GravityWells';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -175,6 +176,9 @@ export class Game {
   private timeRewind: TimeRewindManager;
   private isWaitingForRewindInput = false;  // True when player just died and can rewind
   private rewindInputWindow = 0;  // Time remaining to press rewind
+
+  // Gravity Wells system
+  private gravityWells: GravityWellManager;
 
   // Perfect run tracking
   private isPerfectRun = true; // No deaths this run
@@ -328,6 +332,7 @@ export class Game {
     this.flowMeter = new FlowMeterManager();
     this.beatHazards = new BeatHazardManager();
     this.timeRewind = new TimeRewindManager();
+    this.gravityWells = new GravityWellManager();
 
     // Setup tab visibility change detection for auto-pause
     document.addEventListener('visibilitychange', () => {
@@ -525,6 +530,15 @@ export class Game {
 
     // Initialize environmental weather effects
     this.initWeatherForLevel();
+
+    // Initialize gravity wells from level config
+    this.gravityWells.clear();
+    const gravityWellConfigs = levelConfig.gravityWells;
+    if (gravityWellConfigs) {
+      for (const config of gravityWellConfigs) {
+        this.gravityWells.addWell(config);
+      }
+    }
 
     // Reset rhythm tracking for mastery badges
     this.levelRhythmHits = 0;
@@ -2471,6 +2485,73 @@ export class Game {
       this.save.updateLongestCombo(this.comboCount);
     }
 
+    // Check gem collection (rare collectibles worth big points)
+    if (!this.isEndlessMode) {
+      const gemValues = this.level.checkGemCollection(this.player);
+      if (gemValues.length > 0) {
+        for (const value of gemValues) {
+          this.state.score += value;
+          this.levelScoreThisRun += value;
+          this.audio.playCoinCollect();
+          this.input.triggerHaptic('medium');
+
+          // Big floating text for gem collection
+          this.particles.spawnFloatingText(
+            this.player.x + this.player.width / 2,
+            this.player.y - 50,
+            `GEM +${value}`,
+            value >= 2000 ? '#34d399' : value >= 1000 ? '#60a5fa' : '#ff4466',
+            20
+          );
+
+          // Dramatic screen effects for gems
+          this.screenEffects.triggerZoomPulse(1.1, 200);
+          this.particles.spawnFirework(this.player.x, this.player.y - 30);
+
+          // Gems add to combo
+          this.comboCount += 3;
+          this.comboTimer = this.comboDuration;
+          this.comboMeterPulse = 1;
+          this.flowMeter.onCoinCollect();
+        }
+      }
+    }
+
+    // Check portal teleportation
+    if (!this.isEndlessMode && !this.player.isDead) {
+      const linkedPortal = this.level.checkPortalTeleport(this.player);
+      if (linkedPortal) {
+        // Teleport player to linked portal position
+        this.player.x = linkedPortal.x - this.player.width / 2;
+        this.player.y = linkedPortal.y - this.player.height / 2;
+
+        // Visual and audio feedback
+        this.audio.playSelect();
+        this.input.triggerHaptic('medium');
+        this.screenEffects.triggerZoomPulse(1.15, 250);
+        this.particles.spawnFirework(linkedPortal.x, linkedPortal.y);
+        this.particles.spawnFloatingText(
+          linkedPortal.x,
+          linkedPortal.y - 40,
+          'TELEPORT!',
+          '#8b5cf6',
+          18
+        );
+      }
+    }
+
+    // Update gravity wells and apply forces to player
+    if (!this.isEndlessMode && !this.player.isDead) {
+      this.gravityWells.update(deltaTime);
+      const playerCenterX2 = this.player.x + this.player.width / 2;
+      const playerCenterY2 = this.player.y + this.player.height / 2;
+      const gravForce = this.gravityWells.applyForces(playerCenterX2, playerCenterY2, deltaTime);
+      if (gravForce.fx !== 0 || gravForce.fy !== 0) {
+        this.player.x += gravForce.fx;
+        this.player.velocityY += gravForce.fy;
+      }
+    }
+
     // Decay combo timer
     if (this.comboTimer > 0) {
       this.comboTimer -= deltaTime;
@@ -2989,6 +3070,9 @@ export class Game {
 
         // Render beat-synced hazards
         this.beatHazards.render(this.ctx, this.cameraX);
+
+        // Render gravity wells
+        this.gravityWells.render(this.ctx, this.cameraX);
 
         // Render time rewind effect if active
         if (this.timeRewind.isInRewind()) {

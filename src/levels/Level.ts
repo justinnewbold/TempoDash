@@ -1,6 +1,8 @@
 import { LevelConfig, Rectangle, PowerUpConfig } from '../types';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
+import { Portal } from '../entities/Portal';
+import { Gem } from '../entities/Gem';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
 import { COLORS, GAME_WIDTH } from '../constants';
@@ -13,6 +15,9 @@ export class Level {
   coinsCollected = 0;
   totalCoins = 0;
   powerUpConfigs: PowerUpConfig[] = [];
+  portals: Portal[] = [];
+  gems: Gem[] = [];
+  gemsCollected = 0;
   goal: Rectangle;
   playerStart: { x: number; y: number };
   background: Background;
@@ -45,6 +50,20 @@ export class Level {
       this.powerUpConfigs = [...config.powerUps];
     }
 
+    // Create portals
+    if (config.portals) {
+      for (const portalConfig of config.portals) {
+        this.portals.push(new Portal(portalConfig));
+      }
+    }
+
+    // Create gems
+    if (config.gems) {
+      for (const gemConfig of config.gems) {
+        this.gems.push(new Gem(gemConfig));
+      }
+    }
+
     // Calculate level length (furthest platform or goal)
     this.levelLength = this.goal.x + this.goal.width;
     for (const platform of this.platforms) {
@@ -64,6 +83,23 @@ export class Level {
         this.coins.push(new Coin(coinConfig));
       }
     }
+
+    // Reset portals
+    this.portals = [];
+    if (this.config.portals) {
+      for (const portalConfig of this.config.portals) {
+        this.portals.push(new Portal(portalConfig));
+      }
+    }
+
+    // Reset gems
+    this.gems = [];
+    this.gemsCollected = 0;
+    if (this.config.gems) {
+      for (const gemConfig of this.config.gems) {
+        this.gems.push(new Gem(gemConfig));
+      }
+    }
   }
 
   update(deltaTime: number): void {
@@ -75,6 +111,14 @@ export class Level {
 
     for (const coin of this.coins) {
       coin.update(deltaTime);
+    }
+
+    for (const portal of this.portals) {
+      portal.update(deltaTime);
+    }
+
+    for (const gem of this.gems) {
+      gem.update(deltaTime);
     }
   }
 
@@ -93,8 +137,52 @@ export class Level {
     return collected;
   }
 
+  /**
+   * Check gem collection. Returns array of collected gem point values.
+   */
+  checkGemCollection(player: Player): number[] {
+    const playerBounds = player.getBounds();
+    const collectedValues: number[] = [];
+
+    for (const gem of this.gems) {
+      if (gem.checkCollision(playerBounds)) {
+        gem.collect();
+        this.gemsCollected++;
+        collectedValues.push(gem.getPointValue());
+      }
+    }
+
+    return collectedValues;
+  }
+
+  /**
+   * Check portal teleportation. Returns the linked portal if player enters one.
+   */
+  checkPortalTeleport(player: Player): Portal | null {
+    const playerBounds = player.getBounds();
+
+    for (const portal of this.portals) {
+      if (!portal.canTeleport()) continue;
+      if (portal.checkCollision(playerBounds)) {
+        // Find the linked portal
+        const linkedPortal = this.portals.find(p => p.id === portal.linkedPortalId);
+        if (linkedPortal) {
+          portal.onTeleport();
+          linkedPortal.onTeleport(); // Put both on cooldown
+          return linkedPortal;
+        }
+      }
+    }
+
+    return null;
+  }
+
   getTotalCoins(): number {
     return this.coins.length;
+  }
+
+  getTotalGems(): number {
+    return this.gems.length;
   }
 
   getProgress(playerX: number): number {
@@ -126,9 +214,19 @@ export class Level {
       platform.render(ctx, cameraX, GAME_WIDTH);
     }
 
+    // Draw portals (behind coins/gems for layering)
+    for (const portal of this.portals) {
+      portal.render(ctx, cameraX);
+    }
+
     // Draw coins
     for (const coin of this.coins) {
       coin.render(ctx, cameraX);
+    }
+
+    // Draw gems
+    for (const gem of this.gems) {
+      gem.render(ctx, cameraX);
     }
 
     // Draw goal

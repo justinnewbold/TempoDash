@@ -52,6 +52,29 @@ export interface CoinConfig {
   y: number;
 }
 
+export interface PortalConfig {
+  id: string;
+  x: number;
+  y: number;
+  linkedPortalId: string;
+  color?: string;
+}
+
+export type GemType = 'ruby' | 'sapphire' | 'emerald';
+
+export interface GemConfig {
+  x: number;
+  y: number;
+  type: GemType;
+}
+
+export interface GravityWellConfig {
+  x: number;
+  y: number;
+  radius: number;
+  strength: number; // Positive = attract, negative = repel
+}
+
 export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
 
 export interface PowerUpConfig {
@@ -88,6 +111,9 @@ export interface LevelConfig {
   totalCoins?: number;  // For star calculation (auto-counted if not set)
   bpm?: number;  // Beats per minute for beat visualization
   flyingMode?: boolean;  // Flying mode - player flies and avoids obstacles
+  portals?: PortalConfig[];  // Teleport portal pairs
+  gems?: GemConfig[];  // Rare collectible gems
+  gravityWells?: GravityWellConfig[];  // Gravity well zones
 }
 
 export interface BackgroundConfig {

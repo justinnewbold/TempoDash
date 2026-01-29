@@ -62,6 +62,17 @@ const level6Config: LevelConfig = {
     // Double points for the final sprint
     { type: 'doublePoints', x: BEAT * 38, y: GROUND_Y - 60 },
   ],
+  // Gems placed in dangerous crumble areas - high risk, high reward
+  gems: [
+    { x: BEAT * 12, y: GROUND_Y - 120, type: 'ruby' },      // Above elevated crumble run
+    { x: BEAT * 26, y: GROUND_Y - 110, type: 'sapphire' },   // Above phase + crumble nightmare
+    { x: BEAT * 45, y: GROUND_Y - 80, type: 'emerald' },     // Near the finale
+  ],
+  // Gravity wells adding depth to the abyssal theme
+  gravityWells: [
+    { x: BEAT * 34, y: GROUND_Y - 80, radius: 120, strength: 300 },   // Attract - pulls into the abyss descent
+    { x: BEAT * 42, y: GROUND_Y - 40, radius: 100, strength: -250 },  // Repel - helps launch upward in the sprint
+  ],
   platforms: [
     // ===== INTRO (Beats 0-3): Brief safe start - observe the chaos ahead =====
     { x: 0, y: GROUND_Y, width: BEAT * 3, height: GROUND_HEIGHT, type: 'solid' },

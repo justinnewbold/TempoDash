@@ -53,6 +53,16 @@ const level3Config: LevelConfig = {
     // Double points before the synchronized phase section (coin-rich area)
     { type: 'doublePoints', x: BEAT * 17, y: GROUND_Y - 60 },
   ],
+  // Portal pair: shortcut from the alternating phase section to the staircase
+  portals: [
+    { id: 'p3a', x: BEAT * 16, y: GROUND_Y - 60, linkedPortalId: 'p3b', color: '#00ff88' },
+    { id: 'p3b', x: BEAT * 30, y: GROUND_Y - 50, linkedPortalId: 'p3a', color: '#00ff88' },
+  ],
+  // Rare gems hidden in tricky phase-timing spots
+  gems: [
+    { x: BEAT * 20, y: GROUND_Y - 110, type: 'ruby' },     // Above synchronized phase group
+    { x: BEAT * 33, y: GROUND_Y - 140, type: 'sapphire' },  // Top of phase staircase
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Safe zone, observe phase behavior =====
     { x: 0, y: GROUND_Y, width: BEAT * 4, height: GROUND_HEIGHT, type: 'solid' },
