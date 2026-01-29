@@ -301,50 +301,103 @@ export class GameEngine {
 
   // Get platforms near player for collision detection (smaller range)
   private getNearbyPlatforms(): Platform[] {
-    const margin = 150;
-    const minY = this.player.y - margin;
-    const maxY = this.player.y + margin;
+    try {
+      const margin = 150;
+      const minY = this.player.y - margin;
+      const maxY = this.player.y + margin;
 
-    const nearby: Platform[] = [];
-    for (const p of this.platforms) {
-      const bounds = p.getBounds();
-      if (bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed && !p.isGlassBroken) {
-        nearby.push(p);
+      const nearby: Platform[] = [];
+      if (!this.platforms || !Array.isArray(this.platforms)) {
+        return nearby;
       }
+
+      for (const p of this.platforms) {
+        if (!p) continue;
+        try {
+          const bounds = p.getBounds();
+          if (bounds && bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed && !p.isGlassBroken) {
+            nearby.push(p);
+          }
+        } catch (e) {
+          // Skip corrupted platform
+          continue;
+        }
+      }
+      return nearby;
+    } catch (e) {
+      return [];
     }
-    return nearby;
   }
 
   // Get entities visible on screen for rendering
   getVisiblePlatforms(): Platform[] {
-    const margin = 200;
-    const minY = this.cameraY - margin;
-    const maxY = this.cameraY + GAME.HEIGHT + margin;
+    try {
+      if (!this.platforms || !Array.isArray(this.platforms)) {
+        return [];
+      }
 
-    return this.platforms.filter((p) => {
-      const bounds = p.getBounds();
-      return bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed && !p.isGlassBroken;
-    });
+      const margin = 200;
+      const minY = this.cameraY - margin;
+      const maxY = this.cameraY + GAME.HEIGHT + margin;
+
+      return this.platforms.filter((p) => {
+        if (!p) return false;
+        try {
+          const bounds = p.getBounds();
+          return bounds && bounds.y + bounds.height >= minY && bounds.y <= maxY && !p.isDestroyed && !p.isGlassBroken;
+        } catch (e) {
+          return false;
+        }
+      });
+    } catch (e) {
+      return [];
+    }
   }
 
   getVisibleCoins(): Coin[] {
-    const margin = 100;
-    const minY = this.cameraY - margin;
-    const maxY = this.cameraY + GAME.HEIGHT + margin;
+    try {
+      if (!this.coins || !Array.isArray(this.coins)) {
+        return [];
+      }
 
-    return this.coins.filter((c) => {
-      return c.y >= minY && c.y <= maxY;
-    });
+      const margin = 100;
+      const minY = this.cameraY - margin;
+      const maxY = this.cameraY + GAME.HEIGHT + margin;
+
+      return this.coins.filter((c) => {
+        if (!c) return false;
+        try {
+          return c.y >= minY && c.y <= maxY;
+        } catch (e) {
+          return false;
+        }
+      });
+    } catch (e) {
+      return [];
+    }
   }
 
   getVisiblePowerUps(): PowerUp[] {
-    const margin = 100;
-    const minY = this.cameraY - margin;
-    const maxY = this.cameraY + GAME.HEIGHT + margin;
+    try {
+      if (!this.powerUps || !Array.isArray(this.powerUps)) {
+        return [];
+      }
 
-    return this.powerUps.filter((p) => {
-      return !p.collected && p.y >= minY && p.y <= maxY;
-    });
+      const margin = 100;
+      const minY = this.cameraY - margin;
+      const maxY = this.cameraY + GAME.HEIGHT + margin;
+
+      return this.powerUps.filter((p) => {
+        if (!p) return false;
+        try {
+          return !p.collected && p.y >= minY && p.y <= maxY;
+        } catch (e) {
+          return false;
+        }
+      });
+    } catch (e) {
+      return [];
+    }
   }
 
   // Convert world Y to screen Y

@@ -75,58 +75,66 @@ export function GameCanvas({
       const engine = engineRef.current;
 
       try {
+        // Update game state
         engine.update(deltaTime);
+
+        // Handle events for haptics and audio
+        if (engine.player.jumpEvent) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          AudioManager.playSound('jump');
+        }
+        if (engine.player.bounceEvent) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          AudioManager.playSound('bounce');
+        }
+        if (engine.player.landEvent) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          AudioManager.playSound('land');
+        }
+        if (engine.player.deathEvent) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          AudioManager.playSound('death');
+        }
+        if (engine.coinCollectedThisFrame) {
+          AudioManager.playSound('coin');
+        }
+        if (engine.powerUpCollectedThisFrame) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        // Check game state
+        if (engine.state.isDead && !gameOverCalledRef.current) {
+          gameOverCalledRef.current = true;
+          setTimeout(() => onGameOver(engine.state.score), 500);
+        }
+        if (engine.state.isComplete && !completeCalledRef.current) {
+          completeCalledRef.current = true;
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          AudioManager.playSound('complete');
+          setTimeout(
+            () => onLevelComplete(engine.state.score, engine.state.coinsCollected),
+            500
+          );
+        }
+
+        // Throttle re-renders
+        forceUpdateRef.current++;
+        if (forceUpdateRef.current % 9 === 0) {
+          try {
+            setForceUpdate((v) => v + 1);
+          } catch (e) {
+            // Component may have unmounted
+          }
+        }
       } catch (error) {
-        console.error('Error in engine.update:', error);
-        return;
+        console.error('Error in game loop:', error);
+        // Don't return - continue the game loop even if there's an error
       }
 
-      // Handle events for haptics and audio
-      if (engine.player.jumpEvent) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        AudioManager.playSound('jump');
+      // CRITICAL: Always schedule next frame, even if errors occurred
+      if (isRunning) {
+        animationFrameRef.current = requestAnimationFrame(gameLoop);
       }
-      if (engine.player.bounceEvent) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        AudioManager.playSound('bounce');
-      }
-      if (engine.player.landEvent) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        AudioManager.playSound('land');
-      }
-      if (engine.player.deathEvent) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-        AudioManager.playSound('death');
-      }
-      if (engine.coinCollectedThisFrame) {
-        AudioManager.playSound('coin');
-      }
-      if (engine.powerUpCollectedThisFrame) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-
-      // Check game state
-      if (engine.state.isDead && !gameOverCalledRef.current) {
-        gameOverCalledRef.current = true;
-        setTimeout(() => onGameOver(engine.state.score), 500);
-      }
-      if (engine.state.isComplete && !completeCalledRef.current) {
-        completeCalledRef.current = true;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        AudioManager.playSound('complete');
-        setTimeout(
-          () => onLevelComplete(engine.state.score, engine.state.coinsCollected),
-          500
-        );
-      }
-
-      // Throttle re-renders
-      forceUpdateRef.current++;
-      if (forceUpdateRef.current % 9 === 0) {
-        setForceUpdate((v) => v + 1);
-      }
-
-      animationFrameRef.current = requestAnimationFrame(gameLoop);
     };
 
     animationFrameRef.current = requestAnimationFrame(gameLoop);
@@ -187,48 +195,70 @@ export function GameCanvas({
           )}
 
           {/* Render platforms */}
-          {engine.getVisiblePlatforms().map((platform) => (
-            <PlatformRenderer
-              key={platform.getStableKey()}
-              platform={platform}
-              cameraY={engine.cameraY}
-            />
-          ))}
+          {engine.getVisiblePlatforms()?.map((platform) => {
+            try {
+              return (
+                <PlatformRenderer
+                  key={platform.getStableKey()}
+                  platform={platform}
+                  cameraY={engine.cameraY}
+                />
+              );
+            } catch (e) {
+              return null;
+            }
+          })}
 
           {/* Render coins */}
-          {engine.getVisibleCoins().map((coin) => (
-            <CoinRenderer
-              key={coin.getStableKey()}
-              coin={coin}
-              cameraY={engine.cameraY}
-            />
-          ))}
+          {engine.getVisibleCoins()?.map((coin) => {
+            try {
+              return (
+                <CoinRenderer
+                  key={coin.getStableKey()}
+                  coin={coin}
+                  cameraY={engine.cameraY}
+                />
+              );
+            } catch (e) {
+              return null;
+            }
+          })}
 
           {/* Render power-ups */}
-          {engine.getVisiblePowerUps().map((powerUp) => (
-            <PowerUpRenderer
-              key={powerUp.getStableKey()}
-              powerUp={powerUp}
-              cameraY={engine.cameraY}
-            />
-          ))}
+          {engine.getVisiblePowerUps()?.map((powerUp) => {
+            try {
+              return (
+                <PowerUpRenderer
+                  key={powerUp.getStableKey()}
+                  powerUp={powerUp}
+                  cameraY={engine.cameraY}
+                />
+              );
+            } catch (e) {
+              return null;
+            }
+          })}
 
           {/* Render player trail */}
-          {engine.player.getTrail().map((point, index) => {
-            if (!point.active || point.alpha <= 0) return null;
-            const screenPos = engine.worldToScreen(point.x, point.y);
-            const size = PLAYER.SIZE * point.alpha * 0.8;
-            return (
-              <RoundedRect
-                key={`trail-${index}`}
-                x={screenPos.x - size / 2}
-                y={screenPos.y - size / 2}
-                width={size}
-                height={size}
-                r={4}
-                color={`rgba(0, 255, 170, ${point.alpha * 0.3})`}
-              />
-            );
+          {engine.player?.getTrail()?.map((point, index) => {
+            try {
+              if (!point || !point.active || point.alpha <= 0) return null;
+              const screenPos = engine.worldToScreen(point.x, point.y);
+              const size = PLAYER.SIZE * point.alpha * 0.8;
+              return (
+                <RoundedRect
+                  key={`trail-${index}`}
+                  x={screenPos.x - size / 2}
+                  y={screenPos.y - size / 2}
+                  width={size}
+                  height={size}
+                  r={4}
+                  color={`rgba(0, 255, 170, ${point.alpha * 0.3})`}
+                />
+              );
+            } catch (e) {
+              return null;
+            }
           })}
 
           {/* Render player */}
