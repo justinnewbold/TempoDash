@@ -10,7 +10,19 @@ interface TrailPoint {
   active: boolean;
 }
 
+interface DashAfterimage {
+  x: number;
+  y: number;
+  alpha: number;
+  active: boolean;
+}
+
 const TRAIL_BUFFER_SIZE = 15;
+const DASH_AFTERIMAGE_SIZE = 8;
+const DASH_DURATION = 200; // ms
+const DASH_DISTANCE = 150; // pixels
+const DASH_COOLDOWN = 1500; // ms
+const DASH_SPEED = (DASH_DISTANCE / DASH_DURATION) * 1000; // pixels per second
 
 export class Player {
   x: number;
@@ -31,11 +43,20 @@ export class Player {
 
   private skin: PlayerSkin = DEFAULT_SKIN;
 
+  // Dash ability state
+  isDashing = false;
+  private dashTime = 0;
+  private dashDirection = 0; // -1 left, 1 right
+  private dashCooldown = 0;
+  private dashAfterimages: DashAfterimage[] = [];
+  private dashAfterimageTimer = 0;
+
   // Events for haptics/audio
   jumpEvent = false;
   landEvent = false;
   bounceEvent = false;
   deathEvent = false;
+  dashEvent = false;
 
   constructor(startPosition: Vector2) {
     this.x = startPosition.x;
@@ -44,6 +65,11 @@ export class Player {
     // Pre-allocate trail buffer
     for (let i = 0; i < TRAIL_BUFFER_SIZE; i++) {
       this.trailBuffer.push({ x: 0, y: 0, alpha: 0, rotation: 0, active: false });
+    }
+
+    // Pre-allocate dash afterimage buffer
+    for (let i = 0; i < DASH_AFTERIMAGE_SIZE; i++) {
+      this.dashAfterimages.push({ x: 0, y: 0, alpha: 0, active: false });
     }
   }
 
@@ -69,6 +95,16 @@ export class Player {
       this.trailBuffer[i].active = false;
     }
     this.trailHead = 0;
+
+    // Reset dash state
+    this.isDashing = false;
+    this.dashTime = 0;
+    this.dashDirection = 0;
+    this.dashCooldown = 0;
+    this.dashAfterimageTimer = 0;
+    for (let i = 0; i < DASH_AFTERIMAGE_SIZE; i++) {
+      this.dashAfterimages[i].active = false;
+    }
   }
 
   clearEvents(): void {
@@ -76,6 +112,27 @@ export class Player {
     this.landEvent = false;
     this.bounceEvent = false;
     this.deathEvent = false;
+    this.dashEvent = false;
+  }
+
+  dash(direction: number): void {
+    // Can only dash if not currently dashing and cooldown is ready
+    if (this.isDashing || this.dashCooldown > 0 || this.isDead) return;
+
+    this.isDashing = true;
+    this.dashTime = 0;
+    this.dashDirection = direction;
+    this.dashCooldown = DASH_COOLDOWN;
+    this.dashEvent = true;
+    this.dashAfterimageTimer = 0;
+  }
+
+  canDash(): boolean {
+    return !this.isDashing && this.dashCooldown <= 0 && !this.isDead;
+  }
+
+  getDashCooldownPercent(): number {
+    return Math.max(0, 1 - this.dashCooldown / DASH_COOLDOWN);
   }
 
   update(
@@ -91,6 +148,40 @@ export class Player {
 
     // Clear events from previous frame
     this.clearEvents();
+
+    // Update dash cooldown
+    if (this.dashCooldown > 0) {
+      this.dashCooldown -= deltaTime;
+      if (this.dashCooldown < 0) this.dashCooldown = 0;
+    }
+
+    // Handle dash movement
+    if (this.isDashing) {
+      this.dashTime += deltaTime;
+
+      // Apply dash velocity
+      const dashVelocity = DASH_SPEED * this.dashDirection;
+      this.x += dashVelocity * dt;
+
+      // Keep player in bounds during dash
+      this.x = Math.max(PLAYER.SIZE / 2, Math.min(GAME.WIDTH - PLAYER.SIZE / 2, this.x));
+
+      // Create afterimages during dash
+      this.dashAfterimageTimer += deltaTime;
+      if (this.dashAfterimageTimer >= 20) { // Every 20ms
+        this.addDashAfterimage();
+        this.dashAfterimageTimer = 0;
+      }
+
+      // End dash after duration
+      if (this.dashTime >= DASH_DURATION) {
+        this.isDashing = false;
+        this.dashTime = 0;
+      }
+    }
+
+    // Update dash afterimages
+    this.updateDashAfterimages(deltaTime);
 
     // Auto-scroll upward (world Y increases)
     this.y += PLAYER.SCROLL_SPEED * dt;
@@ -160,11 +251,27 @@ export class Player {
       // Handle platform-specific effects
       switch (platform.type) {
         case 'spike':
-          this.isDead = true;
-          this.deathEvent = true;
-          return;
+          // Spikes still kill during dash (no invincibility against spikes)
+          if (!this.isDashing) {
+            this.isDead = true;
+            this.deathEvent = true;
+            return;
+          }
+          continue;
+
+        case 'lava':
+          // Lava still kills during dash
+          if (!this.isDashing) {
+            this.isDead = true;
+            this.deathEvent = true;
+            return;
+          }
+          continue;
 
         case 'bounce':
+          // Bounce platforms phase through during dash
+          if (this.isDashing) continue;
+
           if (collision === 'bottom') {
             // Player lands on top (remember Y is inverted for vertical scroll)
             this.velocityY = PLAYER.JUMP_FORCE * PLAYER.BOUNCE_MULTIPLIER;
@@ -174,6 +281,9 @@ export class Player {
           }
           continue;
       }
+
+      // Player is invincible to regular platform collisions during dash
+      if (this.isDashing) continue;
 
       // Resolve collision
       this.resolveCollision(platform, collision);
@@ -296,6 +406,42 @@ export class Player {
     // OPTIMIZED: Return buffer directly instead of filtering every frame
     // Rendering will skip inactive points
     return this.trailBuffer;
+  }
+
+  getDashAfterimages(): DashAfterimage[] {
+    return this.dashAfterimages;
+  }
+
+  private addDashAfterimage(): void {
+    // Find an inactive afterimage or reuse the oldest one
+    let targetIndex = -1;
+    for (let i = 0; i < DASH_AFTERIMAGE_SIZE; i++) {
+      if (!this.dashAfterimages[i].active) {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    // If no inactive found, use the first one
+    if (targetIndex === -1) targetIndex = 0;
+
+    const afterimage = this.dashAfterimages[targetIndex];
+    afterimage.x = this.x + this.width / 2;
+    afterimage.y = this.y + this.height / 2;
+    afterimage.alpha = 0.7;
+    afterimage.active = true;
+  }
+
+  private updateDashAfterimages(deltaTime: number): void {
+    const fadeRate = deltaTime / 100;
+    for (let i = 0; i < DASH_AFTERIMAGE_SIZE; i++) {
+      if (this.dashAfterimages[i].active) {
+        this.dashAfterimages[i].alpha -= fadeRate;
+        if (this.dashAfterimages[i].alpha <= 0) {
+          this.dashAfterimages[i].active = false;
+        }
+      }
+    }
   }
 
   // Convert world Y to screen Y (for rendering)

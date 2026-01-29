@@ -99,6 +99,10 @@ export function GameCanvas({
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
           AudioManager.playSound('death');
         }
+        if (engine.player.dashEvent) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          AudioManager.playSound('bounce'); // Reuse bounce sound for dash
+        }
         if (engine.coinCollectedThisFrame) {
           AudioManager.playSound('coin');
         }
@@ -188,7 +192,19 @@ export function GameCanvas({
       engineRef.current.onJumpEnd();
     });
 
-  const gesture = Gesture.Race(tapGesture, panGesture);
+  // Dash gesture - horizontal swipe
+  const dashGesture = Gesture.Fling()
+    .direction(Gesture.DIRECTION_LEFT | Gesture.DIRECTION_RIGHT)
+    .onStart((event) => {
+      const engine = engineRef.current;
+      if (engine.player.canDash()) {
+        // Determine direction based on velocity
+        const direction = event.velocityX > 0 ? 1 : -1;
+        engine.player.dash(direction);
+      }
+    });
+
+  const gesture = Gesture.Race(dashGesture, tapGesture, panGesture);
 
   const engine = engineRef.current;
 
@@ -281,6 +297,28 @@ export function GameCanvas({
             }
           })}
 
+          {/* Render dash afterimages */}
+          {engine.player?.getDashAfterimages()?.map((afterimage, index) => {
+            try {
+              if (!afterimage || !afterimage.active || afterimage.alpha <= 0) return null;
+              const screenPos = engine.worldToScreen(afterimage.x, afterimage.y);
+              const size = PLAYER.SIZE;
+              return (
+                <RoundedRect
+                  key={`dash-${index}`}
+                  x={screenPos.x - size / 2}
+                  y={screenPos.y - size / 2}
+                  width={size}
+                  height={size}
+                  r={4}
+                  color={`rgba(255, 100, 255, ${afterimage.alpha * 0.6})`}
+                />
+              );
+            } catch (e) {
+              return null;
+            }
+          })}
+
           {/* Render player */}
           <PlayerRenderer
             player={engine.player}
@@ -288,8 +326,8 @@ export function GameCanvas({
             hasShield={engine.state.hasShield}
           />
 
-          {/* HUD - Score, Combo, PowerUp */}
-          <HUDRenderer state={engine.state} />
+          {/* HUD - Score, Combo, PowerUp, Dash Cooldown */}
+          <HUDRenderer state={engine.state} player={engine.player} />
         </Canvas>
       </GestureDetector>
     </GestureHandlerRootView>
@@ -747,6 +785,9 @@ function PlayerRenderer({
   const size = PLAYER.SIZE;
   const halfSize = size / 2;
 
+  const isDashing = player.isDashing;
+  const cooldownPercent = player.getDashCooldownPercent();
+
   return (
     <Group
       transform={[
@@ -755,6 +796,33 @@ function PlayerRenderer({
         { rotate: rotation },
       ]}
     >
+      {/* Dash effect - magenta/purple glow */}
+      {isDashing && (
+        <Circle cx={0} cy={0} r={halfSize + 12}>
+          <RadialGradient
+            c={vec(0, 0)}
+            r={halfSize + 12}
+            colors={['rgba(255, 100, 255, 0.5)', 'rgba(200, 50, 255, 0.3)', 'rgba(255, 100, 255, 0)']}
+          />
+        </Circle>
+      )}
+      {isDashing && (
+        <Circle
+          cx={0}
+          cy={0}
+          r={halfSize + 10}
+          color="transparent"
+          style="stroke"
+          strokeWidth={3}
+        >
+          <LinearGradient
+            start={vec(-halfSize, -halfSize)}
+            end={vec(halfSize, halfSize)}
+            colors={['rgba(255, 100, 255, 0.8)', 'rgba(200, 50, 255, 0.5)']}
+          />
+        </Circle>
+      )}
+
       {/* Shield effect */}
       {hasShield && (
         <Circle cx={0} cy={0} r={halfSize + 10}>
@@ -790,7 +858,7 @@ function PlayerRenderer({
         height={size + 8}
         r={6}
       >
-        <Shadow dx={0} dy={0} blur={20} color={skin.glowColor} />
+        <Shadow dx={0} dy={0} blur={isDashing ? 30 : 20} color={isDashing ? '#ff64ff' : skin.glowColor} />
       </RoundedRect>
 
       {/* Player body */}
@@ -838,7 +906,10 @@ function PlayerRenderer({
 }
 
 // HUD renderer
-function HUDRenderer({ state }: { state: any }) {
+function HUDRenderer({ state, player }: { state: any; player: any }) {
+  const dashCooldownPercent = player?.getDashCooldownPercent() || 0;
+  const canDash = player?.canDash() || false;
+
   return (
     <Group>
       {/* Score background */}
@@ -853,6 +924,53 @@ function HUDRenderer({ state }: { state: any }) {
       {/* Coin icon */}
       <Circle cx={44} cy={80} r={10} color={COLORS.COIN.primary} />
       <Circle cx={43} cy={79} r={3} color="rgba(255, 255, 255, 0.5)" />
+
+      {/* Dash cooldown indicator - bottom right */}
+      <Circle
+        cx={SCREEN_WIDTH - 40}
+        cy={SCREEN_HEIGHT - 40}
+        r={20}
+        color="rgba(0, 0, 0, 0.5)"
+      />
+      {/* Cooldown fill (circular progress) */}
+      {dashCooldownPercent < 1 && (
+        <Circle
+          cx={SCREEN_WIDTH - 40}
+          cy={SCREEN_HEIGHT - 40}
+          r={16}
+          color={`rgba(255, 100, 255, ${0.3 + dashCooldownPercent * 0.3})`}
+        />
+      )}
+      {/* Ready indicator */}
+      {canDash && (
+        <Circle
+          cx={SCREEN_WIDTH - 40}
+          cy={SCREEN_HEIGHT - 40}
+          r={16}
+          color="rgba(255, 100, 255, 0.8)"
+        >
+          <Shadow dx={0} dy={0} blur={8} color="rgba(255, 100, 255, 0.6)" />
+        </Circle>
+      )}
+      {/* Dash icon arrows */}
+      <Group opacity={canDash ? 1 : 0.3}>
+        <Rect
+          x={SCREEN_WIDTH - 48}
+          y={SCREEN_HEIGHT - 42}
+          width={6}
+          height={4}
+          r={1}
+          color="rgba(255, 255, 255, 0.9)"
+        />
+        <Rect
+          x={SCREEN_WIDTH - 38}
+          y={SCREEN_HEIGHT - 42}
+          width={6}
+          height={4}
+          r={1}
+          color="rgba(255, 255, 255, 0.9)"
+        />
+      </Group>
 
       {/* Combo indicator */}
       {state.combo > 1 && (
