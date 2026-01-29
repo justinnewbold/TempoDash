@@ -48,6 +48,8 @@ export function GameCanvas({
   const engineRef = useRef<GameEngine>(new GameEngine());
   const lastTimeRef = useRef<number>(Date.now());
   const animationFrameRef = useRef<number | null>(null);
+  const gameOverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gameOverCalledRef = useRef(false);
   const completeCalledRef = useRef(false);
   const forceUpdateRef = useRef(0);
@@ -64,6 +66,8 @@ export function GameCanvas({
   // Game loop
   useEffect(() => {
     let isRunning = true;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
 
     const gameLoop = () => {
       if (!isRunning) return;
@@ -105,13 +109,13 @@ export function GameCanvas({
         // Check game state
         if (engine.state.isDead && !gameOverCalledRef.current) {
           gameOverCalledRef.current = true;
-          setTimeout(() => onGameOver(engine.state.score), 500);
+          gameOverTimeoutRef.current = setTimeout(() => onGameOver(engine.state.score), 500);
         }
         if (engine.state.isComplete && !completeCalledRef.current) {
           completeCalledRef.current = true;
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           AudioManager.playSound('complete');
-          setTimeout(
+          completeTimeoutRef.current = setTimeout(
             () => onLevelComplete(engine.state.score, engine.state.coinsCollected),
             500
           );
@@ -126,9 +130,19 @@ export function GameCanvas({
             // Component may have unmounted
           }
         }
+
+        // Reset error counter on successful frame
+        consecutiveErrors = 0;
       } catch (error) {
-        console.error('Error in game loop:', error);
-        // Don't return - continue the game loop even if there's an error
+        consecutiveErrors++;
+        console.error(`Error in game loop (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, error);
+
+        // Stop game loop if too many consecutive errors
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          console.error('Too many consecutive errors, stopping game loop');
+          isRunning = false;
+          return;
+        }
       }
 
       // CRITICAL: Always schedule next frame, even if errors occurred
@@ -143,6 +157,12 @@ export function GameCanvas({
       isRunning = false;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (gameOverTimeoutRef.current) {
+        clearTimeout(gameOverTimeoutRef.current);
+      }
+      if (completeTimeoutRef.current) {
+        clearTimeout(completeTimeoutRef.current);
       }
     };
   }, [onGameOver, onLevelComplete]);
