@@ -6,10 +6,19 @@ type SoundEffect = 'jump' | 'land' | 'coin' | 'bounce' | 'death' | 'complete' | 
 export function useAudio() {
   useEffect(() => {
     // Initialize audio on mount
-    AudioManager.initialize();
-    AudioManager.loadSounds();
+    let isActive = true;
+
+    const initAudio = async () => {
+      await AudioManager.initialize();
+      if (isActive) {
+        await AudioManager.loadSounds();
+      }
+    };
+
+    initAudio();
 
     return () => {
+      isActive = false;
       // Don't cleanup on unmount to keep sounds loaded
     };
   }, []);
@@ -56,8 +65,20 @@ export function useAudio() {
 // Simple hook for just playing sound effects
 export function useSoundEffect() {
   useEffect(() => {
-    AudioManager.initialize();
-    AudioManager.loadSounds();
+    let isActive = true;
+
+    const initAudio = async () => {
+      await AudioManager.initialize();
+      if (isActive) {
+        await AudioManager.loadSounds();
+      }
+    };
+
+    initAudio();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   return useCallback((effect: SoundEffect) => {

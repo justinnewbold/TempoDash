@@ -85,8 +85,14 @@ class AudioManagerClass {
     try {
       // Stop current music if playing
       if (this.music) {
-        await this.music.stopAsync();
-        await this.music.unloadAsync();
+        try {
+          await this.music.stopAsync();
+          await this.music.unloadAsync();
+        } catch (error) {
+          console.warn('Failed to stop/unload music:', error);
+        } finally {
+          this.music = null;
+        }
       }
 
       if (source) {
@@ -94,11 +100,13 @@ class AudioManagerClass {
           isLooping: true,
           volume: this.settings.musicVolume,
         });
+        // Only assign to this.music after successful creation
         this.music = sound;
         await this.music.playAsync();
       }
     } catch (error) {
       console.warn('Failed to play music:', error);
+      this.music = null;
     }
   }
 
@@ -147,12 +155,12 @@ class AudioManagerClass {
     this.settings.sfxVolume = Math.max(0, Math.min(1, volume));
   }
 
-  setMusicEnabled(enabled: boolean): void {
+  async setMusicEnabled(enabled: boolean): Promise<void> {
     this.settings.musicEnabled = enabled;
     if (!enabled) {
-      this.pauseMusic();
+      await this.pauseMusic();
     } else {
-      this.resumeMusic();
+      await this.resumeMusic();
     }
   }
 

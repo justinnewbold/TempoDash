@@ -62,11 +62,11 @@ export class EndlessGameEngine {
 
     // Only add new platforms that aren't already in our list
     const existingPositions = new Set(
-      this.platforms.map((p) => `${p.x},${p.y}`)
+      this.platforms.map((p) => `${Math.round(p.x)}|${Math.round(p.y)}`)
     );
 
     for (const config of platformConfigs) {
-      const key = `${config.x},${config.y}`;
+      const key = `${Math.round(config.x)}|${Math.round(config.y)}`;
       if (!existingPositions.has(key)) {
         this.platforms.push(new Platform(config));
       }
@@ -81,11 +81,11 @@ export class EndlessGameEngine {
     // Similar for coins
     const coinConfigs = this.generator.getCoinsInRange(minY, maxY);
     const existingCoinPositions = new Set(
-      this.coins.map((c) => `${c.x},${c.y}`)
+      this.coins.map((c) => `${Math.round(c.x)}|${Math.round(c.y)}`)
     );
 
     for (const config of coinConfigs) {
-      const key = `${config.x},${config.y}`;
+      const key = `${Math.round(config.x)}|${Math.round(config.y)}`;
       if (!existingCoinPositions.has(key)) {
         this.coins.push(new Coin(config));
       }
