@@ -71,6 +71,23 @@ const level8Config: LevelConfig = {
     // Magnet for collecting the last coins
     { type: 'magnet', x: BEAT * 51, y: GROUND_Y - 160 },
   ],
+  // Portal pair in the vertical maze - teleport between temple sections
+  portals: [
+    { id: 'p8a', x: BEAT * 22, y: GROUND_Y - 60, linkedPortalId: 'p8b', color: '#e94560' },
+    { id: 'p8b', x: BEAT * 40, y: GROUND_Y - 120, linkedPortalId: 'p8a', color: '#e94560' },
+  ],
+  // Gems scattered through the temple - all three types
+  gems: [
+    { x: BEAT * 7, y: GROUND_Y - 170, type: 'ruby' },       // Top of rising steps
+    { x: BEAT * 20, y: GROUND_Y - 190, type: 'sapphire' },   // Above bounce chain peak
+    { x: BEAT * 42, y: GROUND_Y - 210, type: 'emerald' },    // Above temple spires
+  ],
+  // Gravity wells add mystical forces to the sky temple
+  gravityWells: [
+    { x: BEAT * 14, y: GROUND_Y - 130, radius: 100, strength: 200 },   // Gentle attract in floating gardens
+    { x: BEAT * 37, y: GROUND_Y - 100, radius: 110, strength: -300 },  // Repel - launch upward in vertical maze
+    { x: BEAT * 50, y: GROUND_Y - 160, radius: 90, strength: 250 },    // Attract - pull toward the final ascent
+  ],
   platforms: [
     // ===== INTRO (Beats 0-4): Temple entrance =====
     { x: 0, y: GROUND_Y, width: BEAT * 3, height: GROUND_HEIGHT, type: 'solid' },
