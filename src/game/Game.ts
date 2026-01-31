@@ -1785,7 +1785,13 @@ export class Game {
     const GROUND_Y = GAME_HEIGHT - 40;
     const GROUND_HEIGHT = 40;
 
-    while (this.nextPlatformX < untilX) {
+    // Safety limit to prevent infinite loops from NaN or zero-width platforms
+    const MAX_ITERATIONS = 200;
+    let iterations = 0;
+
+    while (this.nextPlatformX < untilX && iterations < MAX_ITERATIONS) {
+      iterations++;
+
       // Start with ground at the beginning
       if (this.nextPlatformX === 0) {
         this.endlessPlatforms.push(new Platform({
@@ -1802,6 +1808,12 @@ export class Game {
       // Difficulty increases with distance
       const difficulty = Math.min(this.endlessDistance / 3000, 1);
 
+      // Guard against NaN propagation from endlessDistance
+      if (!isFinite(difficulty)) {
+        this.nextPlatformX = untilX;
+        break;
+      }
+
       // Gap size (increases with difficulty)
       const minGap = 80 + difficulty * 40;
       const maxGap = 150 + difficulty * 80;
@@ -1809,8 +1821,8 @@ export class Game {
 
       // Platform width (decreases with difficulty)
       const minWidth = Math.max(80, 150 - difficulty * 50);
-      const maxWidth = Math.max(120, 250 - difficulty * 80);
-      const width = minWidth + Math.random() * (maxWidth - minWidth);
+      const maxWidth = Math.max(minWidth, 250 - difficulty * 80);
+      const width = Math.max(40, minWidth + Math.random() * (maxWidth - minWidth));
 
       // Platform position
       const x = this.nextPlatformX + gap;
@@ -1854,7 +1866,13 @@ export class Game {
         }));
       }
 
-      this.nextPlatformX = x + width;
+      const newX = x + width;
+      // Ensure forward progress to prevent infinite loop
+      if (!isFinite(newX) || newX <= this.nextPlatformX) {
+        this.nextPlatformX += 200;
+      } else {
+        this.nextPlatformX = newX;
+      }
     }
   }
 

@@ -311,7 +311,7 @@ export class AudioManager {
   // --- SCHEDULER (from Neon Pulse Engine) ---
 
   private scheduler(): void {
-    if (!this.audioContext) return;
+    if (!this.audioContext || !this.isPlaying) return;
 
     // Safety: limit iterations to prevent freeze if nextNoteTime falls too far behind
     // This can happen when tab is inactive or speed multiplier changes rapidly
