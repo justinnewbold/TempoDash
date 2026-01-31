@@ -165,6 +165,9 @@ export class Player {
 
     this.animationTime += deltaTime;
 
+    // Save previous frame's wall slide state for wall jump input check
+    const wasWallSliding = this.isWallSliding;
+
     // Reset conveyor and wall states each frame (will be re-set in collision handling)
     this.onConveyor = null;
     this.isWallSliding = false;
@@ -301,8 +304,8 @@ export class Player {
         this.airJumpsRemaining--;
       }
 
-      // Wall jump - can jump off walls even without air jumps
-      if (input.jumpPressed && this.isWallSliding && this.wallJumpCooldown <= 0) {
+      // Wall jump - can jump off walls even without air jumps (use previous frame's state)
+      if (input.jumpPressed && wasWallSliding && this.wallJumpCooldown <= 0) {
         this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
         this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
         this.isWallSliding = false;
@@ -317,9 +320,12 @@ export class Player {
       this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
     }
 
-    // Wall sliding reduces fall speed
+    // Clamp downward fall speed (wall sliding reduces it further)
+    // Only clamp positive (downward) velocity - don't restrict upward jumps
     const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
-    this.velocityY = Math.min(Math.abs(this.velocityY), maxFall) * Math.sign(this.velocityY);
+    if (this.velocityY > maxFall) {
+      this.velocityY = maxFall;
+    }
 
     // Apply vertical velocity
     this.y += this.velocityY * (deltaTime / 1000);
@@ -348,12 +354,10 @@ export class Player {
       this.x += conveyorSpeed * (deltaTime / 1000);
     }
 
-    // Reset gravity flip when leaving ground (fall normally after flip)
-    if (!this.isGrounded && this.gravityFlipped) {
-      // Check if player is moving upward (escaped gravity flip)
-      if (this.velocityY < 0) {
-        this.gravityFlipped = false;
-      }
+    // Reset gravity flip when landing on solid ground (not a gravity platform)
+    // Gravity flip persists in the air and resets on the next solid landing
+    if (this.isGrounded && this.gravityFlipped) {
+      this.gravityFlipped = false;
     }
 
     // Check if fell off screen (death) - account for gravity flip
@@ -398,6 +402,12 @@ export class Player {
           }
           break;
 
+        case 'crumble':
+          if (collision === 'top') {
+            platform.startCrumble();
+          }
+          break;
+
         case 'conveyor':
           if (collision === 'top') {
             this.onConveyor = platform;
@@ -414,7 +424,8 @@ export class Player {
           if (collision === 'top') {
             // Gravity flip - give upward boost and flip gravity direction
             this.gravityFlipped = !this.gravityFlipped;
-            this.velocityY = this.gravityFlipped ? PLAYER.JUMP_FORCE : -PLAYER.JUMP_FORCE;
+            // Always launch upward (away from platform) regardless of flip state
+            this.velocityY = -PLAYER.JUMP_FORCE;
             this.y = bounds.y - this.height;
             this.gravityFlipEvent = { x: this.x + this.width / 2, y: this.y + this.height / 2, flipped: this.gravityFlipped };
             continue;  // Skip edge bounce handling for top collision
@@ -433,8 +444,9 @@ export class Player {
               this.x = bounds.x - this.width;
               this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'right' };
             }
+            continue;  // Skip edge bounce only for side collisions
           }
-          continue;
+          break;  // Allow top/bottom collisions to resolve normally
 
         case 'slowmo':
           // Slow-mo zones affect player regardless of collision direction
@@ -457,8 +469,8 @@ export class Player {
 
         // If at least 25% of player height is above platform top, trigger boomerang bounce
         if (overlapAbove >= this.height * 0.25) {
-          // Push back from the platform edge
-          this.x = bounds.x + bounds.width + 5;
+          // Push away from the platform edge (back to the left)
+          this.x = bounds.x - this.width - 5;
           // Give strong upward velocity - arcs up dramatically
           this.velocityY = -PLAYER.JUMP_FORCE * 1.1;
           // Trigger boomerang effect - player swings backwards then forwards
@@ -470,7 +482,7 @@ export class Player {
           // Reset all jumps - give player full air jumps to recover
           this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback
-          this.edgeBounceEvent = { x: bounds.x + bounds.width, y: bounds.y, direction: 'left' };
+          this.edgeBounceEvent = { x: bounds.x, y: bounds.y, direction: 'left' };
           continue;
         }
 
@@ -485,8 +497,8 @@ export class Player {
         const overlapAbove = platformTop - playerTop;
 
         if (overlapAbove >= this.height * 0.25) {
-          // Push back from the platform edge
-          this.x = bounds.x - this.width - 5;
+          // Push away from the platform edge (back to the right)
+          this.x = bounds.x + bounds.width + 5;
           // Give strong upward velocity - arcs up dramatically
           this.velocityY = -PLAYER.JUMP_FORCE * 1.1;
           // Trigger boomerang effect - player swings backwards then forwards
@@ -498,7 +510,7 @@ export class Player {
           // Reset all jumps - give player full air jumps to recover
           this.airJumpsRemaining = 4;
           // Emit edge bounce event for visual feedback
-          this.edgeBounceEvent = { x: bounds.x, y: bounds.y, direction: 'right' };
+          this.edgeBounceEvent = { x: bounds.x + bounds.width, y: bounds.y, direction: 'right' };
           continue;
         }
 

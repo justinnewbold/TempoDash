@@ -192,7 +192,7 @@ export class Game {
   // Speed Run Split Times
   private splitTimes: number[] = []; // Time at each checkpoint
   private bestSplitTimes: number[] = []; // Best times at each checkpoint
-  private lastCheckpointIndex = -1;
+  private lastCheckpointIndex = 0;
   private splitDisplay: { time: number; diff: number; isAhead: boolean; timer: number } | null = null;
 
   // Encouragement System (after repeated deaths)
@@ -1504,7 +1504,7 @@ export class Game {
 
     // Reset split time tracking
     this.splitTimes = [];
-    this.lastCheckpointIndex = -1;
+    this.lastCheckpointIndex = 0;
     this.splitDisplay = null;
     // Load best split times for this level (stored in save data)
     this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
@@ -1575,7 +1575,7 @@ export class Game {
       this.checkpointX = checkpoint.x;
       this.checkpointY = checkpoint.y;
       this.cameraX = Math.max(0, checkpoint.x - GAME_WIDTH / 3);
-      this.lastCheckpointProgress = (sectionIndex / (checkpoints.length + 1)) * 100;
+      this.lastCheckpointProgress = sectionIndex / (checkpoints.length + 1);
     } else {
       // Start from beginning
       this.checkpointX = this.level.playerStart.x;
@@ -1612,6 +1612,9 @@ export class Game {
       }
       if (this.endlessDistance >= 500) {
         this.tryUnlockAchievement('endless_500');
+      }
+      if (this.endlessDistance >= 1000) {
+        this.tryUnlockAchievement('endless_1000');
       }
 
       this.isEndlessMode = false;
@@ -2073,7 +2076,7 @@ export class Game {
     // Update weather effects
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
       this.updateWeather(deltaTime);
-      this.applyWeatherPhysics();
+      this.applyWeatherPhysics(deltaTime);
     }
 
     // Editor mode has its own update
@@ -5960,7 +5963,7 @@ export class Game {
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
     this.cameraX = 0;
-    this.attempts++;
+    this.attempts = 0;
 
     // Start music
     this.audio.start();
@@ -7058,7 +7061,7 @@ export class Game {
       this.ctx.textAlign = 'center';
 
       const buttonY = 15;
-      const rightX = this.canvas.width - 20;
+      const rightX = (this.canvas.width / this.dpr) - 20;
 
       // Save button
       this.ctx.fillStyle = 'rgba(0, 200, 100, 0.8)';
@@ -9178,13 +9181,13 @@ export class Game {
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 
-  private applyWeatherPhysics(): void {
+  private applyWeatherPhysics(deltaTime: number): void {
     if (!this.weatherEnabled || this.player.isDead) return;
 
     // Wind affects player movement
     if (this.currentWeather === 'wind') {
       const windForce = this.weatherDirection * this.weatherIntensity * 50;
-      this.player.x += windForce * 0.016; // Approximate deltaTime
+      this.player.x += windForce * (deltaTime / 1000);
     }
 
     // Rain makes platforms slightly slippery (handled in platform physics)

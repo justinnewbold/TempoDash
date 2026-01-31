@@ -227,7 +227,7 @@ export class GhostManager {
   }
 
   getPlaybackProgress(): number {
-    if (this.frames.length === 0) return 0;
+    if (this.frames.length <= 1) return 0;
     return this.playbackIndex / (this.frames.length - 1);
   }
 

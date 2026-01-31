@@ -864,6 +864,10 @@ export class SaveManager {
       achievements: [],
       levelCoins: {},
       highScores: {},
+      levelStars: {},
+      levelDeaths: {},
+      bestTimes: {},
+      ghostRuns: {},
     };
     this.save();
   }

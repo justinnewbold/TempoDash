@@ -71,12 +71,12 @@ export class PowerUpManager {
 
   // Update power-ups
   update(deltaTime: number): void {
-    // Update animation for uncollected power-ups
-    for (const powerUp of this.powerUps) {
-      if (!powerUp.collected) {
-        powerUp.animationTime += deltaTime;
-      }
-    }
+    // Update animation for uncollected power-ups and remove collected ones
+    this.powerUps = this.powerUps.filter(powerUp => {
+      if (powerUp.collected) return false;
+      powerUp.animationTime += deltaTime;
+      return true;
+    });
 
     // Update active power-up timers
     for (const [type, active] of this.activePowerUps.entries()) {
