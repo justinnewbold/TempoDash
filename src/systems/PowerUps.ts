@@ -108,7 +108,7 @@ export class PowerUpManager {
   }
 
   // Activate a power-up
-  private activatePowerUp(type: PowerUpType): void {
+  activatePowerUp(type: PowerUpType): void {
     const config = POWER_UP_CONFIG[type];
     this.activePowerUps.set(type, {
       type,

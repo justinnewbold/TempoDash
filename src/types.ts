@@ -50,6 +50,7 @@ export interface MovePattern {
 export interface CoinConfig {
   x: number;
   y: number;
+  isMagnet?: boolean;
 }
 
 export interface PortalConfig {

@@ -8,6 +8,7 @@ import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
+import { Coin } from '../entities/Coin';
 import { PlatformType } from '../types';
 import { LevelEditor } from '../editor/LevelEditor';
 import { ParticleEffects } from '../systems/ParticleEffects';
@@ -152,6 +153,8 @@ export class Game {
   // Challenge mode state
   private currentChallenge: Challenge | null = null;
   private challengeScore = 0;
+  private challengeCoins: Coin[] = [];
+  private challengeCoinsCollected = 0;
 
   // Chase mode (wall of death)
   private chaseMode: ChaseModeManager;
@@ -2100,6 +2103,13 @@ export class Game {
     this.level.update(deltaTime);
     this.powerUps.update(deltaTime);
 
+    // Update challenge coins
+    if (this.state.gameStatus === 'challengePlaying') {
+      for (const coin of this.challengeCoins) {
+        coin.update(deltaTime);
+      }
+    }
+
     // Check power-up collection
     const collectedPowerUp = this.powerUps.checkCollision(this.player.getBounds());
     if (collectedPowerUp) {
@@ -2395,6 +2405,7 @@ export class Game {
       const playerCenterX = this.player.x + this.player.width / 2;
       const playerCenterY = this.player.y + this.player.height / 2;
 
+      // Attract level coins
       for (const coin of this.level.coins) {
         if (coin.collected) continue;
 
@@ -2404,6 +2415,21 @@ export class Game {
 
         if (distance < magnetRange) {
           coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
+        }
+      }
+
+      // Attract challenge coins
+      if (this.state.gameStatus === 'challengePlaying') {
+        for (const coin of this.challengeCoins) {
+          if (coin.collected) continue;
+
+          const dx = playerCenterX - coin.x;
+          const dy = playerCenterY - coin.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < magnetRange) {
+            coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
+          }
         }
       }
     }
@@ -2538,6 +2564,73 @@ export class Game {
 
       // Update longest combo
       this.save.updateLongestCombo(this.comboCount);
+    }
+
+    // Check challenge coin collection (Coin Rush mode)
+    if (this.state.gameStatus === 'challengePlaying' && this.challengeCoins.length > 0) {
+      const playerBounds = this.player.getBounds();
+      let challengeCollected = 0;
+      let magnetCoinCollected = false;
+
+      for (const coin of this.challengeCoins) {
+        if (coin.checkCollision(playerBounds)) {
+          coin.collect();
+          this.challengeCoinsCollected++;
+          challengeCollected++;
+
+          if (coin.isMagnet) {
+            magnetCoinCollected = true;
+          }
+        }
+      }
+
+      if (challengeCollected > 0) {
+        this.audio.playCoinCollect();
+        this.input.triggerHaptic('light');
+
+        // Update Flow Meter
+        for (let i = 0; i < challengeCollected; i++) {
+          this.flowMeter.onCoinCollect();
+        }
+
+        // Apply multipliers
+        const overdriveMultiplier = this.flowMeter.getScoreMultiplier();
+        const pointsMultiplier = this.powerUps.getPointsMultiplier() * overdriveMultiplier;
+        const effectiveCoins = Math.floor(challengeCollected * pointsMultiplier * this.comboMultiplier);
+
+        this.challengeScore += effectiveCoins * 100;
+        this.comboCount += challengeCollected;
+        this.comboTimer = this.comboDuration;
+        this.comboDisplayTimer = 500;
+        this.comboMeterPulse = 1;
+
+        if (this.comboMultiplier > 1 || pointsMultiplier > 1) {
+          this.particles.spawnFloatingText(
+            this.player.x + this.player.width / 2,
+            this.player.y - 40,
+            `+${effectiveCoins * 100}`,
+            '#ffd700'
+          );
+        }
+
+        // Spawn collection particles
+        this.particles.spawnCoinCollect(
+          this.player.x + this.player.width / 2,
+          this.player.y + this.player.height / 2
+        );
+      }
+
+      // Activate magnet powerup when magnet coin is collected (5 seconds)
+      if (magnetCoinCollected) {
+        this.powerUps.activatePowerUp('magnet');
+        this.particles.spawnFloatingText(
+          this.player.x + this.player.width / 2,
+          this.player.y - 60,
+          'MAGNET!',
+          '#ff00ff'
+        );
+        this.screenEffects.triggerZoomPulse(1.08, 150);
+      }
     }
 
     // Check gem collection (rare collectibles worth big points)
@@ -3083,8 +3176,22 @@ export class Game {
       // Render challenge mode (similar to endless but with challenge UI)
       this.renderEndlessBackground();
       this.renderEndlessPlatforms();
+
+      // Render challenge coins
+      for (const coin of this.challengeCoins) {
+        coin.render(this.ctx, this.cameraX);
+      }
+
       this.player.render(this.ctx, this.cameraX);
+
+      // Render shield effect around player if active
+      if (this.powerUps.hasShield()) {
+        const pb = this.player.getBounds();
+        this.powerUps.renderShieldEffect(this.ctx, pb.x - this.cameraX, pb.y, pb.width, pb.height);
+      }
+
       this.particles.render(this.ctx, this.cameraX);
+      this.powerUps.renderUI(this.ctx);
       this.renderChallengeUI();
     } else if (this.state.gameStatus === 'editorTest') {
       // Render test mode
@@ -5935,6 +6042,7 @@ export class Game {
   private startChallenge(challenge: Challenge): void {
     this.currentChallenge = challenge;
     this.challengeScore = 0;
+    this.challengeCoinsCollected = 0;
 
     // Start endless mode with the challenge seed
     this.isEndlessMode = true;
@@ -5961,10 +6069,22 @@ export class Game {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
     }
 
+    // Generate coins for Coin Rush challenge
+    this.challengeCoins = [];
+    if (challenge.type === 'dailyCoinRush') {
+      const coinData = this.challengeManager.generateCoinRushCoins(challenge.seed, seedPlatforms);
+      for (const cd of coinData) {
+        this.challengeCoins.push(new Coin({ x: cd.x, y: cd.y, isMagnet: cd.isMagnet }));
+      }
+    }
+
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
     this.cameraX = 0;
     this.attempts = 0;
+
+    // Clear any active powerups
+    this.powerUps.clear();
 
     // Start music
     this.audio.start();
@@ -5980,6 +6100,7 @@ export class Game {
     this.speedMultiplier = 1.0;
     this.jumpCount = 0;
     this.prevAirJumpsRemaining = 4;
+    this.challengeCoinsCollected = 0;
     this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
@@ -5998,6 +6119,18 @@ export class Game {
     if (seedPlatforms.length > 0) {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
     }
+
+    // Regenerate coins for Coin Rush challenge
+    this.challengeCoins = [];
+    if (this.currentChallenge.type === 'dailyCoinRush') {
+      const coinData = this.challengeManager.generateCoinRushCoins(this.currentChallenge.seed, seedPlatforms);
+      for (const cd of coinData) {
+        this.challengeCoins.push(new Coin({ x: cd.x, y: cd.y, isMagnet: cd.isMagnet }));
+      }
+    }
+
+    // Clear any active powerups
+    this.powerUps.clear();
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
@@ -6364,22 +6497,50 @@ export class Game {
     this.ctx.save();
 
     const challengeColor = this.currentChallenge.isWeekly ? '#9933ff' : '#ff6600';
+    const isCoinRush = this.currentChallenge.type === 'dailyCoinRush';
 
-    // Distance counter (main score)
-    this.ctx.textAlign = 'center';
-    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = '#00ffff';
-    this.ctx.shadowColor = '#00ffff';
-    this.ctx.shadowBlur = 15;
-    this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+    if (isCoinRush) {
+      // Coin Rush: show coins collected as main metric
+      this.ctx.textAlign = 'center';
+      this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.shadowColor = '#ffd700';
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText(`★ ${this.challengeCoinsCollected}`, GAME_WIDTH / 2, 50);
 
-    // Target distance
-    this.ctx.font = '16px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = challengeColor;
-    this.ctx.shadowColor = challengeColor;
-    this.ctx.shadowBlur = 5;
-    const targetText = this.endlessDistance >= 500 ? '✓ COMPLETE!' : 'Target: 500m';
-    this.ctx.fillText(targetText, GAME_WIDTH / 2, 75);
+      // Score below
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffff';
+      this.ctx.shadowColor = '#00ffff';
+      this.ctx.shadowBlur = 5;
+      this.ctx.fillText(`Score: ${this.challengeScore}`, GAME_WIDTH / 2, 75);
+
+      // Magnet indicator when active
+      if (this.powerUps.isActive('magnet')) {
+        this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ff00ff';
+        this.ctx.shadowColor = '#ff00ff';
+        this.ctx.shadowBlur = 10;
+        const secs = Math.ceil(this.powerUps.getRemainingTime('magnet') / 1000);
+        this.ctx.fillText(`🧲 MAGNET ${secs}s`, GAME_WIDTH / 2, 95);
+      }
+    } else {
+      // Distance counter (main score)
+      this.ctx.textAlign = 'center';
+      this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = '#00ffff';
+      this.ctx.shadowColor = '#00ffff';
+      this.ctx.shadowBlur = 15;
+      this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+
+      // Target distance
+      this.ctx.font = '16px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = challengeColor;
+      this.ctx.shadowColor = challengeColor;
+      this.ctx.shadowBlur = 5;
+      const targetText = this.endlessDistance >= 500 ? '✓ COMPLETE!' : 'Target: 500m';
+      this.ctx.fillText(targetText, GAME_WIDTH / 2, 75);
+    }
 
     // Challenge name label
     this.ctx.textAlign = 'left';
@@ -6401,7 +6562,7 @@ export class Game {
     if (progress && progress.bestScore > 0) {
       this.ctx.font = '12px "Segoe UI", sans-serif';
       this.ctx.fillStyle = '#ffd700';
-      this.ctx.fillText(`Best: ${progress.bestScore}m`, GAME_WIDTH - 20, 50);
+      this.ctx.fillText(`Best: ${progress.bestScore}`, GAME_WIDTH - 20, 50);
     }
 
     // Mute indicator

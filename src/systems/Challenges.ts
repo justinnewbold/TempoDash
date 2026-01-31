@@ -66,8 +66,8 @@ export const CHALLENGE_TYPES: Record<ChallengeType, { name: string; description:
     isWeekly: false,
   },
   dailyCoinRush: {
-    name: 'Coin Rush',
-    description: 'Collect as many coins as possible in endless mode',
+    name: 'Coin Dash',
+    description: 'Collect coins! Grab magnet coins to attract nearby coins',
     icon: '💰',
     isWeekly: false,
   },
@@ -371,6 +371,94 @@ export class ChallengeManager {
           x: platform.x + platform.width / 2,
           y: platform.y - 40 - rng.nextInt(0, 30),
         });
+      }
+    }
+
+    return coins;
+  }
+
+  // Generate a massive amount of coins for Coin Rush mode, including magnet coins
+  generateCoinRushCoins(
+    seed: number,
+    platforms: Array<{ x: number; y: number; width: number; height: number }>
+  ): Array<{ x: number; y: number; isMagnet: boolean }> {
+    const rng = new SeededRandom(seed + 7777); // Different salt for coin placement
+    const coins: Array<{ x: number; y: number; isMagnet: boolean }> = [];
+    const GROUND_Y = 460;
+
+    let magnetCounter = 0;
+
+    for (const platform of platforms) {
+      const platCenterX = platform.x + platform.width / 2;
+      const platTop = platform.y;
+
+      // Place a cluster of 3-5 coins above every platform
+      const clusterSize = rng.nextInt(3, 5);
+      for (let c = 0; c < clusterSize; c++) {
+        const offsetX = (c - Math.floor(clusterSize / 2)) * 28;
+        coins.push({
+          x: platCenterX + offsetX,
+          y: platTop - 40 - rng.nextInt(0, 15),
+          isMagnet: false,
+        });
+      }
+
+      // Place an arc of coins in the air between platforms (jump path)
+      if (rng.next() < 0.7) {
+        const arcStartX = platform.x + platform.width + 20;
+        const arcCount = rng.nextInt(3, 6);
+        for (let a = 0; a < arcCount; a++) {
+          const t = a / (arcCount - 1 || 1);
+          const arcX = arcStartX + t * 120;
+          // Parabolic arc peaking at midpoint
+          const arcY = GROUND_Y - 80 - Math.sin(t * Math.PI) * rng.nextInt(60, 120);
+          coins.push({ x: arcX, y: arcY, isMagnet: false });
+        }
+      }
+
+      // Vertical coin column above some platforms
+      if (rng.next() < 0.4) {
+        const colCount = rng.nextInt(2, 4);
+        for (let v = 0; v < colCount; v++) {
+          coins.push({
+            x: platCenterX,
+            y: platTop - 50 - v * 30,
+            isMagnet: false,
+          });
+        }
+      }
+
+      magnetCounter++;
+
+      // Every ~5 platforms, place a magnet coin
+      if (magnetCounter >= 5) {
+        coins.push({
+          x: platCenterX,
+          y: platTop - 70 - rng.nextInt(10, 40),
+          isMagnet: true,
+        });
+        magnetCounter = 0;
+      }
+    }
+
+    // Add some extra floating coin trails between gaps
+    for (let i = 0; i < platforms.length - 1; i++) {
+      const p1 = platforms[i];
+      const p2 = platforms[i + 1];
+      const gapStart = p1.x + p1.width;
+      const gapEnd = p2.x;
+      const gapWidth = gapEnd - gapStart;
+
+      if (gapWidth > 80 && rng.next() < 0.6) {
+        const trailCount = Math.min(Math.floor(gapWidth / 30), 6);
+        for (let t = 0; t < trailCount; t++) {
+          const frac = (t + 1) / (trailCount + 1);
+          coins.push({
+            x: gapStart + frac * gapWidth,
+            y: GROUND_Y - 60 - rng.nextInt(20, 80),
+            isMagnet: false,
+          });
+        }
       }
     }
 
