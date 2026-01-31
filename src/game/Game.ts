@@ -449,8 +449,8 @@ export class Game {
       this.lastBeatTime = performance.now();
       this.currentBeatNumber = beat;
 
-      // Add visual beat indicator
-      if (this.showBeatVisualizer && this.state.gameStatus === 'playing') {
+      // Add visual beat indicator (cap to prevent unbounded growth during freeze-frames)
+      if (this.showBeatVisualizer && this.state.gameStatus === 'playing' && this.beatIndicators.length < 20) {
         this.beatIndicators.push({
           time: 1.0,
           intensity: 1.0,
@@ -2152,7 +2152,8 @@ export class Game {
 
     // Update beat timer and rhythm lock state BEFORE player update (affects platform.isCollidable())
     this.beatTimer += deltaTime;
-    const beatInterval = 60000 / this.currentBPM; // ms per beat
+    const safeBPM = this.currentBPM > 0 && isFinite(this.currentBPM) ? this.currentBPM : 128;
+    const beatInterval = 60000 / safeBPM; // ms per beat
     if (this.beatTimer >= beatInterval) {
       this.beatTimer -= beatInterval;
       this.currentBeatNumber++;
