@@ -286,12 +286,15 @@ export class CustomLevelManager {
       return { reachable: false, reason: 'No platform under player start' };
     }
 
-    // Build reachability graph using BFS
+    // Build reachability graph using BFS with iteration limit to prevent freezing
     const visited = new Set<number>();
     const queue: number[] = [startPlatformIdx];
     visited.add(startPlatformIdx);
+    const MAX_BFS_ITERATIONS = 5000;
+    let bfsIterations = 0;
 
-    while (queue.length > 0) {
+    while (queue.length > 0 && bfsIterations < MAX_BFS_ITERATIONS) {
+      bfsIterations++;
       const current = queue.shift()!;
       const currentP = safePlatforms[current];
 

@@ -75,6 +75,12 @@ export class Level {
   }
 
   reset(): void {
+    // Reset platforms (recreate from config to clear crumble/glass/phase state)
+    this.platforms = [];
+    for (const platformConfig of this.config.platforms) {
+      this.platforms.push(new Platform(platformConfig));
+    }
+
     // Reset coins
     this.coins = [];
     this.coinsCollected = 0;

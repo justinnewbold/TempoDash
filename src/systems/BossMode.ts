@@ -71,6 +71,7 @@ export class BossManager {
   private projectiles: Projectile[] = [];
   private stompWarningY = -1;
   private stompTimer = 0;
+  private stompResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   // State
   private isEnraged = false;
@@ -230,10 +231,14 @@ export class BossManager {
               hitPlayer = true;
             }
 
-            // Reset after stomp
-            setTimeout(() => {
+            // Reset after stomp (track timer to clear on reset)
+            if (this.stompResetTimer !== null) {
+              clearTimeout(this.stompResetTimer);
+            }
+            this.stompResetTimer = setTimeout(() => {
               this.bossY = -100;
               this.stompWarningY = -1;
+              this.stompResetTimer = null;
             }, 300);
           }
         } else {
@@ -312,7 +317,7 @@ export class BossManager {
    * Render the boss
    */
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
-    if (!this.active || !this.bossConfig) return;
+    if (!this.active || !this.bossConfig || this.defeated) return;
 
     const screenX = this.bossX - cameraX;
     const size = this.bossConfig.size * this.pulsePhase;
@@ -416,5 +421,9 @@ export class BossManager {
     this.projectiles = [];
     this.defeated = false;
     this.isEnraged = false;
+    if (this.stompResetTimer !== null) {
+      clearTimeout(this.stompResetTimer);
+      this.stompResetTimer = null;
+    }
   }
 }
