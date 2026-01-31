@@ -321,8 +321,9 @@ export class Platform {
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = '#ff0000';
         ctx.shadowBlur = 10;
-        const spikeCount = Math.floor(this.width / this.height);
-        const spikeWidth = this.width / spikeCount;
+        const spikeHeight = Math.max(this.height, 1); // Prevent division by zero
+        const spikeCount = Math.min(Math.floor(this.width / spikeHeight), 100); // Cap to prevent infinite loop
+        const spikeWidth = spikeCount > 0 ? this.width / spikeCount : this.width;
         for (let i = 0; i < spikeCount; i++) {
           ctx.beginPath();
           ctx.moveTo(screenX + i * spikeWidth, this.y + this.height);

@@ -283,8 +283,8 @@ export class BeatHazard {
 
     // Spikes on bottom
     ctx.fillStyle = this.isActive ? '#ff6666' : '#888888';
-    const spikeCount = Math.floor(this.width / 15);
-    const spikeWidth = this.width / spikeCount;
+    const spikeCount = Math.min(Math.max(Math.floor(this.width / 15), 0), 100);
+    const spikeWidth = spikeCount > 0 ? this.width / spikeCount : this.width;
     for (let i = 0; i < spikeCount; i++) {
       ctx.beginPath();
       ctx.moveTo(screenX + i * spikeWidth, currentY + this.height);

@@ -95,7 +95,8 @@ export class ScreenEffects {
    */
   triggerFreezeFrame(frames: number = 3): void {
     if (!this.config.freezeFramesEnabled) return;
-    this.freezeFrameDuration = frames * (1000 / 60); // Convert frames to ms
+    const cappedFrames = Math.min(Math.max(frames, 0), 30); // Cap at 500ms to prevent long freezes
+    this.freezeFrameDuration = cappedFrames * (1000 / 60); // Convert frames to ms
     this.freezeFrameTimer = this.freezeFrameDuration;
   }
 
