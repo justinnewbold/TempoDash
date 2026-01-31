@@ -7786,7 +7786,6 @@ export class Game {
 
     // Glow background
     const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
-    glowGrad.addColorStop(0, color.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/[0-9a-f]{2}/gi, (m, i) => i === 0 ? '' : parseInt(m, 16) + ','));
     glowGrad.addColorStop(0, `${color}33`);
     glowGrad.addColorStop(1, 'transparent');
     this.ctx.fillStyle = glowGrad;
