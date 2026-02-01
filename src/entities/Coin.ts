@@ -7,12 +7,14 @@ export class Coin {
   readonly width = 24;
   readonly height = 24;
   collected = false;
+  isMagnet: boolean;
   private animationTime = 0;
   private collectAnimation = 0;
 
   constructor(config: CoinConfig) {
     this.x = config.x;
     this.y = config.y;
+    this.isMagnet = config.isMagnet ?? false;
   }
 
   update(deltaTime: number): void {
@@ -85,7 +87,11 @@ export class Coin {
       const scale = 1 + this.collectAnimation * 0.5;
       ctx.translate(screenX, this.y - this.collectAnimation * 30);
       ctx.scale(scale, scale);
-      this.drawCoin(ctx, 0, 0);
+      if (this.isMagnet) {
+        this.drawMagnetCoin(ctx, 0, 0);
+      } else {
+        this.drawCoin(ctx, 0, 0);
+      }
       ctx.restore();
       return;
     }
@@ -97,7 +103,11 @@ export class Coin {
     ctx.save();
     ctx.translate(screenX, this.y + floatOffset);
     ctx.rotate(rotation);
-    this.drawCoin(ctx, 0, 0);
+    if (this.isMagnet) {
+      this.drawMagnetCoin(ctx, 0, 0);
+    } else {
+      this.drawCoin(ctx, 0, 0);
+    }
     ctx.restore();
   }
 
@@ -137,5 +147,46 @@ export class Coin {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('★', x, y);
+  }
+
+  private drawMagnetCoin(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+    // Pulsing glow effect
+    const pulse = Math.sin(this.animationTime * 0.008) * 0.3 + 1;
+
+    // Outer glow - magenta/purple
+    ctx.shadowColor = '#ff00ff';
+    ctx.shadowBlur = 20 * pulse;
+
+    // Coin body - magenta gradient
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, this.width / 2);
+    gradient.addColorStop(0, '#ff88ff');
+    gradient.addColorStop(0.5, '#ff00ff');
+    gradient.addColorStop(1, '#aa00aa');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, this.width / 2 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner shine
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.arc(x - 3, y - 3, this.width / 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#cc00cc';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, this.width / 2 * pulse - 1, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Magnet icon
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🧲', x, y);
   }
 }
