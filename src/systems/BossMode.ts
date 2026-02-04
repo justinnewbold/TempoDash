@@ -194,13 +194,21 @@ export class BossManager {
           // Check projectile collision with player
           const pdx = proj.x - playerX;
           const pdy = proj.y - playerY;
-          if (Math.sqrt(pdx * pdx + pdy * pdy) < proj.size + 20) {
+          const hitRadius = proj.size + 20;
+          // Use distance-squared to avoid sqrt
+          if (pdx * pdx + pdy * pdy < hitRadius * hitRadius) {
             hitPlayer = true;
           }
         }
 
-        // Remove dead projectiles
-        this.projectiles = this.projectiles.filter(p => p.lifetime > 0);
+        // Remove dead projectiles in-place to avoid array allocation
+        let writeIdx = 0;
+        for (let i = 0; i < this.projectiles.length; i++) {
+          if (this.projectiles[i].lifetime > 0) {
+            this.projectiles[writeIdx++] = this.projectiles[i];
+          }
+        }
+        this.projectiles.length = writeIdx;
         break;
 
       case 'stomper':
@@ -331,7 +339,7 @@ export class BossManager {
     );
     gradient.addColorStop(0, this.bossConfig.glowColor);
     gradient.addColorStop(0.5, this.bossConfig.color);
-    gradient.addColorStop(1, 'transparent');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = gradient;
     ctx.beginPath();

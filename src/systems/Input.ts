@@ -29,8 +29,24 @@ export class InputManager {
   // Callback for when a touch is in an exclusion zone (for UI handling)
   private onExcludedTouch: ((x: number, y: number) => void) | null = null;
 
+  // Bound event handlers for cleanup
+  private boundKeyDown: (e: KeyboardEvent) => void;
+  private boundKeyUp: (e: KeyboardEvent) => void;
+  private boundBlur: () => void;
+  private boundMouseDown: ((e: MouseEvent) => void) | null = null;
+  private boundMouseUp: (() => void) | null = null;
+  private boundTouchStart: ((e: TouchEvent) => void) | null = null;
+  private boundTouchEnd: ((e: TouchEvent) => void) | null = null;
+  private boundTouchCancel: (() => void) | null = null;
+
   constructor() {
     this.isMobile = this.detectMobile();
+
+    // Bind handlers once for cleanup
+    this.boundKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
+    this.boundKeyUp = (e: KeyboardEvent) => this.handleKeyUp(e);
+    this.boundBlur = () => this.resetAll();
+
     this.setupListeners();
   }
 
@@ -70,46 +86,45 @@ export class InputManager {
   }
 
   private setupListeners(): void {
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
-    window.addEventListener('blur', () => this.resetAll());
+    window.addEventListener('keydown', this.boundKeyDown);
+    window.addEventListener('keyup', this.boundKeyUp);
+    window.addEventListener('blur', this.boundBlur);
   }
 
   private setupCanvasListeners(): void {
     if (!this.canvas) return;
 
-    // Mouse click for jump
-    this.canvas.addEventListener('mousedown', (e) => {
+    // Create bound handlers for canvas events
+    this.boundMouseDown = (e: MouseEvent) => {
       e.preventDefault();
       this.state.jump = true;
-    });
-
-    this.canvas.addEventListener('mouseup', () => {
+    };
+    this.boundMouseUp = () => {
       this.state.jump = false;
-    });
-
-    // Touch support for mobile with zone detection
-    this.canvas.addEventListener('touchstart', (e) => {
-      // Check if any touch is in an exclusion zone
+    };
+    this.boundTouchStart = (e: TouchEvent) => {
       const hasExcludedTouch = this.handleTouchStart(e);
-      // Only prevent default if no touches were in exclusion zones
       if (!hasExcludedTouch) {
         e.preventDefault();
       }
-    }, { passive: false });
-
-    this.canvas.addEventListener('touchend', (e) => {
-      // Check if any touch was in exclusion zone
+    };
+    this.boundTouchEnd = (e: TouchEvent) => {
       const hasExcludedTouch = this.handleTouchEnd(e);
       if (!hasExcludedTouch) {
         e.preventDefault();
       }
-    }, { passive: false });
-
-    this.canvas.addEventListener('touchcancel', () => {
+    };
+    this.boundTouchCancel = () => {
       this.state.jump = false;
       this.state.dash = false;
-    });
+    };
+
+    // Add listeners with bound handlers
+    this.canvas.addEventListener('mousedown', this.boundMouseDown);
+    this.canvas.addEventListener('mouseup', this.boundMouseUp);
+    this.canvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
+    this.canvas.addEventListener('touchend', this.boundTouchEnd, { passive: false });
+    this.canvas.addEventListener('touchcancel', this.boundTouchCancel);
   }
 
   private handleTouchStart(e: TouchEvent): boolean {
@@ -280,20 +295,49 @@ export class InputManager {
     }
   }
 
-  update(): InputState {
+  update(): Readonly<InputState> {
     this.state.jumpPressed = this.state.jump && !this.previousJump;
     this.state.dashPressed = this.state.dash && !this.previousDash;
     this.previousJump = this.state.jump;
     this.previousDash = this.state.dash;
-    return { ...this.state };
+    return this.state; // Return direct reference - avoid allocation every frame
   }
 
-  getState(): InputState {
-    return { ...this.state };
+  getState(): Readonly<InputState> {
+    return this.state; // Return direct reference - avoid allocation every frame
   }
 
   // Check if running on mobile
   isMobileDevice(): boolean {
     return this.isMobile;
+  }
+
+  /**
+   * Clean up all event listeners
+   */
+  destroy(): void {
+    // Remove window listeners
+    window.removeEventListener('keydown', this.boundKeyDown);
+    window.removeEventListener('keyup', this.boundKeyUp);
+    window.removeEventListener('blur', this.boundBlur);
+
+    // Remove canvas listeners
+    if (this.canvas) {
+      if (this.boundMouseDown) {
+        this.canvas.removeEventListener('mousedown', this.boundMouseDown);
+      }
+      if (this.boundMouseUp) {
+        this.canvas.removeEventListener('mouseup', this.boundMouseUp);
+      }
+      if (this.boundTouchStart) {
+        this.canvas.removeEventListener('touchstart', this.boundTouchStart);
+      }
+      if (this.boundTouchEnd) {
+        this.canvas.removeEventListener('touchend', this.boundTouchEnd);
+      }
+      if (this.boundTouchCancel) {
+        this.canvas.removeEventListener('touchcancel', this.boundTouchCancel);
+      }
+    }
   }
 }

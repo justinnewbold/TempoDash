@@ -503,16 +503,28 @@ export class ScreenEffects {
 
     // Screen flash
     if (this.flashOpacity > 0) {
-      ctx.fillStyle = this.flashColor.replace(')', `, ${this.flashOpacity})`).replace('rgb', 'rgba');
-      if (!this.flashColor.includes('rgba')) {
+      let fillColor: string;
+      if (this.flashColor.startsWith('rgba')) {
+        // Already rgba - replace the alpha value
+        fillColor = this.flashColor.replace(/,\s*[\d.]+\)$/, `, ${this.flashOpacity})`);
+      } else if (this.flashColor.startsWith('rgb')) {
+        // Convert rgb to rgba
+        fillColor = this.flashColor.replace(')', `, ${this.flashOpacity})`).replace('rgb', 'rgba');
+      } else if (this.flashColor.startsWith('#')) {
         // Handle hex colors
-        const hex = this.flashColor.replace('#', '');
+        const hex = this.flashColor.slice(1);
         const r = parseInt(hex.substring(0, 2), 16);
         const g = parseInt(hex.substring(2, 4), 16);
         const b = parseInt(hex.substring(4, 6), 16);
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.flashOpacity})`;
+        fillColor = `rgba(${r}, ${g}, ${b}, ${this.flashOpacity})`;
+      } else {
+        // Fallback - use globalAlpha
+        ctx.globalAlpha = this.flashOpacity;
+        fillColor = this.flashColor;
       }
+      ctx.fillStyle = fillColor;
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      ctx.globalAlpha = 1;
     }
 
     // Lightning flash

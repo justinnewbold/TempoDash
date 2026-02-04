@@ -50,6 +50,7 @@ export class Game {
   private lastTime = 0;
   private deathTimer = 0;
   private beatPulse = 0;
+  private animationFrameId: number | null = null;
 
   // Menu state
   private selectedLevelIndex = 0;
@@ -308,6 +309,9 @@ export class Game {
       // Small delay to let the browser update dimensions
       setTimeout(() => this.handleResize(), 100);
     });
+
+    // Clean up on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', () => this.destroy());
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -607,12 +611,25 @@ export class Game {
     const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
     const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
 
+    // Editor needs full mouse event for special handling
+    if (this.state.gameStatus === 'editor') {
+      this.handleEditorClick(e);
+      return;
+    }
+
+    this.routeClickToHandler(x, y, e.shiftKey, false);
+  }
+
+  /**
+   * Shared click routing logic for both mouse and touch events
+   */
+  private routeClickToHandler(x: number, y: number, shiftKey: boolean, _isTouch: boolean): void {
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.handleMainMenuClick(x, y);
         break;
       case 'levelSelect':
-        this.handleLevelSelectClick(x, y, e.shiftKey);
+        this.handleLevelSelectClick(x, y, shiftKey);
         break;
       case 'customLevels':
         this.handleCustomLevelsClick(x, y);
@@ -639,13 +656,13 @@ export class Game {
         this.handlePausedClick(x, y);
         break;
       case 'editor':
-        this.handleEditorClick(e);
+        // Editor handled separately (needs full MouseEvent for mouse, TouchHandler for touch)
         break;
       case 'levelComplete':
         this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
-        this.endlessDistance = 0; // Reset for next endless run
+        this.endlessDistance = 0;
         this.returnToMainMenu();
         break;
     }
@@ -683,12 +700,6 @@ export class Game {
   }
 
   private handleTouchMenuClick(x: number, y: number): void {
-    // Dismiss tutorial on touch
-    if (this.showingTutorial) {
-      this.dismissTutorial();
-      return;
-    }
-
     // Handle mobile control buttons during gameplay
     if ((this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') && this.input.isMobileDevice()) {
       if (this.handleMobileControlClick(x, y)) {
@@ -696,48 +707,8 @@ export class Game {
       }
     }
 
-    switch (this.state.gameStatus) {
-      case 'mainMenu':
-        this.handleMainMenuClick(x, y);
-        break;
-      case 'levelSelect':
-        this.handleLevelSelectClick(x, y, false); // No shift key on touch
-        break;
-      case 'customLevels':
-        this.handleCustomLevelsClick(x, y);
-        break;
-      case 'settings':
-        this.handleSettingsClick(x, y);
-        break;
-      case 'skins':
-        this.handleSkinsClick(x, y);
-        break;
-      case 'achievements':
-        this.handleAchievementsClick(x, y);
-        break;
-      case 'challenges':
-        this.handleChallengesClick(x, y);
-        break;
-      case 'platformGuide':
-        this.handlePlatformGuideClick(x, y);
-        break;
-      case 'leaderboards':
-        this.handleLeaderboardsClick(x, y);
-        break;
-      case 'paused':
-        this.handlePausedClick(x, y);
-        break;
-      case 'editor':
-        // Editor has its own touch handling via TouchHandler
-        break;
-      case 'levelComplete':
-        this.handleLevelCompleteClick(x, y);
-        break;
-      case 'gameOver':
-        this.endlessDistance = 0;
-        this.returnToMainMenu();
-        break;
-    }
+    // Use shared click routing (no shift key on touch, skip editor mouse handling)
+    this.routeClickToHandler(x, y, false, true);
   }
 
   private handleMainMenuClick(x: number, y: number): void {
@@ -1977,8 +1948,21 @@ export class Game {
       }
     }
 
-    requestAnimationFrame(this.gameLoop);
+    this.animationFrameId = requestAnimationFrame(this.gameLoop);
   };
+
+  /**
+   * Clean up resources when game is destroyed
+   * Call this when removing the game from the page
+   */
+  destroy(): void {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    this.audio.stop();
+    this.input.destroy();
+  }
 
   private update(deltaTime: number): void {
     // Update debug frame timing
@@ -3969,7 +3953,7 @@ export class Game {
     const flareSize = 50 + Math.sin(time * 3) * 20;
     const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, flareSize);
     gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-    gradient.addColorStop(1, 'transparent');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     // Top-left corner
     this.ctx.fillStyle = gradient;
@@ -4351,9 +4335,19 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000', '#e94560'];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5]; // 1-5 stars
+    const levelNames = [
+      'First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak',
+      'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple',
+      'Crystal Caverns', 'Storm Surge', 'Shadow Realm', 'Cyber Grid',
+      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension'
+    ];
+    const levelColors = [
+      '#00ffaa', '#ff00ff', '#ff6600', '#88ddff',
+      '#ff4400', '#00ccff', '#ff0000', '#e94560',
+      '#aa66ff', '#ffaa00', '#666699', '#00ffff',
+      '#cc9966', '#aaaaff', '#ff0066'
+    ];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5]; // 1-5 stars
 
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -7667,8 +7661,11 @@ export class Game {
 
     let y = boxY + 55;
     for (const p of powerups) {
-      // Icon and box
-      this.ctx.fillStyle = p.color + '33';
+      // Icon and box - convert hex to rgba for browser compatibility
+      const pr = parseInt(p.color.slice(1, 3), 16);
+      const pg = parseInt(p.color.slice(3, 5), 16);
+      const pb = parseInt(p.color.slice(5, 7), 16);
+      this.ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, 0.2)`;
       this.ctx.beginPath();
       this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
       this.ctx.fill();
@@ -7945,11 +7942,13 @@ export class Game {
         break;
     }
 
-    // Glow background
+    // Glow background - convert hex to rgba for transparency
     const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
-    glowGrad.addColorStop(0, color.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/[0-9a-f]{2}/gi, (m, i) => i === 0 ? '' : parseInt(m, 16) + ','));
-    glowGrad.addColorStop(0, `${color}33`);
-    glowGrad.addColorStop(1, 'transparent');
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.3)`);
+    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = glowGrad;
     this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
 
@@ -8934,8 +8933,15 @@ export class Game {
       const bx = x + i * (badgeSize + spacing);
       const hasEarned = badges.includes(badge.id);
 
-      // Badge background
-      this.ctx.fillStyle = hasEarned ? badge.color + '33' : 'rgba(50, 50, 50, 0.5)';
+      // Badge background - convert hex to rgba for browser compatibility
+      if (hasEarned) {
+        const br = parseInt(badge.color.slice(1, 3), 16);
+        const bg = parseInt(badge.color.slice(3, 5), 16);
+        const bb = parseInt(badge.color.slice(5, 7), 16);
+        this.ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, 0.2)`;
+      } else {
+        this.ctx.fillStyle = 'rgba(50, 50, 50, 0.5)';
+      }
       this.ctx.beginPath();
       this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
       this.ctx.fill();
@@ -8975,10 +8981,13 @@ export class Game {
     const centerX = GAME_WIDTH / 2;
     const centerY = 150;
 
-    // Glow
+    // Glow - convert hex to rgba for better browser compatibility
     const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
-    gradient.addColorStop(0, info.color + '44');
-    gradient.addColorStop(1, 'transparent');
+    const r = parseInt(info.color.slice(1, 3), 16);
+    const g = parseInt(info.color.slice(3, 5), 16);
+    const b = parseInt(info.color.slice(5, 7), 16);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.27)`);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
 
@@ -9264,7 +9273,7 @@ export class Game {
       this.ctx.globalAlpha = p.alpha;
       const gradient = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
       gradient.addColorStop(0, 'rgba(200, 200, 210, 0.3)');
-      gradient.addColorStop(1, 'transparent');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
       this.ctx.fillStyle = gradient;
       this.ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     }
@@ -9293,7 +9302,7 @@ export class Game {
       GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT * 0.3,
       GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT
     );
-    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
     vignette.addColorStop(1, 'rgba(0, 0, 20, 0.8)');
     this.ctx.fillStyle = vignette;
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);

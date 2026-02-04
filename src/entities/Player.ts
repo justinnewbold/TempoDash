@@ -744,9 +744,21 @@ export class Player {
     // Handle hex colors
     if (color.startsWith('#')) {
       const hex = color.slice(1);
-      const r = parseInt(hex.slice(0, 2), 16);
-      const g = parseInt(hex.slice(2, 4), 16);
-      const b = parseInt(hex.slice(4, 6), 16);
+      // Handle both 3-char (#fff) and 6-char (#ffffff) hex colors
+      let r: number, g: number, b: number;
+      if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+      } else {
+        r = parseInt(hex.slice(0, 2), 16);
+        g = parseInt(hex.slice(2, 4), 16);
+        b = parseInt(hex.slice(4, 6), 16);
+      }
+      // Guard against NaN from malformed hex
+      if (isNaN(r) || isNaN(g) || isNaN(b)) {
+        return `rgba(255, 255, 255, ${alpha})`; // Fallback to white
+      }
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
     // Handle rgba - replace alpha value

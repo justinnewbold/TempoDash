@@ -85,6 +85,14 @@ export class Background {
   private config: BackgroundConfig;
   private time = 0;
 
+  // Cached gradients (lazy initialized on first render)
+  private cachedBaseGradient: CanvasGradient | null = null;
+  private cachedCtx: CanvasRenderingContext2D | null = null;
+
+  // Cached scanlines pattern for performance
+  private cachedScanlinesPattern: CanvasPattern | null = null;
+  private cachedScanlinesCtx: CanvasRenderingContext2D | null = null;
+
   // Effect-specific data
   private stars: Star[] = [];
   private particles: Particle[] = [];
@@ -463,11 +471,15 @@ export class Background {
   }
 
   private drawBaseGradient(ctx: CanvasRenderingContext2D): void {
-    const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    gradient.addColorStop(0, this.config.primaryColor);
-    gradient.addColorStop(0.5, this.config.secondaryColor);
-    gradient.addColorStop(1, this.config.primaryColor);
-    ctx.fillStyle = gradient;
+    // Cache gradient on first use (or if context changed)
+    if (!this.cachedBaseGradient || this.cachedCtx !== ctx) {
+      this.cachedBaseGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+      this.cachedBaseGradient.addColorStop(0, this.config.primaryColor);
+      this.cachedBaseGradient.addColorStop(0.5, this.config.secondaryColor);
+      this.cachedBaseGradient.addColorStop(1, this.config.primaryColor);
+      this.cachedCtx = ctx;
+    }
+    ctx.fillStyle = this.cachedBaseGradient;
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 
@@ -1264,9 +1276,24 @@ export class Background {
   }
 
   private renderScanlines(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-    for (let y = 0; y < GAME_HEIGHT; y += 4) {
-      ctx.fillRect(0, y, GAME_WIDTH, 2);
+    // Create and cache scanlines pattern on first use
+    if (!this.cachedScanlinesPattern || this.cachedScanlinesCtx !== ctx) {
+      const patternCanvas = document.createElement('canvas');
+      patternCanvas.width = 1;
+      patternCanvas.height = 4;
+      const patternCtx = patternCanvas.getContext('2d');
+      if (patternCtx) {
+        patternCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        patternCtx.fillRect(0, 0, 1, 2);
+        // Bottom 2 pixels are transparent (default)
+        this.cachedScanlinesPattern = ctx.createPattern(patternCanvas, 'repeat');
+        this.cachedScanlinesCtx = ctx;
+      }
+    }
+
+    if (this.cachedScanlinesPattern) {
+      ctx.fillStyle = this.cachedScanlinesPattern;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     }
   }
 
