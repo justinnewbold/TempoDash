@@ -50,6 +50,7 @@ export class Game {
   private lastTime = 0;
   private deathTimer = 0;
   private beatPulse = 0;
+  private animationFrameId: number | null = null;
 
   // Menu state
   private selectedLevelIndex = 0;
@@ -308,6 +309,9 @@ export class Game {
       // Small delay to let the browser update dimensions
       setTimeout(() => this.handleResize(), 100);
     });
+
+    // Clean up on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', () => this.destroy());
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -1977,8 +1981,20 @@ export class Game {
       }
     }
 
-    requestAnimationFrame(this.gameLoop);
+    this.animationFrameId = requestAnimationFrame(this.gameLoop);
   };
+
+  /**
+   * Clean up resources when game is destroyed
+   * Call this when removing the game from the page
+   */
+  destroy(): void {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    this.audio.stop();
+  }
 
   private update(deltaTime: number): void {
     // Update debug frame timing

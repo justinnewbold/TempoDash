@@ -173,11 +173,13 @@ export class Platform {
 
     const centerX = this.x + this.width / 2;
     const centerY = this.y + this.height / 2;
-    const distance = Math.sqrt(
-      Math.pow(playerX - centerX, 2) + Math.pow(playerY - centerY, 2)
-    );
+    const dx = playerX - centerX;
+    const dy = playerY - centerY;
+    // Use distance-squared to avoid expensive Math.sqrt() call
+    const distanceSquared = dx * dx + dy * dy;
+    const revealDistance = 150;
 
-    if (distance < 150) {
+    if (distanceSquared < revealDistance * revealDistance) {
       this.secretRevealed = true;
       return true;
     }

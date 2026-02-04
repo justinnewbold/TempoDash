@@ -280,16 +280,16 @@ export class InputManager {
     }
   }
 
-  update(): InputState {
+  update(): Readonly<InputState> {
     this.state.jumpPressed = this.state.jump && !this.previousJump;
     this.state.dashPressed = this.state.dash && !this.previousDash;
     this.previousJump = this.state.jump;
     this.previousDash = this.state.dash;
-    return { ...this.state };
+    return this.state; // Return direct reference - avoid allocation every frame
   }
 
-  getState(): InputState {
-    return { ...this.state };
+  getState(): Readonly<InputState> {
+    return this.state; // Return direct reference - avoid allocation every frame
   }
 
   // Check if running on mobile
