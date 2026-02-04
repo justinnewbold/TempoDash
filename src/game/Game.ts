@@ -1961,6 +1961,7 @@ export class Game {
       this.animationFrameId = null;
     }
     this.audio.stop();
+    this.input.destroy();
   }
 
   private update(deltaTime: number): void {

@@ -493,11 +493,12 @@ export class ParticleEffects {
   // Render all particles
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
     // Render trail particles (behind everything)
+    // Use single save/restore for entire batch instead of per-particle
+    ctx.save();
     this.trailParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
-      ctx.save();
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = particle.color;
       ctx.shadowColor = particle.color;
@@ -505,24 +506,25 @@ export class ParticleEffects {
       ctx.beginPath();
       ctx.arc(screenX, particle.y, particle.size / 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     });
+    ctx.restore();
 
     // Render dust particles
+    ctx.save();
+    ctx.shadowBlur = 0; // No shadow for dust
     this.dustParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
-      ctx.save();
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
       ctx.beginPath();
       ctx.arc(screenX, particle.y, particle.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     });
+    ctx.restore();
 
-    // Render death particles
+    // Render death particles (need individual save/restore for rotation)
     this.deathParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
@@ -538,69 +540,69 @@ export class ParticleEffects {
       ctx.restore();
     });
 
-    // Render coin particles
+    // Render coin particles (batched)
+    ctx.save();
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 8;
     this.coinParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
-      ctx.save();
       ctx.globalAlpha = particle.alpha;
-      ctx.fillStyle = '#ffd700';
-      ctx.shadowColor = '#ffd700';
-      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(screenX, particle.y, 5 * particle.scale, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     });
+    ctx.restore();
 
-    // Render floating texts
+    // Render floating texts (batched)
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 4;
     this.floatingTexts.forEach((text) => {
       const screenX = text.x - cameraX;
       if (screenX < -100 || screenX > GAME_WIDTH + 100) return;
 
-      ctx.save();
       ctx.globalAlpha = text.alpha;
       ctx.fillStyle = text.color;
       ctx.font = `bold ${text.fontSize}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 4;
       ctx.fillText(text.text, screenX, text.y);
-      ctx.restore();
     });
+    ctx.restore();
 
-    // Render burst particles
+    // Render burst particles (batched)
+    ctx.save();
+    ctx.shadowBlur = 12;
     this.burstParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
-      ctx.save();
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = particle.color;
       ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.arc(screenX, particle.y, particle.size / 2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     });
+    ctx.restore();
 
-    // Render spark particles
+    // Render spark particles (batched)
+    ctx.save();
+    ctx.shadowBlur = 6;
     this.sparkParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
-      ctx.save();
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = particle.color;
       ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.arc(screenX, particle.y, particle.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     });
+    ctx.restore();
   }
 
   // Get active particle count for debugging
