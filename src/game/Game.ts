@@ -7945,11 +7945,13 @@ export class Game {
         break;
     }
 
-    // Glow background
+    // Glow background - convert hex to rgba for transparency
     const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
-    glowGrad.addColorStop(0, color.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/[0-9a-f]{2}/gi, (m, i) => i === 0 ? '' : parseInt(m, 16) + ','));
-    glowGrad.addColorStop(0, `${color}33`);
-    glowGrad.addColorStop(1, 'transparent');
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.3)`);
+    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = glowGrad;
     this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
 
