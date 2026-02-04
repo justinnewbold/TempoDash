@@ -331,7 +331,7 @@ export class BossManager {
     );
     gradient.addColorStop(0, this.bossConfig.glowColor);
     gradient.addColorStop(0.5, this.bossConfig.color);
-    gradient.addColorStop(1, 'transparent');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = gradient;
     ctx.beginPath();

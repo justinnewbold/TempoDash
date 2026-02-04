@@ -3969,7 +3969,7 @@ export class Game {
     const flareSize = 50 + Math.sin(time * 3) * 20;
     const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, flareSize);
     gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-    gradient.addColorStop(1, 'transparent');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     // Top-left corner
     this.ctx.fillStyle = gradient;
@@ -7667,8 +7667,11 @@ export class Game {
 
     let y = boxY + 55;
     for (const p of powerups) {
-      // Icon and box
-      this.ctx.fillStyle = p.color + '33';
+      // Icon and box - convert hex to rgba for browser compatibility
+      const pr = parseInt(p.color.slice(1, 3), 16);
+      const pg = parseInt(p.color.slice(3, 5), 16);
+      const pb = parseInt(p.color.slice(5, 7), 16);
+      this.ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, 0.2)`;
       this.ctx.beginPath();
       this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
       this.ctx.fill();
@@ -8936,8 +8939,15 @@ export class Game {
       const bx = x + i * (badgeSize + spacing);
       const hasEarned = badges.includes(badge.id);
 
-      // Badge background
-      this.ctx.fillStyle = hasEarned ? badge.color + '33' : 'rgba(50, 50, 50, 0.5)';
+      // Badge background - convert hex to rgba for browser compatibility
+      if (hasEarned) {
+        const br = parseInt(badge.color.slice(1, 3), 16);
+        const bg = parseInt(badge.color.slice(3, 5), 16);
+        const bb = parseInt(badge.color.slice(5, 7), 16);
+        this.ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, 0.2)`;
+      } else {
+        this.ctx.fillStyle = 'rgba(50, 50, 50, 0.5)';
+      }
       this.ctx.beginPath();
       this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
       this.ctx.fill();
@@ -9269,7 +9279,7 @@ export class Game {
       this.ctx.globalAlpha = p.alpha;
       const gradient = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
       gradient.addColorStop(0, 'rgba(200, 200, 210, 0.3)');
-      gradient.addColorStop(1, 'transparent');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
       this.ctx.fillStyle = gradient;
       this.ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     }
@@ -9298,7 +9308,7 @@ export class Game {
       GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT * 0.3,
       GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_HEIGHT
     );
-    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
     vignette.addColorStop(1, 'rgba(0, 0, 20, 0.8)');
     this.ctx.fillStyle = vignette;
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
