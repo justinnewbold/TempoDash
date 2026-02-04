@@ -8977,10 +8977,13 @@ export class Game {
     const centerX = GAME_WIDTH / 2;
     const centerY = 150;
 
-    // Glow
+    // Glow - convert hex to rgba for better browser compatibility
     const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
-    gradient.addColorStop(0, info.color + '44');
-    gradient.addColorStop(1, 'transparent');
+    const r = parseInt(info.color.slice(1, 3), 16);
+    const g = parseInt(info.color.slice(3, 5), 16);
+    const b = parseInt(info.color.slice(5, 7), 16);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.27)`);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
 
