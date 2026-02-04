@@ -4351,9 +4351,19 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = ['First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak', 'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple'];
-    const levelColors = ['#00ffaa', '#ff00ff', '#ff6600', '#88ddff', '#ff4400', '#00ccff', '#ff0000', '#e94560'];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5]; // 1-5 stars
+    const levelNames = [
+      'First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak',
+      'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple',
+      'Crystal Caverns', 'Storm Surge', 'Shadow Realm', 'Cyber Grid',
+      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension'
+    ];
+    const levelColors = [
+      '#00ffaa', '#ff00ff', '#ff6600', '#88ddff',
+      '#ff4400', '#00ccff', '#ff0000', '#e94560',
+      '#aa66ff', '#ffaa00', '#666699', '#00ffff',
+      '#cc9966', '#aaaaff', '#ff0066'
+    ];
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5]; // 1-5 stars
 
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
