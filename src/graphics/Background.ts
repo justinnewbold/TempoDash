@@ -85,6 +85,10 @@ export class Background {
   private config: BackgroundConfig;
   private time = 0;
 
+  // Cached gradients (lazy initialized on first render)
+  private cachedBaseGradient: CanvasGradient | null = null;
+  private cachedCtx: CanvasRenderingContext2D | null = null;
+
   // Effect-specific data
   private stars: Star[] = [];
   private particles: Particle[] = [];
@@ -463,11 +467,15 @@ export class Background {
   }
 
   private drawBaseGradient(ctx: CanvasRenderingContext2D): void {
-    const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    gradient.addColorStop(0, this.config.primaryColor);
-    gradient.addColorStop(0.5, this.config.secondaryColor);
-    gradient.addColorStop(1, this.config.primaryColor);
-    ctx.fillStyle = gradient;
+    // Cache gradient on first use (or if context changed)
+    if (!this.cachedBaseGradient || this.cachedCtx !== ctx) {
+      this.cachedBaseGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+      this.cachedBaseGradient.addColorStop(0, this.config.primaryColor);
+      this.cachedBaseGradient.addColorStop(0.5, this.config.secondaryColor);
+      this.cachedBaseGradient.addColorStop(1, this.config.primaryColor);
+      this.cachedCtx = ctx;
+    }
+    ctx.fillStyle = this.cachedBaseGradient;
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 

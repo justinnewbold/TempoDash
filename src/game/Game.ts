@@ -611,12 +611,25 @@ export class Game {
     const x = (e.clientX - rect.left) * (GAME_WIDTH / rect.width);
     const y = (e.clientY - rect.top) * (GAME_HEIGHT / rect.height);
 
+    // Editor needs full mouse event for special handling
+    if (this.state.gameStatus === 'editor') {
+      this.handleEditorClick(e);
+      return;
+    }
+
+    this.routeClickToHandler(x, y, e.shiftKey, false);
+  }
+
+  /**
+   * Shared click routing logic for both mouse and touch events
+   */
+  private routeClickToHandler(x: number, y: number, shiftKey: boolean, _isTouch: boolean): void {
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.handleMainMenuClick(x, y);
         break;
       case 'levelSelect':
-        this.handleLevelSelectClick(x, y, e.shiftKey);
+        this.handleLevelSelectClick(x, y, shiftKey);
         break;
       case 'customLevels':
         this.handleCustomLevelsClick(x, y);
@@ -643,13 +656,13 @@ export class Game {
         this.handlePausedClick(x, y);
         break;
       case 'editor':
-        this.handleEditorClick(e);
+        // Editor handled separately (needs full MouseEvent for mouse, TouchHandler for touch)
         break;
       case 'levelComplete':
         this.handleLevelCompleteClick(x, y);
         break;
       case 'gameOver':
-        this.endlessDistance = 0; // Reset for next endless run
+        this.endlessDistance = 0;
         this.returnToMainMenu();
         break;
     }
@@ -687,12 +700,6 @@ export class Game {
   }
 
   private handleTouchMenuClick(x: number, y: number): void {
-    // Dismiss tutorial on touch
-    if (this.showingTutorial) {
-      this.dismissTutorial();
-      return;
-    }
-
     // Handle mobile control buttons during gameplay
     if ((this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice' || this.state.gameStatus === 'paused') && this.input.isMobileDevice()) {
       if (this.handleMobileControlClick(x, y)) {
@@ -700,48 +707,8 @@ export class Game {
       }
     }
 
-    switch (this.state.gameStatus) {
-      case 'mainMenu':
-        this.handleMainMenuClick(x, y);
-        break;
-      case 'levelSelect':
-        this.handleLevelSelectClick(x, y, false); // No shift key on touch
-        break;
-      case 'customLevels':
-        this.handleCustomLevelsClick(x, y);
-        break;
-      case 'settings':
-        this.handleSettingsClick(x, y);
-        break;
-      case 'skins':
-        this.handleSkinsClick(x, y);
-        break;
-      case 'achievements':
-        this.handleAchievementsClick(x, y);
-        break;
-      case 'challenges':
-        this.handleChallengesClick(x, y);
-        break;
-      case 'platformGuide':
-        this.handlePlatformGuideClick(x, y);
-        break;
-      case 'leaderboards':
-        this.handleLeaderboardsClick(x, y);
-        break;
-      case 'paused':
-        this.handlePausedClick(x, y);
-        break;
-      case 'editor':
-        // Editor has its own touch handling via TouchHandler
-        break;
-      case 'levelComplete':
-        this.handleLevelCompleteClick(x, y);
-        break;
-      case 'gameOver':
-        this.endlessDistance = 0;
-        this.returnToMainMenu();
-        break;
-    }
+    // Use shared click routing (no shift key on touch, skip editor mouse handling)
+    this.routeClickToHandler(x, y, false, true);
   }
 
   private handleMainMenuClick(x: number, y: number): void {
