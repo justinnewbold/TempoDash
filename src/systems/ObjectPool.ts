@@ -1,13 +1,16 @@
 // Generic object pooling system for performance optimization
 // Pre-allocates objects to avoid garbage collection during gameplay
+// Uses free list for O(1) acquire/release operations
 
 export interface Poolable {
   active: boolean;
+  _poolIndex: number; // Internal index for O(1) operations
   reset(): void;
 }
 
 export class ObjectPool<T extends Poolable> {
   private pool: T[] = [];
+  private freeList: number[] = []; // Stack of free indices for O(1) acquire
   private activeCount = 0;
   private factory: () => T;
   private initialSize: number;
@@ -24,25 +27,28 @@ export class ObjectPool<T extends Poolable> {
     for (let i = 0; i < this.initialSize; i++) {
       const obj = this.factory();
       obj.active = false;
+      obj._poolIndex = i;
       this.pool.push(obj);
+      this.freeList.push(i); // All objects start free
     }
   }
 
   acquire(): T | null {
-    // Find an inactive object
-    for (const obj of this.pool) {
-      if (!obj.active) {
-        obj.active = true;
-        obj.reset();
-        this.activeCount++;
-        return obj;
-      }
+    // O(1) acquire from free list
+    if (this.freeList.length > 0) {
+      const index = this.freeList.pop()!;
+      const obj = this.pool[index];
+      obj.active = true;
+      obj.reset();
+      this.activeCount++;
+      return obj;
     }
 
-    // If no inactive object and we can grow, create a new one
+    // If no free object and we can grow, create a new one
     if (this.pool.length < this.maxSize) {
       const obj = this.factory();
       obj.active = true;
+      obj._poolIndex = this.pool.length;
       obj.reset();
       this.pool.push(obj);
       this.activeCount++;
@@ -56,13 +62,16 @@ export class ObjectPool<T extends Poolable> {
   release(obj: T): void {
     if (obj.active) {
       obj.active = false;
+      this.freeList.push(obj._poolIndex); // O(1) return to free list
       this.activeCount--;
     }
   }
 
   releaseAll(): void {
-    for (const obj of this.pool) {
-      obj.active = false;
+    this.freeList.length = 0; // Clear free list
+    for (let i = 0; i < this.pool.length; i++) {
+      this.pool[i].active = false;
+      this.freeList.push(i);
     }
     this.activeCount = 0;
   }
@@ -81,6 +90,10 @@ export class ObjectPool<T extends Poolable> {
 
   getTotalCount(): number {
     return this.pool.length;
+  }
+
+  getFreeCount(): number {
+    return this.freeList.length;
   }
 
   // Get all active objects (for iteration)
@@ -106,8 +119,6 @@ export interface DeathParticle extends Poolable {
   rotationSpeed: number;
   lifetime: number;
   maxLifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createDeathParticle(): DeathParticle {
@@ -124,6 +135,7 @@ export function createDeathParticle(): DeathParticle {
     lifetime: 0,
     maxLifetime: 1000,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 1;
@@ -139,8 +151,6 @@ export interface CoinParticle extends Poolable {
   alpha: number;
   scale: number;
   lifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createCoinParticle(): CoinParticle {
@@ -152,6 +162,7 @@ export function createCoinParticle(): CoinParticle {
     scale: 1,
     lifetime: 0,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 1;
@@ -172,8 +183,6 @@ export interface FloatingText extends Poolable {
   vy: number;
   lifetime: number;
   maxLifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createFloatingText(): FloatingText {
@@ -188,6 +197,7 @@ export function createFloatingText(): FloatingText {
     lifetime: 0,
     maxLifetime: 1000,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 1;
@@ -204,8 +214,6 @@ export interface TrailParticle extends Poolable {
   color: string;
   lifetime: number;
   maxLifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createTrailParticle(): TrailParticle {
@@ -218,6 +226,7 @@ export function createTrailParticle(): TrailParticle {
     lifetime: 0,
     maxLifetime: 300,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 0.5;
@@ -234,8 +243,6 @@ export interface DustParticle extends Poolable {
   size: number;
   alpha: number;
   lifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createDustParticle(): DustParticle {
@@ -248,6 +255,7 @@ export function createDustParticle(): DustParticle {
     alpha: 0.6,
     lifetime: 0,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 0.6;
@@ -266,8 +274,6 @@ export interface BurstParticle extends Poolable {
   color: string;
   lifetime: number;
   maxLifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createBurstParticle(): BurstParticle {
@@ -282,6 +288,7 @@ export function createBurstParticle(): BurstParticle {
     lifetime: 0,
     maxLifetime: 300,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 1;
@@ -299,8 +306,6 @@ export interface SparkParticle extends Poolable {
   alpha: number;
   color: string;
   lifetime: number;
-  active: boolean;
-  reset(): void;
 }
 
 export function createSparkParticle(): SparkParticle {
@@ -314,6 +319,7 @@ export function createSparkParticle(): SparkParticle {
     color: '#ffaa00',
     lifetime: 0,
     active: false,
+    _poolIndex: 0,
     reset() {
       this.lifetime = 0;
       this.alpha = 1;

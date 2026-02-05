@@ -145,6 +145,11 @@ const DEFAULT_SETTINGS: GameSettings = {
   highContrast: false,
   assistMode: false,
   showBeatVisualizer: true,
+  // Performance options
+  particleQuality: 'high',
+  shadowQuality: 'high',
+  backgroundEffects: true,
+  framerateCap: 60,
 };
 
 const DEFAULT_SAVE: SaveData = {

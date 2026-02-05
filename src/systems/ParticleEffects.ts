@@ -10,6 +10,7 @@ import {
   SparkParticle, createSparkParticle
 } from './ObjectPool';
 import { GAME_WIDTH } from '../constants';
+import { performanceManager } from './PerformanceManager';
 
 export class ParticleEffects {
   private deathParticles: ObjectPool<DeathParticle>;
@@ -37,9 +38,14 @@ export class ParticleEffects {
     this.sparkParticles = new ObjectPool(createSparkParticle, 40, 80);
   }
 
+  // Get scaled particle count based on quality setting
+  private getScaledCount(baseCount: number): number {
+    return Math.ceil(baseCount * performanceManager.getParticleMultiplier());
+  }
+
   // Spawn death explosion particles
   spawnDeathExplosion(x: number, y: number, color: string = '#00ffaa'): void {
-    const particleCount = 20;
+    const particleCount = this.getScaledCount(20);
     for (let i = 0; i < particleCount; i++) {
       const particle = this.deathParticles.acquire();
       if (!particle) break;
@@ -62,7 +68,7 @@ export class ParticleEffects {
 
   // Spawn coin collect particles
   spawnCoinCollect(x: number, y: number): void {
-    const particleCount = 5;
+    const particleCount = this.getScaledCount(5);
     for (let i = 0; i < particleCount; i++) {
       const particle = this.coinParticles.acquire();
       if (!particle) break;
@@ -105,7 +111,7 @@ export class ParticleEffects {
 
   // Spawn landing dust particles
   spawnLandingDust(x: number, y: number, velocityScale: number = 1): void {
-    const particleCount = 6;
+    const particleCount = this.getScaledCount(6);
     for (let i = 0; i < particleCount; i++) {
       const particle = this.dustParticles.acquire();
       if (!particle) break;
@@ -122,7 +128,7 @@ export class ParticleEffects {
 
   // Spawn jump dust particles
   spawnJumpDust(x: number, y: number): void {
-    const particleCount = 4;
+    const particleCount = this.getScaledCount(4);
     for (let i = 0; i < particleCount; i++) {
       const particle = this.dustParticles.acquire();
       if (!particle) break;

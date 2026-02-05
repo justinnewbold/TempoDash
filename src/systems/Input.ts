@@ -1,6 +1,7 @@
 import { InputState } from '../types';
 import { TOUCH_ZONES } from '../config/UIConstants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { getInputBuffer } from './InputBuffer';
 
 // UI exclusion zone (area where touches should not trigger game input)
 interface ExclusionZone {
@@ -158,12 +159,15 @@ export class InputManager {
       const relativeX = touchX / canvasWidth;
 
       // Left zone (35% of screen) = dash
+      const inputBuffer = getInputBuffer();
       if (relativeX < TOUCH_ZONES.LEFT_ZONE_WIDTH) {
         this.state.dash = true;
+        inputBuffer.push('dash'); // Buffer the input
         this.triggerHaptic('light');
       } else {
         // Right zone (65% of screen) = jump
         this.state.jump = true;
+        inputBuffer.push('jump'); // Buffer the input
         this.triggerHaptic('medium');
       }
     }
@@ -231,16 +235,23 @@ export class InputManager {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    const inputBuffer = getInputBuffer();
     switch (e.code) {
       case 'ArrowUp':
       case 'KeyW':
       case 'Space':
         e.preventDefault(); // Prevent page scroll
         this.state.jump = true;
+        inputBuffer.push('jump'); // Buffer the input
         break;
       case 'ShiftLeft':
       case 'ShiftRight':
         this.state.dash = true;
+        inputBuffer.push('dash'); // Buffer the input
+        break;
+      case 'ArrowDown':
+      case 'KeyS':
+        inputBuffer.push('down'); // Buffer down input
         break;
     }
   }

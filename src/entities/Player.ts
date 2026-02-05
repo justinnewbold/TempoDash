@@ -81,6 +81,11 @@ export class Player {
   // Slow-mo zone state
   isInSlowMo = false;
 
+  // Coyote time - allows jumping shortly after leaving a platform
+  private coyoteTimer = 0;
+  private static readonly COYOTE_TIME = 100; // ms after leaving platform where jump still works
+  private wasGroundedLastFrame = false;
+
   // Flying mode state
   private flyingMode = false;
   private static readonly FLYING_LIFT_FORCE = 800;  // Upward force when holding jump
@@ -271,12 +276,23 @@ export class Player {
         this.velocityY = Math.min(0, this.velocityY);
       }
     } else {
+      // Update coyote time - tracks if we just left a platform
+      if (this.wasGroundedLastFrame && !this.isGrounded) {
+        this.coyoteTimer = Player.COYOTE_TIME;
+      } else if (this.coyoteTimer > 0) {
+        this.coyoteTimer -= deltaTime;
+      }
+      this.wasGroundedLastFrame = this.isGrounded;
+
       // Normal mode: Handle jumping (auto-jump when holding - jump as soon as grounded)
-      if (input.jump && this.isGrounded && !this.isStuck) {
+      // Now includes coyote time - can still jump for a short time after leaving platform
+      const canCoyoteJump = this.coyoteTimer > 0 && !this.isGrounded;
+      if (input.jump && (this.isGrounded || canCoyoteJump) && !this.isStuck) {
         this.velocityY = -PLAYER.JUMP_FORCE;
         this.isGrounded = false;
+        this.coyoteTimer = 0; // Consume coyote time
         this.airJumpsRemaining = 4; // Reset air jumps on ground jump
-      } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
+      } else if (input.jumpPressed && !this.isGrounded && this.coyoteTimer <= 0 && this.airJumpsRemaining > 0 && allowAirJumps) {
         // Air jumps (5 total jumps: 1 ground + 4 air)
         // Disabled when "Grounded" modifier is active
         // Jump 2 (airJumpsRemaining=4): normal double jump (1.275x)

@@ -262,6 +262,9 @@ export const ACHIEVEMENTS: Achievement[] = [
 
 export type ColorblindMode = 'normal' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 
+export type ParticleQuality = 'high' | 'medium' | 'low';
+export type FramerateCap = 30 | 60 | 120 | 0; // 0 = unlimited
+
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
@@ -277,6 +280,11 @@ export interface GameSettings {
   highContrast: boolean; // High contrast mode for better visibility
   assistMode: boolean;   // Assist mode for struggling players
   showBeatVisualizer: boolean; // Show rhythm sync visualizer
+  // Performance options
+  particleQuality: ParticleQuality;  // Controls particle count and complexity
+  shadowQuality: 'high' | 'low' | 'off';  // Shadow blur intensity
+  backgroundEffects: boolean;  // Aurora, stars, animated backgrounds
+  framerateCap: FramerateCap;  // Target framerate
 }
 
 export interface PlayerSkin {

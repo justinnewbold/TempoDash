@@ -1,5 +1,6 @@
 import { BackgroundConfig } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, ANIMATION, COLORS } from '../constants';
+import { performanceManager } from '../systems/PerformanceManager';
 
 interface Star {
   x: number;
@@ -1162,6 +1163,11 @@ export class Background {
   }
 
   private renderEffects(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    // Skip expensive background effects if disabled for performance
+    if (!performanceManager.shouldRenderBackgroundEffects()) {
+      return;
+    }
+
     const effects = this.config.effects || [];
 
     if (effects.includes('stars')) {

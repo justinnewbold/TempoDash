@@ -27,6 +27,9 @@ import { FlowMeterManager } from '../systems/FlowMeter';
 import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
 import { TimeRewindManager } from '../systems/TimeRewind';
 import { GravityWellManager } from '../systems/GravityWells';
+import { performanceManager } from '../systems/PerformanceManager';
+import { getInputBuffer } from '../systems/InputBuffer';
+import { SpatialHashGrid } from '../systems/SpatialHashGrid';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -1169,8 +1172,54 @@ export class Game {
       }
     }
 
-    // Platform Guide button (left column)
-    if (x >= leftColX - 45 && x <= leftColX + 45 && y >= 570 && y <= 600) {
+    // === Performance Settings (center column) ===
+    const centerColX = GAME_WIDTH / 2;
+
+    // Particle Quality selector (y: 605-625)
+    const particleOptions = ['high', 'medium', 'low'] as const;
+    const pqBtnWidth = 28;
+    const pqSpacing = 2;
+    const pqTotalWidth = particleOptions.length * pqBtnWidth + (particleOptions.length - 1) * pqSpacing;
+    const pqStartX = (centerColX - 120) - pqTotalWidth / 2;
+    if (y >= 605 && y <= 625) {
+      for (let i = 0; i < particleOptions.length; i++) {
+        const btnX = pqStartX + i * (pqBtnWidth + pqSpacing);
+        if (x >= btnX && x <= btnX + pqBtnWidth) {
+          const settings = this.save.getSettings();
+          this.save.updateSettings({ particleQuality: particleOptions[i] });
+          performanceManager.setSettings({ particleQuality: particleOptions[i] });
+          this.audio.playSelect();
+          return;
+        }
+      }
+    }
+
+    // Shadow Quality selector (y: 605-625, centered at centerColX)
+    const shadowOptions = ['high', 'low', 'off'] as const;
+    const sqStartX = centerColX - pqTotalWidth / 2;
+    if (y >= 605 && y <= 625) {
+      for (let i = 0; i < shadowOptions.length; i++) {
+        const btnX = sqStartX + i * (pqBtnWidth + pqSpacing);
+        if (x >= btnX && x <= btnX + pqBtnWidth) {
+          this.save.updateSettings({ shadowQuality: shadowOptions[i] });
+          performanceManager.setSettings({ shadowQuality: shadowOptions[i] });
+          this.audio.playSelect();
+          return;
+        }
+      }
+    }
+
+    // Background Effects toggle (y: 600-630, at centerColX + 120)
+    const bgToggleX = (centerColX + 120) - toggleWidth / 2;
+    if (x >= bgToggleX && x <= bgToggleX + toggleWidth && y >= 600 && y <= 630) {
+      const currentBg = this.save.getSettings().backgroundEffects;
+      this.save.updateSettings({ backgroundEffects: !currentBg });
+      performanceManager.setSettings({ backgroundEffects: !currentBg });
+      this.audio.playSelect();
+    }
+
+    // Platform Guide button (left column) - moved down
+    if (x >= leftColX - 45 && x <= leftColX + 45 && y >= 710 && y <= 740) {
       this.audio.playSelect();
       this.encyclopediaScrollOffset = 0;
       this.state.gameStatus = 'platformGuide';
@@ -1931,10 +1980,23 @@ export class Game {
   }
 
   private gameLoop = (): void => {
+    const currentTime = performance.now();
+
+    // Frame rate limiting check
+    if (!performanceManager.shouldRenderFrame(currentTime)) {
+      this.animationFrameId = requestAnimationFrame(this.gameLoop);
+      return;
+    }
+
     try {
-      const currentTime = performance.now();
       const rawDeltaTime = Math.min(currentTime - this.lastTime, 50);
       this.lastTime = currentTime;
+
+      // Record frame for FPS tracking and progressive enhancement
+      performanceManager.recordFrame(currentTime);
+
+      // Cleanup input buffer periodically
+      getInputBuffer().cleanup();
 
       // Update screen effects with raw time (so animations always play)
       this.screenEffects.update(rawDeltaTime);
@@ -5156,13 +5218,39 @@ export class Game {
     this.ctx.fillStyle = '#ff4444';
     this.renderSettingsButton('Reset All', rightColX, 540, '#ff4444');
 
+    // === PERFORMANCE SECTION (Center) ===
+    const centerColX = GAME_WIDTH / 2;
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#00ff88';
+    this.ctx.fillText('PERFORMANCE', centerColX, 555);
+
+    // Particle Quality
+    this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Particles', centerColX - 120, 585);
+    this.renderPerformanceSelector(centerColX - 120, 605, 'particleQuality');
+
+    // Shadow Quality  
+    this.ctx.fillText('Shadows', centerColX, 585);
+    this.renderPerformanceSelector(centerColX, 605, 'shadowQuality');
+
+    // Background Effects
+    this.ctx.fillText('BG Effects', centerColX + 120, 585);
+    this.renderToggle(centerColX + 120, 610, this.save.getSettings().backgroundEffects);
+
+    // FPS display
+    const metrics = performanceManager.getMetrics();
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText(`FPS: ${metrics.fps}`, centerColX, 660);
+
     // Platform Guide button (help section)
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffff';
-    this.ctx.fillText('HELP', leftColX, 555);
+    this.ctx.fillText('HELP', leftColX, 695);
 
     this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    this.renderSettingsButton('Platform Guide', leftColX, 585, '#00ffff');
+    this.renderSettingsButton('Platform Guide', leftColX, 725, '#00ffff');
 
     this.ctx.restore();
   }
@@ -5224,6 +5312,37 @@ export class Game {
     this.ctx.fillStyle = color;
     this.ctx.textAlign = 'center';
     this.ctx.fillText(text, x, y + 4);
+  }
+
+  private renderPerformanceSelector(x: number, y: number, setting: 'particleQuality' | 'shadowQuality'): void {
+    const settings = this.save.getSettings();
+    const options = setting === 'particleQuality' 
+      ? ['high', 'medium', 'low'] 
+      : ['high', 'low', 'off'];
+    const currentValue = settings[setting];
+    const buttonWidth = 28;
+    const spacing = 2;
+    const totalWidth = options.length * buttonWidth + (options.length - 1) * spacing;
+    const startX = x - totalWidth / 2;
+
+    options.forEach((option, i) => {
+      const btnX = startX + i * (buttonWidth + spacing);
+      const isSelected = currentValue === option;
+
+      this.ctx.fillStyle = isSelected ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+      this.ctx.strokeStyle = isSelected ? '#00ff88' : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, y, buttonWidth, 20, 3);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      this.ctx.font = '8px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isSelected ? '#00ff88' : 'rgba(255, 255, 255, 0.7)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(option.charAt(0).toUpperCase(), btnX + buttonWidth / 2, y + 14);
+    });
   }
 
   private renderSkins(): void {

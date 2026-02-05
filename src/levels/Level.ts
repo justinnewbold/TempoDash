@@ -5,7 +5,8 @@ import { Portal } from '../entities/Portal';
 import { Gem } from '../entities/Gem';
 import { Player } from '../entities/Player';
 import { Background } from '../graphics/Background';
-import { COLORS, GAME_WIDTH } from '../constants';
+import { COLORS, GAME_WIDTH, GAME_HEIGHT } from '../constants';
+import { SpatialHashGrid } from '../systems/SpatialHashGrid';
 
 export class Level {
   // Static time cache for rendering (updated once per frame by Game)
@@ -30,6 +31,13 @@ export class Level {
   levelLength: number;
   private config: LevelConfig;
 
+  // Spatial hash grid for efficient collision detection
+  private platformGrid: SpatialHashGrid<Platform>;
+  private coinGrid: SpatialHashGrid<Coin>;
+  private lastCameraX = -1; // Track camera for visibility caching
+  private visiblePlatformsCache: Platform[] = [];
+  private visibleCoinsCache: Coin[] = [];
+
   constructor(config: LevelConfig) {
     this.config = config;
     this.id = config.id;
@@ -38,15 +46,23 @@ export class Level {
     this.playerStart = config.playerStart;
     this.background = new Background(config.background);
 
-    // Create platforms
+    // Initialize spatial grids (200px cell size for platforms, 150px for coins)
+    this.platformGrid = new SpatialHashGrid<Platform>(200);
+    this.coinGrid = new SpatialHashGrid<Coin>(150);
+
+    // Create platforms and add to spatial grid
     for (const platformConfig of config.platforms) {
-      this.platforms.push(new Platform(platformConfig));
+      const platform = new Platform(platformConfig);
+      this.platforms.push(platform);
+      this.platformGrid.insert(platform);
     }
 
-    // Create coins
+    // Create coins and add to spatial grid
     if (config.coins) {
       for (const coinConfig of config.coins) {
-        this.coins.push(new Coin(coinConfig));
+        const coin = new Coin(coinConfig);
+        this.coins.push(coin);
+        this.coinGrid.insert(coin);
       }
       this.totalCoins = config.coins.length;
     }
@@ -308,6 +324,62 @@ export class Level {
 
   getActivePlatforms(): Platform[] {
     return this.platforms.filter((p) => p.isCollidable());
+  }
+
+  // Optimized collision query using spatial grid
+  getPlatformsNear(rect: Rectangle): Platform[] {
+    return this.platformGrid.query(rect).filter(p => p.isCollidable());
+  }
+
+  // Get platforms near a player for collision detection
+  getPlatformsNearPlayer(playerX: number, playerY: number, playerWidth: number, playerHeight: number): Platform[] {
+    // Add padding to account for movement
+    const padding = 50;
+    return this.getPlatformsNear({
+      x: playerX - padding,
+      y: playerY - padding,
+      width: playerWidth + padding * 2,
+      height: playerHeight + padding * 2
+    });
+  }
+
+  // Get coins near a position for collection checks
+  getCoinsNear(x: number, y: number, radius: number = 100): Coin[] {
+    return this.coinGrid.queryNearPoint(x, y, radius).filter(c => !c.isCollected());
+  }
+
+  // Update visibility cache when camera moves significantly
+  updateVisibilityCache(cameraX: number): void {
+    // Only update if camera moved more than half a cell
+    if (Math.abs(cameraX - this.lastCameraX) < 100) return;
+
+    this.lastCameraX = cameraX;
+    this.visiblePlatformsCache = this.platformGrid.queryVisible(cameraX, GAME_WIDTH, GAME_HEIGHT, 150);
+    this.visibleCoinsCache = this.coinGrid.queryVisible(cameraX, GAME_WIDTH, GAME_HEIGHT, 50);
+  }
+
+  // Get cached visible platforms for rendering
+  getVisiblePlatforms(cameraX: number): Platform[] {
+    this.updateVisibilityCache(cameraX);
+    return this.visiblePlatformsCache;
+  }
+
+  // Get cached visible coins for rendering
+  getVisibleCoins(cameraX: number): Coin[] {
+    this.updateVisibilityCache(cameraX);
+    return this.visibleCoinsCache;
+  }
+
+  // Update platform position in spatial grid (for moving platforms)
+  updatePlatformInGrid(platform: Platform): void {
+    this.platformGrid.update(platform);
+  }
+
+  // Rebuild grids (useful after level modifications)
+  rebuildSpatialGrids(): void {
+    this.platformGrid.rebuild(this.platforms);
+    this.coinGrid.rebuild(this.coins);
+    this.lastCameraX = -1; // Force visibility cache update
   }
 
   getConfig(): LevelConfig {
