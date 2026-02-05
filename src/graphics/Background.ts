@@ -1221,31 +1221,17 @@ export class Background {
 
   private renderParticles(ctx: CanvasRenderingContext2D): void {
     const color = this.config.particles?.color || 'rgba(255, 255, 255, 0.5)';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 1;
 
     for (const particle of this.particles) {
-      // Handle both rgb and rgba color formats
-      let fillColor: string;
-      if (color.startsWith('rgba')) {
-        // Already rgba - replace the alpha value with particle opacity
-        fillColor = color.replace(/,\s*[\d.]+\)$/, `, ${particle.opacity})`);
-      } else if (color.startsWith('rgb')) {
-        // Convert rgb to rgba
-        fillColor = color.replace(')', `, ${particle.opacity})`).replace('rgb', 'rgba');
-      } else {
-        // Fallback for hex or other formats - use as-is with globalAlpha
-        ctx.globalAlpha = particle.opacity;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        continue;
-      }
-      ctx.fillStyle = fillColor;
+      // Set alpha directly without string parsing
+      ctx.globalAlpha = particle.opacity;
       ctx.beginPath();
       ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 
   private renderAurora(ctx: CanvasRenderingContext2D): void {
@@ -1253,18 +1239,14 @@ export class Background {
       const wave = Math.sin(this.time * band.speed + band.offset);
       const y = band.y + wave * 20;
 
-      const auroraGradient = ctx.createLinearGradient(0, y, 0, y + band.height);
-      auroraGradient.addColorStop(0, `hsla(${band.hue}, 80%, 50%, 0)`);
-      auroraGradient.addColorStop(0.5, `hsla(${band.hue}, 80%, 50%, 0.15)`);
-      auroraGradient.addColorStop(1, `hsla(${band.hue}, 80%, 50%, 0)`);
-
-      ctx.fillStyle = auroraGradient;
-
+      // Draw simplified aurora without creating new gradients every frame
+      ctx.fillStyle = `hsla(${band.hue}, 80%, 50%, 0.1)`;
       ctx.beginPath();
       ctx.moveTo(0, y);
 
-      for (let x = 0; x <= GAME_WIDTH; x += 20) {
-        const waveY = y + Math.sin(x * 0.01 + this.time * 0.001 + band.offset) * 15;
+      // Fewer points for wave = better performance
+      for (let x = 0; x <= GAME_WIDTH; x += 40) {
+        const waveY = y + Math.sin(x * 0.01 + this.time * 0.0005 + band.offset) * 10;
         ctx.lineTo(x, waveY);
       }
 

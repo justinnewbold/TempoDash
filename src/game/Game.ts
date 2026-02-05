@@ -68,6 +68,16 @@ export class Game {
   // Power-up flash effect
   private powerUpFlashOpacity = 0;
   private powerUpFlashColor = '#00ffaa';
+  private powerUpFlashColorRGB = { r: 0, g: 255, b: 170 }; // Pre-cached RGB
+
+  // Helper to update color and cache RGB
+  private setPowerUpFlashColor(hexColor: string): void {
+    this.powerUpFlashColor = hexColor;
+    const hex = hexColor.replace('#', '');
+    this.powerUpFlashColorRGB.r = parseInt(hex.substring(0, 2), 16);
+    this.powerUpFlashColorRGB.g = parseInt(hex.substring(2, 4), 16);
+    this.powerUpFlashColorRGB.b = parseInt(hex.substring(4, 6), 16);
+  }
 
   // Combo system - expanded
   private comboCount = 0;
@@ -2112,7 +2122,7 @@ export class Game {
         magnet: '#ff00ff',
         doubleJump: '#ffff00'
       };
-      this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
+      this.setPowerUpFlashColor(powerUpColors[collectedPowerUp.type] || '#00ffaa');
       // Trigger power-up flash (reduced or disabled based on settings)
       if (!this.save.isReduceFlashEnabled()) {
         this.powerUpFlashOpacity = 0.25;
@@ -3252,12 +3262,7 @@ export class Game {
 
     // Power-up flash effect
     if (this.powerUpFlashOpacity > 0) {
-      // Parse hex color to RGB
-      const hex = this.powerUpFlashColor.replace('#', '');
-      const r = parseInt(hex.substring(0, 2), 16);
-      const g = parseInt(hex.substring(2, 4), 16);
-      const b = parseInt(hex.substring(4, 6), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${this.powerUpFlashOpacity})`;
+      this.ctx.fillStyle = `rgba(${this.powerUpFlashColorRGB.r}, ${this.powerUpFlashColorRGB.g}, ${this.powerUpFlashColorRGB.b}, ${this.powerUpFlashOpacity})`;
       this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     }
 

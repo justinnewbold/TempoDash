@@ -492,26 +492,24 @@ export class ParticleEffects {
 
   // Render all particles
   render(ctx: CanvasRenderingContext2D, cameraX: number = 0): void {
-    // Render trail particles (behind everything)
-    // Use single save/restore for entire batch instead of per-particle
+    // Render trail particles (behind everything) - batched with minimal state changes
     ctx.save();
+    ctx.shadowColor = 'rgba(0, 255, 170, 0.8)';
+    ctx.shadowBlur = 8;
     this.trailParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
 
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = particle.color;
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(screenX, particle.y, particle.size / 2, 0, Math.PI * 2);
       ctx.fill();
     });
     ctx.restore();
 
-    // Render dust particles
+    // Render dust particles - no shadow for performance
     ctx.save();
-    ctx.shadowBlur = 0; // No shadow for dust
     this.dustParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
@@ -524,7 +522,9 @@ export class ParticleEffects {
     });
     ctx.restore();
 
-    // Render death particles (need individual save/restore for rotation)
+    // Render death particles - batch rotation saves
+    ctx.shadowColor = 'rgba(0, 255, 170, 0.6)';
+    ctx.shadowBlur = 10;
     this.deathParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
@@ -534,17 +534,16 @@ export class ParticleEffects {
       ctx.rotate(particle.rotation * Math.PI / 180);
       ctx.globalAlpha = particle.alpha;
       ctx.fillStyle = particle.color;
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 10;
       ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
       ctx.restore();
     });
 
-    // Render coin particles (batched)
+    // Render coin particles (batched) - reduced shadow
     ctx.save();
+    ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#ffd700';
     ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 4;
     this.coinParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
@@ -559,8 +558,8 @@ export class ParticleEffects {
     // Render floating texts (batched)
     ctx.save();
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+    ctx.shadowBlur = 2;
     this.floatingTexts.forEach((text) => {
       const screenX = text.x - cameraX;
       if (screenX < -100 || screenX > GAME_WIDTH + 100) return;
@@ -574,7 +573,7 @@ export class ParticleEffects {
 
     // Render burst particles (batched)
     ctx.save();
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 8;
     this.burstParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
@@ -588,9 +587,9 @@ export class ParticleEffects {
     });
     ctx.restore();
 
-    // Render spark particles (batched)
+    // Render spark particles (batched) - reduced shadow
     ctx.save();
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 3;
     this.sparkParticles.forEach((particle) => {
       const screenX = particle.x - cameraX;
       if (screenX < -50 || screenX > GAME_WIDTH + 50) return;
