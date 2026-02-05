@@ -3131,6 +3131,10 @@ export class Game {
   }
 
   private render(): void {
+    // Update cached time for rendering systems (called once per frame)
+    Platform.setCurrentTime(this.lastTime);
+    Level.setCurrentTime(this.lastTime);
+
     // Editor mode has its own rendering
     if (this.state.gameStatus === 'editor') {
       this.renderEditor();

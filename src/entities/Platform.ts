@@ -17,6 +17,12 @@ export class Platform {
     Platform.colorblindMode = enabled;
   }
 
+  // Static time for rendering (updated once per frame by Game)
+  private static currentTime = 0;
+  static setCurrentTime(time: number): void {
+    Platform.currentTime = time;
+  }
+
   // Rhythm Lock mode - platforms only solid on beat
   private static rhythmLockEnabled = false;
   private static beatSolidity = 0; // 0-1 where 1 = fully solid (on beat)
@@ -324,16 +330,22 @@ export class Platform {
         ctx.shadowColor = '#ff0000';
         ctx.shadowBlur = 10;
         const spikeHeight = Math.max(this.height, 1); // Prevent division by zero
-        const spikeCount = Math.min(Math.floor(this.width / spikeHeight), 100); // Cap to prevent infinite loop
+        // Limit spike count to improve performance - max 50 spikes per platform
+        const spikeCount = Math.min(Math.floor(this.width / spikeHeight), 50);
         const spikeWidth = spikeCount > 0 ? this.width / spikeCount : this.width;
+        // Use a single path for all spikes instead of individual beginPath calls
+        ctx.beginPath();
         for (let i = 0; i < spikeCount; i++) {
-          ctx.beginPath();
-          ctx.moveTo(screenX + i * spikeWidth, this.y + this.height);
-          ctx.lineTo(screenX + i * spikeWidth + spikeWidth / 2, this.y);
-          ctx.lineTo(screenX + (i + 1) * spikeWidth, this.y + this.height);
-          ctx.closePath();
-          ctx.fill();
+          const startX = screenX + i * spikeWidth;
+          const midX = startX + spikeWidth / 2;
+          const endX = screenX + (i + 1) * spikeWidth;
+          if (i === 0) {
+            ctx.moveTo(startX, this.y + this.height);
+          }
+          ctx.lineTo(midX, this.y);
+          ctx.lineTo(endX, this.y + this.height);
         }
+        ctx.fill();
         ctx.shadowBlur = 0;
         break;
 
@@ -373,7 +385,7 @@ export class Platform {
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Lava bubbles
         ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
-        const time = Date.now() * 0.003;
+        const time = Platform.currentTime * 0.003;
         for (let i = 0; i < 3; i++) {
           const bubbleX = screenX + (this.width / 4) * (i + 1);
           const bubbleY = this.y + 5 + Math.sin(time + i) * 3;
@@ -432,7 +444,7 @@ export class Platform {
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Phase particles
         ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        const phaseTime = Date.now() * 0.005;
+        const phaseTime = Platform.currentTime * 0.005;
         for (let i = 0; i < 5; i++) {
           const px = screenX + (this.width / 6) * (i + 1);
           const py = this.y + this.height / 2 + Math.sin(phaseTime + i) * 5;
@@ -482,7 +494,7 @@ export class Platform {
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Floating particles effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        const gravTime = Date.now() * 0.003;
+        const gravTime = Platform.currentTime * 0.003;
         for (let i = 0; i < 4; i++) {
           const gx = screenX + (this.width / 5) * (i + 1);
           const gy = this.y + this.height / 2 + Math.sin(gravTime + i * 0.8) * 8;
@@ -518,7 +530,7 @@ export class Platform {
         ctx.fillStyle = '#d69e2e';
         for (let i = 0; i < 4; i++) {
           const dx = screenX + (this.width / 5) * (i + 1);
-          const dripHeight = 5 + Math.sin(Date.now() * 0.002 + i) * 3;
+          const dripHeight = 5 + Math.sin(Platform.currentTime * 0.002 + i) * 3;
           ctx.beginPath();
           ctx.ellipse(dx, this.y + this.height + dripHeight / 2, 4, dripHeight, 0, 0, Math.PI * 2);
           ctx.fill();

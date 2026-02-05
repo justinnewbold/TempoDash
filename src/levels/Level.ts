@@ -8,6 +8,12 @@ import { Background } from '../graphics/Background';
 import { COLORS, GAME_WIDTH } from '../constants';
 
 export class Level {
+  // Static time cache for rendering (updated once per frame by Game)
+  private static currentTime = 0;
+  static setCurrentTime(time: number): void {
+    Level.currentTime = time;
+  }
+
   id: number;
   name: string;
   platforms: Platform[] = [];
@@ -247,7 +253,7 @@ export class Level {
       return;
     }
 
-    const time = Date.now() * 0.003;
+    const time = Level.currentTime * 0.003;
     const pulse = Math.sin(time) * 0.3 + 0.7;
 
     // Glow effect
