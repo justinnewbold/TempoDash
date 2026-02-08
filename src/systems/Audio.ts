@@ -721,6 +721,43 @@ export class AudioManager {
     click.stop(time + 0.06);
   }
 
+  playAirJump(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // High-pitched "boing" sound for mid-air jump
+    // Two quick sine waves to create a distinctly different sound from ground jump
+    const osc1 = this.audioContext.createOscillator();
+    const osc2 = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    // First oscillator - main pitch
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(480, time);
+    osc1.frequency.exponentialRampToValueAtTime(720, time + 0.08);
+
+    // Second oscillator - harmonic layer (slightly delayed)
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(320, time + 0.01);
+    osc2.frequency.exponentialRampToValueAtTime(480, time + 0.09);
+
+    // Bright envelope for snappy feel
+    gain.gain.setValueAtTime(0.15, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc1.start(time);
+    osc1.stop(time + 0.15);
+
+    osc2.start(time + 0.01);
+    osc2.stop(time + 0.15);
+  }
+
   playLevelComplete(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;

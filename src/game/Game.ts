@@ -2733,6 +2733,7 @@ export class Game {
     // Air jump - speed increase on every flip, not just landed jumps
     const currentAirJumps = this.player.getAirJumpsRemaining();
     if (currentAirJumps < prevAirJumps && !this.player.isDead) {
+      this.audio.playAirJump();
       applyFlipSpeedIncrease();
     }
     this.prevAirJumpsRemaining = currentAirJumps;
