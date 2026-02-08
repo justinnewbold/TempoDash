@@ -624,6 +624,103 @@ export class AudioManager {
     osc.stop(time + 0.12);
   }
 
+  playDash(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Whoosh sweep - a fast low-to-high frequency sweep
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    const filter = this.audioContext.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(100, time);
+    osc.frequency.exponentialRampToValueAtTime(600, time + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(200, time + 0.15);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(300, time);
+    filter.frequency.exponentialRampToValueAtTime(2000, time + 0.08);
+    filter.Q.value = 2;
+
+    gain.gain.setValueAtTime(0.2, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc.stop(time + 0.2);
+
+    // Add a burst of white noise for the "whoosh" texture
+    const bufferSize = Math.floor(this.audioContext.sampleRate * 0.08);
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    const noise = this.audioContext.createBufferSource();
+    noise.buffer = buffer;
+
+    const noiseFilter = this.audioContext.createBiquadFilter();
+    noiseFilter.type = 'highpass';
+    noiseFilter.frequency.value = 2000;
+
+    const noiseGain = this.audioContext.createGain();
+    noiseGain.gain.setValueAtTime(0.12, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.sfxGain);
+
+    noise.start(time);
+    noise.stop(time + 0.12);
+  }
+
+  playLanding(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Low thud - short, punchy impact sound
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, time);
+    osc.frequency.exponentialRampToValueAtTime(40, time + 0.08);
+
+    gain.gain.setValueAtTime(0.15, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc.stop(time + 0.12);
+
+    // Subtle click layer for definition
+    const click = this.audioContext.createOscillator();
+    const clickGain = this.audioContext.createGain();
+
+    click.type = 'triangle';
+    click.frequency.setValueAtTime(400, time);
+    click.frequency.exponentialRampToValueAtTime(100, time + 0.03);
+
+    clickGain.gain.setValueAtTime(0.08, time);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+
+    click.connect(clickGain);
+    clickGain.connect(this.sfxGain);
+
+    click.start(time);
+    click.stop(time + 0.06);
+  }
+
   playLevelComplete(): void {
     this.initAudioContext();
     if (!this.audioContext || !this.sfxGain) return;
