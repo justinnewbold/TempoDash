@@ -2294,11 +2294,17 @@ export class Game {
     }
     this.player.clearEvents();
 
-    // Trigger dash shake and Flow Meter update
+    // Trigger dash shake, sound, and Flow Meter update
     if (!wasDashing && this.player.isDashing) {
       this.triggerShake(4, 80); // Light shake on dash start
+      this.audio.playDash();
       this.flowMeter.onDash();
       this.statistics.recordDash();
+    }
+
+    // Play landing sound when player touches ground
+    if (this.player.landingEvent) {
+      this.audio.playLanding();
     }
 
     // Update player trail particles
@@ -2727,6 +2733,7 @@ export class Game {
     // Air jump - speed increase on every flip, not just landed jumps
     const currentAirJumps = this.player.getAirJumpsRemaining();
     if (currentAirJumps < prevAirJumps && !this.player.isDead) {
+      this.audio.playAirJump();
       applyFlipSpeedIncrease();
     }
     this.prevAirJumpsRemaining = currentAirJumps;

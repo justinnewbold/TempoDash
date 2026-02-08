@@ -81,6 +81,17 @@ export class Player {
   // Slow-mo zone state
   isInSlowMo = false;
 
+  // Coyote time (grace period after leaving a platform)
+  private coyoteTimer = 0;
+  private static readonly COYOTE_TIME = 80; // ms - brief grace period to still jump after walking off edge
+
+  // Jump buffering (queue jump input slightly before landing)
+  private jumpBufferTimer = 0;
+  private static readonly JUMP_BUFFER_TIME = 100; // ms - how early before landing a jump press is remembered
+
+  // Landing event for sound feedback
+  landingEvent = false;
+
   // Flying mode state
   private flyingMode = false;
   private static readonly FLYING_LIFT_FORCE = 800;  // Upward force when holding jump
@@ -137,6 +148,9 @@ export class Player {
     this.isWallSliding = false;
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.landingEvent = false;
     this.boomerangVelocityX = 0;
     this.boomerangActive = false;
     this.boomerangTimer = 0;
@@ -151,6 +165,7 @@ export class Player {
     this.bounceEvent = null;
     this.wallSlideEvent = null;
     this.gravityFlipEvent = null;
+    this.landingEvent = false;
   }
 
   // Revive player (used when shield saves from death)
@@ -195,6 +210,20 @@ export class Player {
       this.isStuck = false;
       this.velocityY = -PLAYER.JUMP_FORCE;
       this.isGrounded = false;
+    }
+
+    // Track coyote time - grace period after leaving a platform
+    if (this.isGrounded) {
+      this.coyoteTimer = Player.COYOTE_TIME;
+    } else {
+      this.coyoteTimer -= deltaTime;
+    }
+
+    // Track jump buffer - remember jump presses slightly before landing
+    if (input.jumpPressed) {
+      this.jumpBufferTimer = Player.JUMP_BUFFER_TIME;
+    } else {
+      this.jumpBufferTimer -= deltaTime;
     }
 
     // Auto-move forward at constant speed (faster when dashing, affected by speed multiplier)
@@ -271,12 +300,19 @@ export class Player {
         this.velocityY = Math.min(0, this.velocityY);
       }
     } else {
-      // Normal mode: Handle jumping (auto-jump when holding - jump as soon as grounded)
-      if (input.jump && this.isGrounded && !this.isStuck) {
+      // Normal mode: Handle jumping with coyote time and jump buffering
+      // Coyote time: can still ground-jump briefly after walking off edge
+      // Jump buffer: pressing jump slightly before landing queues the jump
+      const canCoyoteJump = this.coyoteTimer > 0;
+      const hasBufferedJump = this.jumpBufferTimer > 0;
+
+      if ((input.jump || hasBufferedJump) && (this.isGrounded || canCoyoteJump) && !this.isStuck) {
         this.velocityY = -PLAYER.JUMP_FORCE;
         this.isGrounded = false;
         this.airJumpsRemaining = 4; // Reset air jumps on ground jump
-      } else if (input.jumpPressed && !this.isGrounded && this.airJumpsRemaining > 0 && allowAirJumps) {
+        this.coyoteTimer = 0; // Consume coyote time
+        this.jumpBufferTimer = 0; // Consume jump buffer
+      } else if (input.jumpPressed && !this.isGrounded && this.coyoteTimer <= 0 && this.airJumpsRemaining > 0 && allowAirJumps) {
         // Air jumps (5 total jumps: 1 ground + 4 air)
         // Disabled when "Grounded" modifier is active
         // Jump 2 (airJumpsRemaining=4): normal double jump (1.275x)
@@ -523,9 +559,10 @@ export class Player {
       this.resolveCollision(platform, collision);
     }
 
-    // Reset rotation target when first landing
+    // Reset rotation target when first landing and emit landing event
     if (!wasGrounded && this.isGrounded) {
       this.targetRotation = Math.round(this.rotation / 90) * 90;
+      this.landingEvent = true;
     }
   }
 
