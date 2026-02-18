@@ -130,7 +130,7 @@ export class GhostManager {
         rotation,
         time: this.frames.length * RECORD_INTERVAL,
       });
-      this.recordTimer = 0;
+      this.recordTimer -= RECORD_INTERVAL;
     }
   }
 

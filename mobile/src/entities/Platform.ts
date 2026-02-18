@@ -61,7 +61,7 @@ export class Platform {
     if (this.isDestroyed || this.isGlassBroken) return;
 
     // Handle movement
-    if (this.movePattern && (this.type === 'moving' || this.movePattern)) {
+    if (this.movePattern) {
       this.updateMovement(deltaTime);
     }
 
