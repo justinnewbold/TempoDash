@@ -284,6 +284,22 @@ export class Game {
   private fogOpacity = 0;
   private nightSpotlightRadius = 150;
 
+  // Bound event handlers (stored for cleanup in destroy())
+  private boundHandleResize: () => void;
+  private boundHandleOrientationChange: () => void;
+  private boundHandleBeforeUnload: () => void;
+  private boundHandleVisibilityChange: () => void;
+  private boundHandleKeyDown: (e: KeyboardEvent) => void;
+  private boundHandleKeyUp: (e: KeyboardEvent) => void;
+  private boundHandleClick: (e: MouseEvent) => void;
+  private boundHandleTouchStart: (e: TouchEvent) => void;
+  private boundHandleTouchMove: (e: TouchEvent) => void;
+  private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundHandleMouseMove: (e: MouseEvent) => void;
+  private boundHandleMouseUp: (e: MouseEvent) => void;
+  private boundHandleMouseDown: (e: MouseEvent) => void;
+  private boundHandleWheel: (e: WheelEvent) => void;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -304,14 +320,17 @@ export class Game {
     this.setupCrispRendering();
 
     // Listen for resize and orientation changes
-    window.addEventListener('resize', () => this.handleResize());
-    window.addEventListener('orientationchange', () => {
+    this.boundHandleResize = () => this.handleResize();
+    this.boundHandleOrientationChange = () => {
       // Small delay to let the browser update dimensions
       setTimeout(() => this.handleResize(), 100);
-    });
+    };
+    this.boundHandleBeforeUnload = () => this.destroy();
+    window.addEventListener('resize', this.boundHandleResize);
+    window.addEventListener('orientationchange', this.boundHandleOrientationChange);
 
     // Clean up on page unload to prevent memory leaks
-    window.addEventListener('beforeunload', () => this.destroy());
+    window.addEventListener('beforeunload', this.boundHandleBeforeUnload);
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -343,13 +362,14 @@ export class Game {
     this.gravityWells = new GravityWellManager();
 
     // Setup tab visibility change detection for auto-pause
-    document.addEventListener('visibilitychange', () => {
+    this.boundHandleVisibilityChange = () => {
       if (document.hidden) {
         this.handleTabHidden();
       } else {
         this.handleTabVisible();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', this.boundHandleVisibilityChange);
 
     // Apply saved settings
     const settings = this.save.getSettings();
@@ -362,14 +382,17 @@ export class Game {
     this.loadLevel(1);
 
     // Setup keyboard
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    this.boundHandleKeyDown = (e) => this.handleKeyDown(e);
+    this.boundHandleKeyUp = (e) => this.handleKeyUp(e);
+    window.addEventListener('keydown', this.boundHandleKeyDown);
+    window.addEventListener('keyup', this.boundHandleKeyUp);
 
     // Setup click/touch for menus
-    canvas.addEventListener('click', (e) => this.handleClick(e));
+    this.boundHandleClick = (e) => this.handleClick(e);
+    canvas.addEventListener('click', this.boundHandleClick);
 
     // Touch support for scrolling
-    canvas.addEventListener('touchstart', (e) => {
+    this.boundHandleTouchStart = (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const rect = this.canvas.getBoundingClientRect();
@@ -377,9 +400,10 @@ export class Game {
         this.lastTouchY = this.touchStartY;
         this.isTouchScrolling = false;
       }
-    }, { passive: true });
+    };
+    canvas.addEventListener('touchstart', this.boundHandleTouchStart, { passive: true });
 
-    canvas.addEventListener('touchmove', (e) => {
+    this.boundHandleTouchMove = (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const rect = this.canvas.getBoundingClientRect();
@@ -398,10 +422,11 @@ export class Game {
 
         this.lastTouchY = currentY;
       }
-    }, { passive: false });
+    };
+    canvas.addEventListener('touchmove', this.boundHandleTouchMove, { passive: false });
 
     // Touch support for menu navigation (click events unreliable on mobile)
-    canvas.addEventListener('touchend', (e) => {
+    this.boundHandleTouchEnd = (e) => {
       // If we were scrolling, don't handle as a click
       const wasScrolling = this.isTouchScrolling;
       this.isTouchScrolling = false;
@@ -437,15 +462,20 @@ export class Game {
         // Create a synthetic event-like object for the handlers
         this.handleTouchMenuClick(x, y);
       }
-    }, { passive: false });
+    };
+    canvas.addEventListener('touchend', this.boundHandleTouchEnd, { passive: false });
 
     // Setup mouse events for editor
-    canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-    canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
-    canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+    this.boundHandleMouseMove = (e) => this.handleMouseMove(e);
+    this.boundHandleMouseUp = (e) => this.handleMouseUp(e);
+    this.boundHandleMouseDown = (e) => this.handleMouseDown(e);
+    canvas.addEventListener('mousemove', this.boundHandleMouseMove);
+    canvas.addEventListener('mouseup', this.boundHandleMouseUp);
+    canvas.addEventListener('mousedown', this.boundHandleMouseDown);
 
     // Wheel events for scrolling
-    canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+    this.boundHandleWheel = (e) => this.handleWheel(e);
+    canvas.addEventListener('wheel', this.boundHandleWheel, { passive: false });
 
     // Setup beat callback
     this.audio.setBeatCallback((beat) => {
@@ -1962,6 +1992,22 @@ export class Game {
     }
     this.audio.stop();
     this.input.destroy();
+
+    // Remove all event listeners to prevent memory leaks
+    window.removeEventListener('resize', this.boundHandleResize);
+    window.removeEventListener('orientationchange', this.boundHandleOrientationChange);
+    window.removeEventListener('beforeunload', this.boundHandleBeforeUnload);
+    document.removeEventListener('visibilitychange', this.boundHandleVisibilityChange);
+    window.removeEventListener('keydown', this.boundHandleKeyDown);
+    window.removeEventListener('keyup', this.boundHandleKeyUp);
+    this.canvas.removeEventListener('click', this.boundHandleClick);
+    this.canvas.removeEventListener('touchstart', this.boundHandleTouchStart);
+    this.canvas.removeEventListener('touchmove', this.boundHandleTouchMove);
+    this.canvas.removeEventListener('touchend', this.boundHandleTouchEnd);
+    this.canvas.removeEventListener('mousemove', this.boundHandleMouseMove);
+    this.canvas.removeEventListener('mouseup', this.boundHandleMouseUp);
+    this.canvas.removeEventListener('mousedown', this.boundHandleMouseDown);
+    this.canvas.removeEventListener('wheel', this.boundHandleWheel);
   }
 
   private update(deltaTime: number): void {

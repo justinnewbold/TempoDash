@@ -124,9 +124,11 @@ export class EndlessGameEngine {
 
     // Track highest point reached
     if (this.player.y > this.highestY) {
+      // Add score for the height gained (not overwrite total score)
+      const prevHeightScore = Math.floor(this.highestY / 10);
       this.highestY = this.player.y;
-      // Score is based on height
-      this.state.score = Math.floor(this.highestY / 10);
+      const newHeightScore = Math.floor(this.highestY / 10);
+      this.state.score += newHeightScore - prevHeightScore;
     }
 
     // Update camera
