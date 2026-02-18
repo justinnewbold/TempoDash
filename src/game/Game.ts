@@ -3022,7 +3022,8 @@ export class Game {
         const baseScore = 1000;
         const attemptPenalty = (this.attempts - 1) * 50;
         const coinBonus = this.level.coinsCollected * 100;
-        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+        const gemBonus = this.levelScoreThisRun; // Preserve accumulated gem points
+        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus + gemBonus;
 
         // Apply modifier score multiplier (higher score for harder modifiers)
         const modifierMultiplier = this.modifiers.getScoreMultiplier();

@@ -225,8 +225,8 @@ export class ModifierManager {
   // Get speed multiplier (for speed demon and hyper speed)
   getSpeedMultiplier(): number {
     let speed = 1.0;
-    if (this.isActive('speedDemon')) speed = 1.5;
-    if (this.isActive('hyperSpeed')) speed = 2.0;
+    if (this.isActive('speedDemon')) speed *= 1.5;
+    if (this.isActive('hyperSpeed')) speed *= 2.0;
     return speed;
   }
 
