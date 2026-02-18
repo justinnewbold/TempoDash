@@ -227,13 +227,8 @@ export class Player {
     // Handle collisions
     this.handleCollisions(platforms);
 
-    // Check if fallen off bottom of screen (relative to camera)
-    // Camera follows player, so check if player is too far below their expected position
-    const screenY = this.getScreenY(this.y - PLAYER.SCROLL_SPEED * 2);
-    if (screenY > GAME.HEIGHT + 200) {
-      this.isDead = true;
-      this.deathEvent = true;
-    }
+    // Note: Fall-off-screen death detection is handled by the game engine,
+    // which has access to the actual camera position.
   }
 
   private handleCollisions(platforms: Platform[]): void {

@@ -121,6 +121,13 @@ export class GameEngine {
     // Handle platform-specific effects after collision
     this.handlePlatformEffects(nearbyPlatforms);
 
+    // Check if player fell off the bottom of the screen
+    const screenY = this.worldToScreenY(this.player.y);
+    if (screenY > GAME.HEIGHT + 200) {
+      this.player.isDead = true;
+      this.player.deathEvent = true;
+    }
+
     // Check for death
     if (this.player.isDead) {
       if (this.state.hasShield) {
