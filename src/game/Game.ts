@@ -3699,7 +3699,7 @@ export class Game {
       this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
       // Draw combo meter fill based on timer
-      const fillPercent = this.comboTimer / this.comboDuration;
+      const fillPercent = Math.max(0, Math.min(1, this.comboTimer / this.comboDuration));
       const pulseBoost = this.comboMeterPulse * 0.1;
 
       // Color based on combo tier
@@ -6148,6 +6148,7 @@ export class Game {
     this.jumpCount = 0;
     this.prevAirJumpsRemaining = 4;
     this.challengeCoinsCollected = 0;
+    this.challengeScore = 0;
     this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
