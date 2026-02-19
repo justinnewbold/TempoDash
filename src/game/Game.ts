@@ -1762,6 +1762,16 @@ export class Game {
     this.checkpointX = this.level.playerStart.x;
     this.checkpointY = this.level.playerStart.y;
     this.lastCheckpointProgress = 0;
+
+    // Reset systems that startLevel() resets but were missing here
+    this.modifiers.resetForLevel();
+    this.flowMeter.reset();
+    this.beatHazards.reset();
+    this.timeRewind.reset();
+    this.isWaitingForRewindInput = false;
+    this.rewindInputWindow = 0;
+    this.deathTimer = 0;
+
     this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
     this.audio.start();
   }

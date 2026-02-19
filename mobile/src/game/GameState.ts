@@ -119,7 +119,7 @@ export class GameEngine {
     this.jumpPressed = false;
 
     // Handle platform-specific effects after collision
-    this.handlePlatformEffects(nearbyPlatforms);
+    this.handlePlatformEffects(nearbyPlatforms, effectiveDelta);
 
     // Check if player fell off the bottom of the screen
     const screenY = this.worldToScreenY(this.player.y);
@@ -214,7 +214,7 @@ export class GameEngine {
     }
   }
 
-  private handlePlatformEffects(platforms: Platform[]): void {
+  private handlePlatformEffects(platforms: Platform[], dt: number): void {
     for (const platform of platforms) {
       if (!platform.isCollidable()) continue;
 
@@ -232,7 +232,7 @@ export class GameEngine {
       switch (platform.type) {
         case 'conveyor':
           // Push player horizontally
-          this.player.x += platform.conveyorSpeed * 0.016; // Approx 1 frame
+          this.player.x += platform.conveyorSpeed * (dt / 1000);
           break;
         case 'ice':
           // Player slides - reduce friction (handled by velocity preservation in Player)
