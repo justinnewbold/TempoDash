@@ -237,10 +237,16 @@ export class MiniMap {
       return true;
     }
 
-    // Calculate world X from tap position
+    // Calculate world X from tap position (must match render() bounds calculation)
     let levelEnd = 1000;
     for (const platform of level.platforms) {
       levelEnd = Math.max(levelEnd, platform.x + platform.width);
+    }
+    for (const coin of level.coins) {
+      levelEnd = Math.max(levelEnd, coin.x + 20);
+    }
+    if (level.goal) {
+      levelEnd = Math.max(levelEnd, level.goal.x + level.goal.width);
     }
     levelEnd += 200;
 
@@ -262,10 +268,16 @@ export class MiniMap {
       return false;
     }
 
-    // Calculate world X
+    // Calculate world X (must match render() bounds calculation)
     let levelEnd = 1000;
     for (const platform of level.platforms) {
       levelEnd = Math.max(levelEnd, platform.x + platform.width);
+    }
+    for (const coin of level.coins) {
+      levelEnd = Math.max(levelEnd, coin.x + 20);
+    }
+    if (level.goal) {
+      levelEnd = Math.max(levelEnd, level.goal.x + level.goal.width);
     }
     levelEnd += 200;
 

@@ -480,11 +480,11 @@ export class Player {
             this.isWallSliding = true;
             // Stop horizontal movement into wall but allow sliding down
             if (collision === 'left') {
-              this.x = bounds.x + bounds.width;
-              this.wallSlideEvent = { x: this.x, y: this.y + this.height / 2, side: 'left' };
-            } else {
               this.x = bounds.x - this.width;
-              this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'right' };
+              this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'left' };
+            } else {
+              this.x = bounds.x + bounds.width;
+              this.wallSlideEvent = { x: this.x, y: this.y + this.height / 2, side: 'right' };
             }
             continue;  // Skip edge bounce only for side collisions
           }
