@@ -60,6 +60,28 @@
       #ui-overlay.active {
         pointer-events: auto;
       }
+      /* Skip link becomes visible on focus (keyboard nav) */
+      #skip-link:focus {
+        left: 10px;
+        top: 10px;
+      }
+      /* Focus outline for canvas (keyboard users) */
+      canvas:focus {
+        outline: 2px solid #00ffaa;
+        outline-offset: 2px;
+      }
+      /* Reduced motion preference */
+      @media (prefers-reduced-motion: reduce) {
+        canvas {
+          box-shadow: none !important;
+        }
+      }
+      /* High contrast mode support */
+      @media (prefers-contrast: high) {
+        canvas {
+          border: 2px solid #ffffff;
+        }
+      }
       /* Prevent text selection on mobile */
       * {
         -webkit-touch-callout: none;
@@ -72,9 +94,18 @@
     </style>
   </head>
   <body>
-    <div id="game-container">
-      <canvas id="game-canvas"></canvas>
-      <div id="ui-overlay"></div>
+    <!-- Skip link for keyboard navigation -->
+    <a href="#game-canvas" id="skip-link" style="
+      position: absolute; left: -9999px; top: 0; z-index: 1000;
+      background: #00ffaa; color: #000; padding: 8px 16px; font-size: 16px;
+    ">Skip to game</a>
+    <div id="game-container" role="application" aria-label="TempoDash rhythm platformer game">
+      <canvas id="game-canvas" tabindex="0" role="img" aria-label="Game canvas - use arrow keys and space to play"></canvas>
+      <div id="ui-overlay" aria-hidden="true"></div>
+      <!-- Screen reader announcements for game events -->
+      <div id="sr-announcements" role="status" aria-live="polite" aria-atomic="true" style="
+        position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;
+      "></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
     <script>
