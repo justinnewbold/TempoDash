@@ -1854,14 +1854,22 @@ export class Game {
         y = baseY - 40 - Math.random() * heightVariation;
       }
 
-      // Platform type selection
+      // Platform type selection — progressive unlocking
       let type: PlatformType = 'solid';
       const typeRoll = Math.random();
 
-      if (difficulty > 0.2 && typeRoll < 0.1) {
-        type = 'bounce';
+      if (difficulty > 0.7 && typeRoll < 0.06) {
+        type = 'crumble'; // High difficulty: time-pressure platforms
+      } else if (difficulty > 0.6 && typeRoll < 0.08) {
+        type = 'phase';   // Mid-high difficulty: timing platforms
+      } else if (difficulty > 0.5 && typeRoll < 0.10) {
+        type = 'conveyor'; // Mid difficulty: directional challenge
       } else if (difficulty > 0.4 && typeRoll < 0.15) {
-        type = 'ice';
+        type = 'ice';      // Mid difficulty: momentum control
+      } else if (difficulty > 0.3 && typeRoll < 0.12) {
+        type = 'moving';   // Early-mid: tracking challenge
+      } else if (difficulty > 0.2 && typeRoll < 0.1) {
+        type = 'bounce';   // Early: timing variety
       }
 
       this.endlessPlatforms.push(new Platform({
@@ -1872,14 +1880,31 @@ export class Game {
         type,
       }));
 
-      // Sometimes add spikes (more frequent at higher difficulty)
-      if (difficulty > 0.3 && Math.random() < 0.2 + difficulty * 0.2) {
+      // Coin rewards on platforms (more common at lower difficulty)
+      if (Math.random() < 0.3 - difficulty * 0.1) {
+        // Coins are handled elsewhere, but elevated platforms are rewarding
+      }
+
+      // Hazard generation — progressively harder
+      if (difficulty > 0.3 && Math.random() < 0.15 + difficulty * 0.25) {
+        // Spike hazards between platforms
         this.endlessPlatforms.push(new Platform({
           x: x + width + 20,
           y: baseY,
-          width: 30,
+          width: 30 + Math.floor(difficulty * 20),
           height: 30,
           type: 'spike',
+        }));
+      }
+
+      // At high difficulty, add secondary platforms above for alternate routes
+      if (difficulty > 0.5 && Math.random() < 0.15) {
+        this.endlessPlatforms.push(new Platform({
+          x: x + width * 0.3,
+          y: y - 100 - Math.random() * 60,
+          width: width * 0.6,
+          height: GROUND_HEIGHT,
+          type: Math.random() < 0.3 ? 'bounce' : 'solid',
         }));
       }
 

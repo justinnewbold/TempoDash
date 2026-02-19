@@ -10,6 +10,18 @@ interface ExclusionZone {
   height: number;
 }
 
+/** Default key bindings */
+export const DEFAULT_KEY_BINDINGS: KeyBindings = {
+  jump: ['ArrowUp', 'KeyW', 'Space'],
+  dash: ['ShiftLeft', 'ShiftRight'],
+};
+
+/** Key binding configuration */
+export interface KeyBindings {
+  jump: string[];
+  dash: string[];
+}
+
 export class InputManager {
   private state: InputState = {
     jump: false,
@@ -17,6 +29,9 @@ export class InputManager {
     dash: false,
     dashPressed: false,
   };
+
+  // Configurable key bindings
+  private keyBindings: KeyBindings = { ...DEFAULT_KEY_BINDINGS };
 
   private previousJump = false;
   private previousDash = false;
@@ -230,32 +245,36 @@ export class InputManager {
     return hasExcludedTouch;
   }
 
+  /** Set custom key bindings */
+  setKeyBindings(bindings: Partial<KeyBindings>): void {
+    if (bindings.jump) this.keyBindings.jump = [...bindings.jump];
+    if (bindings.dash) this.keyBindings.dash = [...bindings.dash];
+  }
+
+  /** Get current key bindings */
+  getKeyBindings(): KeyBindings {
+    return { jump: [...this.keyBindings.jump], dash: [...this.keyBindings.dash] };
+  }
+
+  /** Reset key bindings to defaults */
+  resetKeyBindings(): void {
+    this.keyBindings = { ...DEFAULT_KEY_BINDINGS };
+  }
+
   private handleKeyDown(e: KeyboardEvent): void {
-    switch (e.code) {
-      case 'ArrowUp':
-      case 'KeyW':
-      case 'Space':
-        e.preventDefault(); // Prevent page scroll
-        this.state.jump = true;
-        break;
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        this.state.dash = true;
-        break;
+    if (this.keyBindings.jump.includes(e.code)) {
+      e.preventDefault();
+      this.state.jump = true;
+    } else if (this.keyBindings.dash.includes(e.code)) {
+      this.state.dash = true;
     }
   }
 
   private handleKeyUp(e: KeyboardEvent): void {
-    switch (e.code) {
-      case 'ArrowUp':
-      case 'KeyW':
-      case 'Space':
-        this.state.jump = false;
-        break;
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        this.state.dash = false;
-        break;
+    if (this.keyBindings.jump.includes(e.code)) {
+      this.state.jump = false;
+    } else if (this.keyBindings.dash.includes(e.code)) {
+      this.state.dash = false;
     }
   }
 
