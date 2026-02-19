@@ -1448,6 +1448,49 @@ export class Game {
     // This prevents unexpected deaths when returning
   }
 
+  /**
+   * Reset all gameplay systems to a clean state.
+   * Called by all restart paths to ensure consistent reset behavior.
+   * This eliminates the class of bugs where one restart path forgets to reset a system.
+   */
+  private resetGameplaySystems(): void {
+    // Combo system
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.nearMissCount = 0;
+    this.comboMeterPulse = 0;
+
+    // Milestone tracking
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
+    this.milestoneQueue = [];
+    this.currentMilestone = null;
+
+    // Core gameplay systems
+    this.modifiers.resetForLevel();
+    this.flowMeter.reset();
+    this.beatHazards.reset();
+    this.timeRewind.reset();
+    this.isWaitingForRewindInput = false;
+    this.rewindInputWindow = 0;
+    this.deathTimer = 0;
+
+    // Particles and effects
+    this.particles.clear();
+
+    // Beat synchronization
+    const config = this.level?.getConfig();
+    if (config) {
+      this.currentBPM = config.bpm || 128;
+      this.loadBeatHazardsForLevel(config.id);
+    }
+    this.beatTimer = 0;
+    this.currentBeatNumber = 0;
+  }
+
   // Quick restart the current level
   private quickRestart(): void {
     if (this.isEndlessMode) {
@@ -1462,7 +1505,7 @@ export class Game {
       this.attempts = 1;
       this.speedMultiplier = 1.0;
       this.jumpCount = 0;
-    this.prevAirJumpsRemaining = 4;
+      this.prevAirJumpsRemaining = 4;
       this.audio.resetGameSpeed();
     } else {
       // Restart current level
@@ -1473,18 +1516,7 @@ export class Game {
       this.checkpointY = this.level.playerStart.y;
       this.lastCheckpointProgress = 0;
     }
-    // Clear particles and reset effects
-    this.particles.clear();
-    this.comboCount = 0;
-    this.comboTimer = 0;
-    this.comboMultiplier = 1;
-    this.nearMissTimer = 0;
-    this.nearMissCount = 0;
-    this.comboMeterPulse = 0;
-    // Reset milestone tracking
-    this.nearMissStreak = 0;
-    this.perfectLandingCount = 0;
-    this.lastComboMilestone = 0;
+    this.resetGameplaySystems();
     this.audio.start();
   }
 
@@ -1498,8 +1530,8 @@ export class Game {
     this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
 
-    // Reset modifier timers for new level
-    this.modifiers.resetForLevel();
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
 
     // Initialize level timing and stats
     this.levelStartTime = performance.now();
@@ -1510,7 +1542,6 @@ export class Game {
     this.splitTimes = [];
     this.lastCheckpointIndex = 0;
     this.splitDisplay = null;
-    // Load best split times for this level (stored in save data)
     this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
 
     // Reset encouragement and celebration
@@ -1518,30 +1549,6 @@ export class Game {
     this.encouragementMessage = null;
     this.celebrationActive = false;
     this.celebrationTimer = 0;
-
-    // Initialize BPM for beat visualization
-    const config = this.level.getConfig();
-    this.currentBPM = config.bpm || 128;
-    this.beatTimer = 0;
-    this.currentBeatNumber = 0;
-
-    // Reset new systems for level
-    this.flowMeter.reset();
-    this.beatHazards.reset();
-    this.timeRewind.reset();
-    this.isWaitingForRewindInput = false;
-    this.rewindInputWindow = 0;
-    this.deathTimer = 0;
-
-    // Reset milestone tracking for new level
-    this.nearMissStreak = 0;
-    this.perfectLandingCount = 0;
-    this.lastComboMilestone = 0;
-    this.milestoneQueue = [];
-    this.currentMilestone = null;
-
-    // Load beat hazards for this level (example hazards for demo)
-    this.loadBeatHazardsForLevel(levelId);
 
     // Start ghost recording
     this.ghostManager.startRecording();
@@ -1763,14 +1770,7 @@ export class Game {
     this.checkpointY = this.level.playerStart.y;
     this.lastCheckpointProgress = 0;
 
-    // Reset systems that startLevel() resets but were missing here
-    this.modifiers.resetForLevel();
-    this.flowMeter.reset();
-    this.beatHazards.reset();
-    this.timeRewind.reset();
-    this.isWaitingForRewindInput = false;
-    this.rewindInputWindow = 0;
-    this.deathTimer = 0;
+    this.resetGameplaySystems();
 
     this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
     this.audio.start();
@@ -6190,6 +6190,9 @@ export class Game {
 
     // Clear any active powerups
     this.powerUps.clear();
+
+    // Reset all gameplay systems
+    this.resetGameplaySystems();
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
