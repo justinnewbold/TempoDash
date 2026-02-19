@@ -6121,7 +6121,7 @@ export class Game {
     // Generate initial seeded platforms
     const seedPlatforms = this.challengeManager.generateChallengePlatforms(challenge.seed, this.nextPlatformX, 20);
     for (const p of seedPlatforms) {
-      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type }));
     }
     if (seedPlatforms.length > 0) {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
@@ -6173,7 +6173,7 @@ export class Game {
     // Generate initial seeded platforms
     const seedPlatforms = this.challengeManager.generateChallengePlatforms(this.currentChallenge.seed, this.nextPlatformX, 20);
     for (const p of seedPlatforms) {
-      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type }));
     }
     if (seedPlatforms.length > 0) {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;

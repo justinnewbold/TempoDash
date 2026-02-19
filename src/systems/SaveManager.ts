@@ -2,6 +2,37 @@ import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFra
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
+const SAVE_VERSION = 2; // Increment when SaveData schema changes
+
+/**
+ * Migration functions: each migrates from version N to N+1.
+ * Add a new entry when SAVE_VERSION is incremented.
+ */
+const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {
+  // v1 -> v2: Add splitTimes, levelMastery, rhythmAccuracy, playerName, localLeaderboards
+  1: (data) => {
+    if (!data.splitTimes) data.splitTimes = {};
+    if (!data.levelMastery) data.levelMastery = {};
+    if (!data.rhythmAccuracy) data.rhythmAccuracy = {};
+    if (!data.playerName) data.playerName = '';
+    if (!data.localLeaderboards) data.localLeaderboards = {};
+    return data;
+  },
+};
+
+/** Apply all migrations from currentVersion to SAVE_VERSION */
+function migrateSaveData(data: Record<string, unknown>, fromVersion: number): Record<string, unknown> {
+  let current = fromVersion;
+  while (current < SAVE_VERSION) {
+    const migrate = MIGRATIONS[current];
+    if (migrate) {
+      data = migrate(data);
+    }
+    current++;
+  }
+  data._version = SAVE_VERSION;
+  return data;
+}
 
 // Points required to unlock each level
 export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
@@ -178,7 +209,14 @@ export class SaveManager {
     try {
       const saved = localStorage.getItem(SAVE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as Partial<SaveData>;
+        let raw = JSON.parse(saved);
+        const savedVersion = (raw as Record<string, unknown>)._version as number || 1;
+        if (savedVersion < SAVE_VERSION) {
+          raw = migrateSaveData(raw as Record<string, unknown>, savedVersion);
+          // Persist migrated data immediately
+          localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+        }
+        const parsed = raw as Partial<SaveData>;
         return {
           totalPoints: parsed.totalPoints ?? DEFAULT_SAVE.totalPoints,
           unlockedLevels: parsed.unlockedLevels ?? [...DEFAULT_SAVE.unlockedLevels],
@@ -217,7 +255,8 @@ export class SaveManager {
 
   private save(): void {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
+      const withVersion = { ...this.data, _version: SAVE_VERSION };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(withVersion));
     } catch (e) {
       console.warn('Failed to save data:', e);
     }
