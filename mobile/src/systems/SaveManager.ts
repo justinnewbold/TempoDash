@@ -121,12 +121,12 @@ class SaveManagerClass {
 
   async incrementDeaths(): Promise<void> {
     this.data.totalDeaths++;
-    // Don't save on every death to reduce writes
+    await this.save();
   }
 
   async addPlayTime(ms: number): Promise<void> {
     this.data.totalPlayTime += ms;
-    // Don't save on every update
+    await this.save();
   }
 
   async unlockLevel(levelId: number): Promise<void> {

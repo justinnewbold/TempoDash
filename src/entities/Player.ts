@@ -356,11 +356,17 @@ export class Player {
       this.velocityY += PLAYER.GRAVITY * gravityDir * slowMoMult * (deltaTime / 1000);
     }
 
-    // Clamp downward fall speed (wall sliding reduces it further)
-    // Only clamp positive (downward) velocity - don't restrict upward jumps
+    // Clamp fall speed (wall sliding reduces it further)
     const maxFall = this.isWallSliding ? Player.WALL_SLIDE_SPEED : PLAYER.MAX_FALL_SPEED;
-    if (this.velocityY > maxFall) {
-      this.velocityY = maxFall;
+    if (this.gravityFlipped) {
+      // When gravity is flipped, falling is negative velocityY
+      if (this.velocityY < -maxFall) {
+        this.velocityY = -maxFall;
+      }
+    } else {
+      if (this.velocityY > maxFall) {
+        this.velocityY = maxFall;
+      }
     }
 
     // Apply vertical velocity
@@ -474,11 +480,11 @@ export class Player {
             this.isWallSliding = true;
             // Stop horizontal movement into wall but allow sliding down
             if (collision === 'left') {
-              this.x = bounds.x + bounds.width;
-              this.wallSlideEvent = { x: this.x, y: this.y + this.height / 2, side: 'left' };
-            } else {
               this.x = bounds.x - this.width;
-              this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'right' };
+              this.wallSlideEvent = { x: this.x + this.width, y: this.y + this.height / 2, side: 'left' };
+            } else {
+              this.x = bounds.x + bounds.width;
+              this.wallSlideEvent = { x: this.x, y: this.y + this.height / 2, side: 'right' };
             }
             continue;  // Skip edge bounce only for side collisions
           }

@@ -19,6 +19,12 @@ export class EndlessGameEngine {
     isPlaying: false,
     isDead: false,
     isComplete: false,
+    combo: 0,
+    maxCombo: 0,
+    scoreMultiplier: 1,
+    activePowerUp: null,
+    powerUpTimeRemaining: 0,
+    hasShield: false,
   };
 
   private jumpPressed = false;
@@ -39,6 +45,12 @@ export class EndlessGameEngine {
       isPlaying: true,
       isDead: false,
       isComplete: false,
+      combo: 0,
+      maxCombo: 0,
+      scoreMultiplier: 1,
+      activePowerUp: null,
+      powerUpTimeRemaining: 0,
+      hasShield: false,
     };
 
     this.player.reset({ x: GAME.WIDTH / 2 - PLAYER.SIZE / 2, y: 100 });
@@ -115,6 +127,13 @@ export class EndlessGameEngine {
     this.player.update(deltaTime, this.jumpPressed, this.jumpHeld, nearbyPlatforms);
     this.jumpPressed = false;
 
+    // Check if player fell off the bottom of the screen
+    const screenY = this.worldToScreenY(this.player.y);
+    if (screenY > GAME.HEIGHT + 200) {
+      this.player.isDead = true;
+      this.player.deathEvent = true;
+    }
+
     // Check for death
     if (this.player.isDead) {
       this.state.isDead = true;
@@ -124,9 +143,11 @@ export class EndlessGameEngine {
 
     // Track highest point reached
     if (this.player.y > this.highestY) {
+      // Add score for the height gained (not overwrite total score)
+      const prevHeightScore = Math.floor(this.highestY / 10);
       this.highestY = this.player.y;
-      // Score is based on height
-      this.state.score = Math.floor(this.highestY / 10);
+      const newHeightScore = Math.floor(this.highestY / 10);
+      this.state.score += newHeightScore - prevHeightScore;
     }
 
     // Update camera

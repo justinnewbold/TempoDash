@@ -147,15 +147,15 @@ export class LeaderboardService {
     // Sort by score descending
     this.localData[key].sort((a, b) => b.score - a.score);
 
+    // Calculate rank before slicing (entry may fall outside top N)
+    const rank = this.localData[key].findIndex(e => e.id === entry.id) + 1;
+
     // Keep only top entries
     if (this.localData[key].length > MAX_LOCAL_ENTRIES) {
       this.localData[key] = this.localData[key].slice(0, MAX_LOCAL_ENTRIES);
     }
 
     this.saveLocalData();
-
-    // Calculate rank
-    const rank = this.localData[key].findIndex(e => e.id === entry.id) + 1;
 
     return { rank, isNewHighScore };
   }

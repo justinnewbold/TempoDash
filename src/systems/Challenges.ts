@@ -1,6 +1,8 @@
 // Daily and Weekly Challenge System
 // Seeded procedural challenges that are the same for all players
 
+import { PlatformType } from '../types';
+
 export type ChallengeType = 'dailySprint' | 'dailyCoinRush' | 'weeklyEndurance' | 'weeklyGauntlet';
 
 export interface Challenge {
@@ -323,7 +325,7 @@ export class ChallengeManager {
     y: number;
     width: number;
     height: number;
-    type: string;
+    type: PlatformType;
   }> {
     const rng = new SeededRandom(seed + startX);
     const platforms: Array<{
@@ -331,13 +333,13 @@ export class ChallengeManager {
       y: number;
       width: number;
       height: number;
-      type: string;
+      type: PlatformType;
     }> = [];
 
     const GROUND_Y = 460; // Match game constant
     let currentX = startX;
 
-    const platformTypes = ['solid', 'solid', 'solid', 'bounce', 'crumble', 'moving', 'phase'];
+    const platformTypes: PlatformType[] = ['solid', 'solid', 'solid', 'bounce', 'crumble', 'moving', 'phase'];
 
     for (let i = 0; i < count; i++) {
       const width = rng.nextInt(80, 150);

@@ -212,7 +212,8 @@ export class LevelSharingManager {
     let result = '';
     for (let i = 0; i < str.length; i++) {
       const code = str.charCodeAt(i);
-      result += ENCODE_CHARS[code >> 6] + ENCODE_CHARS[code & 63];
+      // Mask high bits to 6 bits to prevent index overflow for chars > 4095
+      result += ENCODE_CHARS[(code >> 6) & 63] + ENCODE_CHARS[code & 63];
     }
     return result;
   }

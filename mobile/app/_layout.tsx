@@ -13,10 +13,13 @@ export default function RootLayout() {
     // Lock to portrait mode
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
 
-    // Initialize audio and load save data
-    AudioManager.initialize();
-    AudioManager.loadSounds();
-    SaveManager.load();
+    // Initialize audio and load save data sequentially
+    const init = async () => {
+      await AudioManager.initialize();
+      await AudioManager.loadSounds();
+      await SaveManager.load();
+    };
+    init();
   }, []);
 
   return (

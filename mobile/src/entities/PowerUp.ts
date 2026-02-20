@@ -70,6 +70,7 @@ export class PowerUp {
       case 'magnet': return POWERUP.MAGNET_DURATION;
       case 'slowmo': return POWERUP.SLOWMO_DURATION;
       case 'doublePoints': return POWERUP.DOUBLE_POINTS_DURATION;
+      default: return POWERUP.SHIELD_DURATION;
     }
   }
 

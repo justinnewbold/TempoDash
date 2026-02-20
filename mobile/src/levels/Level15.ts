@@ -16,7 +16,7 @@ export const Level15: LevelConfig = {
   accentColor: '#ffd700',
 
   playerStart: { x: SCREEN_WIDTH / 2 - PLAYER.SIZE / 2, y: 50 },
-  goalY: 10000,
+  goalY: 7000,
 
   platforms: [
     // === Starting platform ===

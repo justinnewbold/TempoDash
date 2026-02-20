@@ -28,6 +28,10 @@ export class MiniMap {
   private currentHeight: number;
   private animationSpeed = 0.15;
 
+  // Cached level bounds (invalidated on level change)
+  private cachedLevelEnd = 0;
+  private cachedLevelId = '';
+
   // Interaction callback
   private callback: MiniMapCallback;
 
@@ -35,6 +39,36 @@ export class MiniMap {
     this.callback = callback;
     this.currentWidth = this.collapsedWidth;
     this.currentHeight = this.collapsedHeight;
+  }
+
+  /** Invalidate cached bounds when level changes */
+  invalidateCache(): void {
+    this.cachedLevelId = '';
+  }
+
+  /** Calculate and cache level bounds */
+  private getLevelEnd(level: CustomLevel): number {
+    // Use level ID + update timestamp as cache key
+    const cacheKey = `${level.id}_${level.updatedAt}`;
+    if (this.cachedLevelId === cacheKey) {
+      return this.cachedLevelEnd;
+    }
+
+    let levelEnd = 1000;
+    for (const platform of level.platforms) {
+      levelEnd = Math.max(levelEnd, platform.x + platform.width);
+    }
+    for (const coin of level.coins) {
+      levelEnd = Math.max(levelEnd, coin.x + 20);
+    }
+    if (level.goal) {
+      levelEnd = Math.max(levelEnd, level.goal.x + level.goal.width);
+    }
+    levelEnd += 200; // Padding
+
+    this.cachedLevelEnd = levelEnd;
+    this.cachedLevelId = cacheKey;
+    return levelEnd;
   }
 
   setPosition(canvasWidth: number, toolbarHeight: number): void {
@@ -87,22 +121,9 @@ export class MiniMap {
 
     this.setPosition(canvasWidth, toolbarHeight);
 
-    // Calculate level bounds
+    // Calculate level bounds (cached)
     const levelStart = 0;
-    let levelEnd = 1000;
-
-    for (const platform of level.platforms) {
-      levelEnd = Math.max(levelEnd, platform.x + platform.width);
-    }
-    for (const coin of level.coins) {
-      levelEnd = Math.max(levelEnd, coin.x + 20);
-    }
-    if (level.goal) {
-      levelEnd = Math.max(levelEnd, level.goal.x + level.goal.width);
-    }
-
-    levelEnd += 200; // Add some padding
-
+    const levelEnd = this.getLevelEnd(level);
     const levelWidth = levelEnd - levelStart;
     const scale = this.currentWidth / levelWidth;
 
@@ -237,14 +258,8 @@ export class MiniMap {
       return true;
     }
 
-    // Calculate world X from tap position
-    let levelEnd = 1000;
-    for (const platform of level.platforms) {
-      levelEnd = Math.max(levelEnd, platform.x + platform.width);
-    }
-    levelEnd += 200;
-
-    const levelWidth = levelEnd;
+    // Calculate world X from tap position (uses cached bounds)
+    const levelWidth = this.getLevelEnd(level);
     const relX = (tapX - this.x) / this.currentWidth;
     const worldX = relX * levelWidth;
 
@@ -262,14 +277,8 @@ export class MiniMap {
       return false;
     }
 
-    // Calculate world X
-    let levelEnd = 1000;
-    for (const platform of level.platforms) {
-      levelEnd = Math.max(levelEnd, platform.x + platform.width);
-    }
-    levelEnd += 200;
-
-    const levelWidth = levelEnd;
+    // Calculate world X (uses cached bounds)
+    const levelWidth = this.getLevelEnd(level);
     const relX = (tapX - this.x) / this.currentWidth;
     const worldX = relX * levelWidth;
 

@@ -199,7 +199,7 @@ export class CustomLevelManager {
       if (level.goal.width < 20 || level.goal.height < 20) {
         errors.push('Goal is too small');
       }
-      if (level.goal.x <= level.playerStart.x + 100) {
+      if (level.playerStart && level.goal.x <= level.playerStart.x + 100) {
         warnings.push('Goal is very close to the start');
       }
     }

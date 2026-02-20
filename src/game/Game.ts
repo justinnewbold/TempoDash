@@ -10,7 +10,16 @@ import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { PlatformType } from '../types';
-import { LevelEditor } from '../editor/LevelEditor';
+// LevelEditor is lazy-loaded to reduce initial bundle size (~2800 lines)
+type LevelEditor = import('../editor/LevelEditor').LevelEditor;
+let LevelEditorClass: (new (...args: any[]) => LevelEditor) | null = null;
+async function loadLevelEditor(): Promise<new (...args: any[]) => LevelEditor> {
+  if (!LevelEditorClass) {
+    const module = await import('../editor/LevelEditor');
+    LevelEditorClass = module.LevelEditor;
+  }
+  return LevelEditorClass;
+}
 import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
@@ -284,6 +293,22 @@ export class Game {
   private fogOpacity = 0;
   private nightSpotlightRadius = 150;
 
+  // Bound event handlers (stored for cleanup in destroy())
+  private boundHandleResize: () => void;
+  private boundHandleOrientationChange: () => void;
+  private boundHandleBeforeUnload: () => void;
+  private boundHandleVisibilityChange: () => void;
+  private boundHandleKeyDown: (e: KeyboardEvent) => void;
+  private boundHandleKeyUp: (e: KeyboardEvent) => void;
+  private boundHandleClick: (e: MouseEvent) => void;
+  private boundHandleTouchStart: (e: TouchEvent) => void;
+  private boundHandleTouchMove: (e: TouchEvent) => void;
+  private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundHandleMouseMove: (e: MouseEvent) => void;
+  private boundHandleMouseUp: (e: MouseEvent) => void;
+  private boundHandleMouseDown: (e: MouseEvent) => void;
+  private boundHandleWheel: (e: WheelEvent) => void;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
 
@@ -304,14 +329,17 @@ export class Game {
     this.setupCrispRendering();
 
     // Listen for resize and orientation changes
-    window.addEventListener('resize', () => this.handleResize());
-    window.addEventListener('orientationchange', () => {
+    this.boundHandleResize = () => this.handleResize();
+    this.boundHandleOrientationChange = () => {
       // Small delay to let the browser update dimensions
       setTimeout(() => this.handleResize(), 100);
-    });
+    };
+    this.boundHandleBeforeUnload = () => this.destroy();
+    window.addEventListener('resize', this.boundHandleResize);
+    window.addEventListener('orientationchange', this.boundHandleOrientationChange);
 
     // Clean up on page unload to prevent memory leaks
-    window.addEventListener('beforeunload', () => this.destroy());
+    window.addEventListener('beforeunload', this.boundHandleBeforeUnload);
 
     this.input = new InputManager();
     this.input.setCanvas(canvas);
@@ -343,13 +371,14 @@ export class Game {
     this.gravityWells = new GravityWellManager();
 
     // Setup tab visibility change detection for auto-pause
-    document.addEventListener('visibilitychange', () => {
+    this.boundHandleVisibilityChange = () => {
       if (document.hidden) {
         this.handleTabHidden();
       } else {
         this.handleTabVisible();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', this.boundHandleVisibilityChange);
 
     // Apply saved settings
     const settings = this.save.getSettings();
@@ -362,14 +391,17 @@ export class Game {
     this.loadLevel(1);
 
     // Setup keyboard
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    this.boundHandleKeyDown = (e) => this.handleKeyDown(e);
+    this.boundHandleKeyUp = (e) => this.handleKeyUp(e);
+    window.addEventListener('keydown', this.boundHandleKeyDown);
+    window.addEventListener('keyup', this.boundHandleKeyUp);
 
     // Setup click/touch for menus
-    canvas.addEventListener('click', (e) => this.handleClick(e));
+    this.boundHandleClick = (e) => this.handleClick(e);
+    canvas.addEventListener('click', this.boundHandleClick);
 
     // Touch support for scrolling
-    canvas.addEventListener('touchstart', (e) => {
+    this.boundHandleTouchStart = (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const rect = this.canvas.getBoundingClientRect();
@@ -377,9 +409,10 @@ export class Game {
         this.lastTouchY = this.touchStartY;
         this.isTouchScrolling = false;
       }
-    }, { passive: true });
+    };
+    canvas.addEventListener('touchstart', this.boundHandleTouchStart, { passive: true });
 
-    canvas.addEventListener('touchmove', (e) => {
+    this.boundHandleTouchMove = (e) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const rect = this.canvas.getBoundingClientRect();
@@ -398,10 +431,11 @@ export class Game {
 
         this.lastTouchY = currentY;
       }
-    }, { passive: false });
+    };
+    canvas.addEventListener('touchmove', this.boundHandleTouchMove, { passive: false });
 
     // Touch support for menu navigation (click events unreliable on mobile)
-    canvas.addEventListener('touchend', (e) => {
+    this.boundHandleTouchEnd = (e) => {
       // If we were scrolling, don't handle as a click
       const wasScrolling = this.isTouchScrolling;
       this.isTouchScrolling = false;
@@ -437,15 +471,20 @@ export class Game {
         // Create a synthetic event-like object for the handlers
         this.handleTouchMenuClick(x, y);
       }
-    }, { passive: false });
+    };
+    canvas.addEventListener('touchend', this.boundHandleTouchEnd, { passive: false });
 
     // Setup mouse events for editor
-    canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-    canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
-    canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+    this.boundHandleMouseMove = (e) => this.handleMouseMove(e);
+    this.boundHandleMouseUp = (e) => this.handleMouseUp(e);
+    this.boundHandleMouseDown = (e) => this.handleMouseDown(e);
+    canvas.addEventListener('mousemove', this.boundHandleMouseMove);
+    canvas.addEventListener('mouseup', this.boundHandleMouseUp);
+    canvas.addEventListener('mousedown', this.boundHandleMouseDown);
 
     // Wheel events for scrolling
-    canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+    this.boundHandleWheel = (e) => this.handleWheel(e);
+    canvas.addEventListener('wheel', this.boundHandleWheel, { passive: false });
 
     // Setup beat callback
     this.audio.setBeatCallback((beat) => {
@@ -1418,6 +1457,49 @@ export class Game {
     // This prevents unexpected deaths when returning
   }
 
+  /**
+   * Reset all gameplay systems to a clean state.
+   * Called by all restart paths to ensure consistent reset behavior.
+   * This eliminates the class of bugs where one restart path forgets to reset a system.
+   */
+  private resetGameplaySystems(): void {
+    // Combo system
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.comboMultiplier = 1;
+    this.nearMissTimer = 0;
+    this.nearMissCount = 0;
+    this.comboMeterPulse = 0;
+
+    // Milestone tracking
+    this.nearMissStreak = 0;
+    this.perfectLandingCount = 0;
+    this.lastComboMilestone = 0;
+    this.milestoneQueue = [];
+    this.currentMilestone = null;
+
+    // Core gameplay systems
+    this.modifiers.resetForLevel();
+    this.flowMeter.reset();
+    this.beatHazards.reset();
+    this.timeRewind.reset();
+    this.isWaitingForRewindInput = false;
+    this.rewindInputWindow = 0;
+    this.deathTimer = 0;
+
+    // Particles and effects
+    this.particles.clear();
+
+    // Beat synchronization
+    const config = this.level?.getConfig();
+    if (config) {
+      this.currentBPM = config.bpm || 128;
+      this.loadBeatHazardsForLevel(config.id);
+    }
+    this.beatTimer = 0;
+    this.currentBeatNumber = 0;
+  }
+
   // Quick restart the current level
   private quickRestart(): void {
     if (this.isEndlessMode) {
@@ -1432,7 +1514,7 @@ export class Game {
       this.attempts = 1;
       this.speedMultiplier = 1.0;
       this.jumpCount = 0;
-    this.prevAirJumpsRemaining = 4;
+      this.prevAirJumpsRemaining = 4;
       this.audio.resetGameSpeed();
     } else {
       // Restart current level
@@ -1443,18 +1525,7 @@ export class Game {
       this.checkpointY = this.level.playerStart.y;
       this.lastCheckpointProgress = 0;
     }
-    // Clear particles and reset effects
-    this.particles.clear();
-    this.comboCount = 0;
-    this.comboTimer = 0;
-    this.comboMultiplier = 1;
-    this.nearMissTimer = 0;
-    this.nearMissCount = 0;
-    this.comboMeterPulse = 0;
-    // Reset milestone tracking
-    this.nearMissStreak = 0;
-    this.perfectLandingCount = 0;
-    this.lastComboMilestone = 0;
+    this.resetGameplaySystems();
     this.audio.start();
   }
 
@@ -1468,8 +1539,8 @@ export class Game {
     this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
 
-    // Reset modifier timers for new level
-    this.modifiers.resetForLevel();
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
 
     // Initialize level timing and stats
     this.levelStartTime = performance.now();
@@ -1480,7 +1551,6 @@ export class Game {
     this.splitTimes = [];
     this.lastCheckpointIndex = 0;
     this.splitDisplay = null;
-    // Load best split times for this level (stored in save data)
     this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
 
     // Reset encouragement and celebration
@@ -1488,30 +1558,6 @@ export class Game {
     this.encouragementMessage = null;
     this.celebrationActive = false;
     this.celebrationTimer = 0;
-
-    // Initialize BPM for beat visualization
-    const config = this.level.getConfig();
-    this.currentBPM = config.bpm || 128;
-    this.beatTimer = 0;
-    this.currentBeatNumber = 0;
-
-    // Reset new systems for level
-    this.flowMeter.reset();
-    this.beatHazards.reset();
-    this.timeRewind.reset();
-    this.isWaitingForRewindInput = false;
-    this.rewindInputWindow = 0;
-    this.deathTimer = 0;
-
-    // Reset milestone tracking for new level
-    this.nearMissStreak = 0;
-    this.perfectLandingCount = 0;
-    this.lastComboMilestone = 0;
-    this.milestoneQueue = [];
-    this.currentMilestone = null;
-
-    // Load beat hazards for this level (example hazards for demo)
-    this.loadBeatHazardsForLevel(levelId);
 
     // Start ghost recording
     this.ghostManager.startRecording();
@@ -1732,6 +1778,9 @@ export class Game {
     this.checkpointX = this.level.playerStart.x;
     this.checkpointY = this.level.playerStart.y;
     this.lastCheckpointProgress = 0;
+
+    this.resetGameplaySystems();
+
     this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
     this.audio.start();
   }
@@ -1814,14 +1863,22 @@ export class Game {
         y = baseY - 40 - Math.random() * heightVariation;
       }
 
-      // Platform type selection
+      // Platform type selection — progressive unlocking
       let type: PlatformType = 'solid';
       const typeRoll = Math.random();
 
-      if (difficulty > 0.2 && typeRoll < 0.1) {
-        type = 'bounce';
+      if (difficulty > 0.7 && typeRoll < 0.06) {
+        type = 'crumble'; // High difficulty: time-pressure platforms
+      } else if (difficulty > 0.6 && typeRoll < 0.08) {
+        type = 'phase';   // Mid-high difficulty: timing platforms
+      } else if (difficulty > 0.5 && typeRoll < 0.10) {
+        type = 'conveyor'; // Mid difficulty: directional challenge
       } else if (difficulty > 0.4 && typeRoll < 0.15) {
-        type = 'ice';
+        type = 'ice';      // Mid difficulty: momentum control
+      } else if (difficulty > 0.3 && typeRoll < 0.12) {
+        type = 'moving';   // Early-mid: tracking challenge
+      } else if (difficulty > 0.2 && typeRoll < 0.1) {
+        type = 'bounce';   // Early: timing variety
       }
 
       this.endlessPlatforms.push(new Platform({
@@ -1832,14 +1889,31 @@ export class Game {
         type,
       }));
 
-      // Sometimes add spikes (more frequent at higher difficulty)
-      if (difficulty > 0.3 && Math.random() < 0.2 + difficulty * 0.2) {
+      // Coin rewards on platforms (more common at lower difficulty)
+      if (Math.random() < 0.3 - difficulty * 0.1) {
+        // Coins are handled elsewhere, but elevated platforms are rewarding
+      }
+
+      // Hazard generation — progressively harder
+      if (difficulty > 0.3 && Math.random() < 0.15 + difficulty * 0.25) {
+        // Spike hazards between platforms
         this.endlessPlatforms.push(new Platform({
           x: x + width + 20,
           y: baseY,
-          width: 30,
+          width: 30 + Math.floor(difficulty * 20),
           height: 30,
           type: 'spike',
+        }));
+      }
+
+      // At high difficulty, add secondary platforms above for alternate routes
+      if (difficulty > 0.5 && Math.random() < 0.15) {
+        this.endlessPlatforms.push(new Platform({
+          x: x + width * 0.3,
+          y: y - 100 - Math.random() * 60,
+          width: width * 0.6,
+          height: GROUND_HEIGHT,
+          type: Math.random() < 0.3 ? 'bounce' : 'solid',
         }));
       }
 
@@ -1962,6 +2036,22 @@ export class Game {
     }
     this.audio.stop();
     this.input.destroy();
+
+    // Remove all event listeners to prevent memory leaks
+    window.removeEventListener('resize', this.boundHandleResize);
+    window.removeEventListener('orientationchange', this.boundHandleOrientationChange);
+    window.removeEventListener('beforeunload', this.boundHandleBeforeUnload);
+    document.removeEventListener('visibilitychange', this.boundHandleVisibilityChange);
+    window.removeEventListener('keydown', this.boundHandleKeyDown);
+    window.removeEventListener('keyup', this.boundHandleKeyUp);
+    this.canvas.removeEventListener('click', this.boundHandleClick);
+    this.canvas.removeEventListener('touchstart', this.boundHandleTouchStart);
+    this.canvas.removeEventListener('touchmove', this.boundHandleTouchMove);
+    this.canvas.removeEventListener('touchend', this.boundHandleTouchEnd);
+    this.canvas.removeEventListener('mousemove', this.boundHandleMouseMove);
+    this.canvas.removeEventListener('mouseup', this.boundHandleMouseUp);
+    this.canvas.removeEventListener('mousedown', this.boundHandleMouseDown);
+    this.canvas.removeEventListener('wheel', this.boundHandleWheel);
   }
 
   private update(deltaTime: number): void {
@@ -2976,7 +3066,8 @@ export class Game {
         const baseScore = 1000;
         const attemptPenalty = (this.attempts - 1) * 50;
         const coinBonus = this.level.coinsCollected * 100;
-        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus;
+        const gemBonus = this.levelScoreThisRun; // Preserve accumulated gem points
+        const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus + gemBonus;
 
         // Apply modifier score multiplier (higher score for harder modifiers)
         const modifierMultiplier = this.modifiers.getScoreMultiplier();
@@ -3653,7 +3744,7 @@ export class Game {
       this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
       // Draw combo meter fill based on timer
-      const fillPercent = this.comboTimer / this.comboDuration;
+      const fillPercent = Math.max(0, Math.min(1, this.comboTimer / this.comboDuration));
       const pulseBoost = this.comboMeterPulse * 0.1;
 
       // Color based on combo tier
@@ -6064,7 +6155,7 @@ export class Game {
     // Generate initial seeded platforms
     const seedPlatforms = this.challengeManager.generateChallengePlatforms(challenge.seed, this.nextPlatformX, 20);
     for (const p of seedPlatforms) {
-      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type }));
     }
     if (seedPlatforms.length > 0) {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
@@ -6102,6 +6193,7 @@ export class Game {
     this.jumpCount = 0;
     this.prevAirJumpsRemaining = 4;
     this.challengeCoinsCollected = 0;
+    this.challengeScore = 0;
     this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
@@ -6115,7 +6207,7 @@ export class Game {
     // Generate initial seeded platforms
     const seedPlatforms = this.challengeManager.generateChallengePlatforms(this.currentChallenge.seed, this.nextPlatformX, 20);
     for (const p of seedPlatforms) {
-      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type as any }));
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type }));
     }
     if (seedPlatforms.length > 0) {
       this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
@@ -6132,6 +6224,9 @@ export class Game {
 
     // Clear any active powerups
     this.powerUps.clear();
+
+    // Reset all gameplay systems
+    this.resetGameplaySystems();
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
@@ -6634,13 +6729,14 @@ export class Game {
 
   // ==================== LEVEL EDITOR METHODS ====================
 
-  private openEditor(levelToEdit?: CustomLevel): void {
+  private async openEditor(levelToEdit?: CustomLevel): Promise<void> {
     if (levelToEdit) {
       this.editingLevel = levelToEdit;
     } else {
       this.editingLevel = this.customLevelManager.createNewLevel();
     }
-    this.editor = new LevelEditor(this.editingLevel);
+    const EditorClass = await loadLevelEditor();
+    this.editor = new EditorClass(this.editingLevel);
     this.editor.setOnSave(() => this.saveCurrentLevel());
     this.editor.setOnPlay((pos) => this.testLevel(pos));
     this.state.gameStatus = 'editor';
@@ -7359,7 +7455,7 @@ export class Game {
     this.state.gameStatus = 'editorTest';
   }
 
-  private returnToEditor(): void {
+  private async returnToEditor(): Promise<void> {
     if (this.editingLevel) {
       const editorWidth = GAME_WIDTH + 200;
       const editorHeight = GAME_HEIGHT + 60;
@@ -7369,7 +7465,8 @@ export class Game {
       this.canvas.style.height = `${editorHeight}px`;
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.setupCrispRendering();
-      this.editor = new LevelEditor(this.editingLevel);
+      const EditorClass = await loadLevelEditor();
+      this.editor = new EditorClass(this.editingLevel);
       this.editor.setOnSave(() => this.saveCurrentLevel());
       this.editor.setOnPlay((pos) => this.testLevel(pos));
       this.state.gameStatus = 'editor';

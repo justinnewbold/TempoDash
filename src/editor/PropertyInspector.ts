@@ -416,7 +416,8 @@ export class PropertyInspector {
       ctx.fill();
 
       // Slider fill
-      const progress = (field.value - field.min) / (field.max - field.min);
+      const range = field.max - field.min;
+      const progress = range > 0 ? (field.value - field.min) / range : 0;
       ctx.fillStyle = '#9966ff';
       ctx.beginPath();
       ctx.roundRect(fx, trackY, trackWidth * progress, 16, 8);

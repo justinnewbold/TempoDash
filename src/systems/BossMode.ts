@@ -69,7 +69,7 @@ export class BossManager {
   // Attacks
   private attackTimer = 0;
   private projectiles: Projectile[] = [];
-  private stompWarningY = -1;
+  private stompWarningX = -1;
   private stompTimer = 0;
   private stompResetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -218,15 +218,15 @@ export class BossManager {
         this.attackTimer += deltaTime;
         const stompInterval = this.bossConfig.attackInterval / speedMultiplier;
 
-        if (this.stompWarningY < 0 && this.attackTimer >= stompInterval) {
+        if (this.stompWarningX < 0 && this.attackTimer >= stompInterval) {
           // Start stomp warning
-          this.stompWarningY = playerX;
+          this.stompWarningX = playerX;
           this.stompTimer = 800; // Warning duration
           this.attackTimer = 0;
           warning = true;
         }
 
-        if (this.stompWarningY >= 0) {
+        if (this.stompWarningX >= 0) {
           this.stompTimer -= deltaTime;
           warning = true;
 
@@ -235,7 +235,7 @@ export class BossManager {
             this.bossY = GAME_HEIGHT - this.bossConfig.size;
 
             // Check if player is in stomp zone
-            if (Math.abs(playerX - this.stompWarningY) < this.bossConfig.size) {
+            if (Math.abs(playerX - this.stompWarningX) < this.bossConfig.size) {
               hitPlayer = true;
             }
 
@@ -245,7 +245,7 @@ export class BossManager {
             }
             this.stompResetTimer = setTimeout(() => {
               this.bossY = -100;
-              this.stompWarningY = -1;
+              this.stompWarningX = -1;
               this.stompResetTimer = null;
             }, 300);
           }
@@ -385,8 +385,8 @@ export class BossManager {
     }
 
     // Render stomp warning
-    if (this.stompWarningY >= 0 && this.bossConfig.type === 'stomper') {
-      const warningX = this.stompWarningY - cameraX;
+    if (this.stompWarningX >= 0 && this.bossConfig.type === 'stomper') {
+      const warningX = this.stompWarningX - cameraX;
       const warningAlpha = Math.sin(this.animTimer / 50) * 0.3 + 0.5;
 
       ctx.fillStyle = `rgba(255, 0, 0, ${warningAlpha})`;

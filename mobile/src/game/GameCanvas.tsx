@@ -43,6 +43,7 @@ export function GameCanvas({
   level,
   onGameOver,
   onLevelComplete,
+  onPause,
 }: GameCanvasProps) {
   const canvasRef = useCanvasRef();
   const engineRef = useRef<GameEngine>(new GameEngine());
