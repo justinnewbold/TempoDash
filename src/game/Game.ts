@@ -10,7 +10,16 @@ import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
 import { PlatformType } from '../types';
-import { LevelEditor } from '../editor/LevelEditor';
+// LevelEditor is lazy-loaded to reduce initial bundle size (~2800 lines)
+type LevelEditor = import('../editor/LevelEditor').LevelEditor;
+let LevelEditorClass: (new (...args: any[]) => LevelEditor) | null = null;
+async function loadLevelEditor(): Promise<new (...args: any[]) => LevelEditor> {
+  if (!LevelEditorClass) {
+    const module = await import('../editor/LevelEditor');
+    LevelEditorClass = module.LevelEditor;
+  }
+  return LevelEditorClass;
+}
 import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
@@ -6720,13 +6729,14 @@ export class Game {
 
   // ==================== LEVEL EDITOR METHODS ====================
 
-  private openEditor(levelToEdit?: CustomLevel): void {
+  private async openEditor(levelToEdit?: CustomLevel): Promise<void> {
     if (levelToEdit) {
       this.editingLevel = levelToEdit;
     } else {
       this.editingLevel = this.customLevelManager.createNewLevel();
     }
-    this.editor = new LevelEditor(this.editingLevel);
+    const EditorClass = await loadLevelEditor();
+    this.editor = new EditorClass(this.editingLevel);
     this.editor.setOnSave(() => this.saveCurrentLevel());
     this.editor.setOnPlay((pos) => this.testLevel(pos));
     this.state.gameStatus = 'editor';
@@ -7445,7 +7455,7 @@ export class Game {
     this.state.gameStatus = 'editorTest';
   }
 
-  private returnToEditor(): void {
+  private async returnToEditor(): Promise<void> {
     if (this.editingLevel) {
       const editorWidth = GAME_WIDTH + 200;
       const editorHeight = GAME_HEIGHT + 60;
@@ -7455,7 +7465,8 @@ export class Game {
       this.canvas.style.height = `${editorHeight}px`;
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.setupCrispRendering();
-      this.editor = new LevelEditor(this.editingLevel);
+      const EditorClass = await loadLevelEditor();
+      this.editor = new EditorClass(this.editingLevel);
       this.editor.setOnSave(() => this.saveCurrentLevel());
       this.editor.setOnPlay((pos) => this.testLevel(pos));
       this.state.gameStatus = 'editor';
