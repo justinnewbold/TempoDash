@@ -24,6 +24,9 @@ export class ParticleEffects {
   private trailSpawnTimer = 0;
   private static readonly TRAIL_SPAWN_INTERVAL = 30; // ms between trail particles
 
+  // Adaptive particle budget: skip spawns when too many active particles
+  private static readonly MAX_ACTIVE_PARTICLES = 300;
+
   // Track firework show timeouts for cleanup
   private fireworkTimeouts: ReturnType<typeof setTimeout>[] = [];
 
@@ -194,6 +197,7 @@ export class ParticleEffects {
 
   // Spawn wall slide sparks
   spawnWallSparks(x: number, y: number, side: 'left' | 'right'): void {
+    if (this.isOverBudget()) return;
     const particle = this.sparkParticles.acquire();
     if (!particle) return;
 
@@ -247,6 +251,7 @@ export class ParticleEffects {
 
   // Spawn ice slide particles
   spawnIceSlide(x: number, y: number): void {
+    if (this.isOverBudget()) return;
     const particle = this.sparkParticles.acquire();
     if (!particle) return;
 
@@ -359,6 +364,7 @@ export class ParticleEffects {
 
   // Spawn rainbow trail particle
   spawnRainbowTrail(x: number, y: number, hueOffset: number): void {
+    if (this.isOverBudget()) return;
     const particle = this.trailParticles.acquire();
     if (!particle) return;
 
@@ -371,6 +377,11 @@ export class ParticleEffects {
     particle.maxLifetime = 400;
   }
 
+  /** Check if we're over the particle budget and should skip non-essential spawns */
+  private isOverBudget(): boolean {
+    return this.getActiveCount() > ParticleEffects.MAX_ACTIVE_PARTICLES;
+  }
+
   // Update trail spawning based on player movement
   updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean): void {
     if (!isMoving) return;
@@ -378,6 +389,9 @@ export class ParticleEffects {
     this.trailSpawnTimer += deltaTime;
     if (this.trailSpawnTimer >= ParticleEffects.TRAIL_SPAWN_INTERVAL) {
       this.trailSpawnTimer = 0;
+
+      // Skip trail particles when over budget to maintain frame rate
+      if (this.isOverBudget()) return;
 
       if (isDashing) {
         this.spawnDashTrail(playerX, playerY, playerColor);

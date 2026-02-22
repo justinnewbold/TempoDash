@@ -139,6 +139,10 @@ export class Game {
   private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
   private static readonly MAX_SPEED_MULTIPLIER = 3.0; // Cap to prevent runaway speed
 
+  // Performance: adaptive quality to maintain frame rate at high tempo
+  private frameTimeHistory: number[] = [];
+  private reducedEffects = false; // true when FPS drops, reduces shadowBlur and particles
+
   // Orientation and screen sizing
   private isPortrait = false;
   private orientationMessageTimer = 0;
@@ -2000,6 +2004,21 @@ export class Game {
       const rawDeltaTime = Math.min(currentTime - this.lastTime, 50);
       this.lastTime = currentTime;
 
+      // Track frame times for adaptive quality (rolling window of 30 frames)
+      this.frameTimeHistory.push(rawDeltaTime);
+      if (this.frameTimeHistory.length > 30) {
+        this.frameTimeHistory.shift();
+      }
+      // Enable reduced effects if average frame time exceeds ~22ms (below 45fps)
+      if (this.frameTimeHistory.length >= 10) {
+        let sum = 0;
+        for (let i = 0; i < this.frameTimeHistory.length; i++) {
+          sum += this.frameTimeHistory[i];
+        }
+        const avgFrameTime = sum / this.frameTimeHistory.length;
+        this.reducedEffects = avgFrameTime > 22;
+      }
+
       // Update screen effects with raw time (so animations always play)
       this.screenEffects.update(rawDeltaTime);
 
@@ -3228,11 +3247,34 @@ export class Game {
     }
   }
 
+  // Saved original shadowBlur descriptor for adaptive quality toggling
+  private static shadowBlurDescriptor: PropertyDescriptor | null = null;
+
   private render(): void {
     // Editor mode has its own rendering
     if (this.state.gameStatus === 'editor') {
       this.renderEditor();
       return;
+    }
+
+    // Adaptive quality: when FPS drops, disable all shadowBlur calls via property override.
+    // This is far cheaper than checking each of the 100+ shadowBlur assignments individually.
+    if (this.reducedEffects) {
+      if (!Game.shadowBlurDescriptor) {
+        Game.shadowBlurDescriptor = Object.getOwnPropertyDescriptor(
+          CanvasRenderingContext2D.prototype, 'shadowBlur'
+        ) || null;
+      }
+      if (Game.shadowBlurDescriptor) {
+        Object.defineProperty(this.ctx, 'shadowBlur', {
+          get: () => 0,
+          set: () => {},
+          configurable: true,
+        });
+      }
+    } else if (this.ctx.hasOwnProperty('shadowBlur')) {
+      // Restore original shadowBlur behavior when FPS recovers
+      delete (this.ctx as any).shadowBlur;
     }
 
     // Get shake offset
