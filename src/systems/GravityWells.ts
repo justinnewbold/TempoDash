@@ -193,6 +193,7 @@ export class GravityWellManager {
   }
 
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    if (this.wells.length === 0) return;
     for (const well of this.wells) {
       well.render(ctx, cameraX);
     }

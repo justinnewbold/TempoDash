@@ -348,6 +348,7 @@ export class BeatHazardManager {
   }
 
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    if (this.hazards.length === 0) return;
     for (const hazard of this.hazards) {
       hazard.render(ctx, cameraX);
     }

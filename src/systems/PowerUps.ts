@@ -170,6 +170,7 @@ export class PowerUpManager {
 
   // Render power-ups
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
+    if (this.powerUps.length === 0) return;
     for (const powerUp of this.powerUps) {
       if (powerUp.collected) continue;
 

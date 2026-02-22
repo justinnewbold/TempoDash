@@ -11,6 +11,7 @@ export class Level {
   id: number;
   name: string;
   platforms: Platform[] = [];
+  secretPlatforms: Platform[] = []; // Subset of platforms for efficient secret-reveal checks
   coins: Coin[] = [];
   coinsCollected = 0;
   totalCoins = 0;
@@ -34,7 +35,11 @@ export class Level {
 
     // Create platforms
     for (const platformConfig of config.platforms) {
-      this.platforms.push(new Platform(platformConfig));
+      const platform = new Platform(platformConfig);
+      this.platforms.push(platform);
+      if (platformConfig.type === 'secret') {
+        this.secretPlatforms.push(platform);
+      }
     }
 
     // Create coins
@@ -77,8 +82,13 @@ export class Level {
   reset(): void {
     // Reset platforms (recreate from config to clear crumble/glass/phase state)
     this.platforms = [];
+    this.secretPlatforms = [];
     for (const platformConfig of this.config.platforms) {
-      this.platforms.push(new Platform(platformConfig));
+      const platform = new Platform(platformConfig);
+      this.platforms.push(platform);
+      if (platformConfig.type === 'secret') {
+        this.secretPlatforms.push(platform);
+      }
     }
 
     // Reset coins

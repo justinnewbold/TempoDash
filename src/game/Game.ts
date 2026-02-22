@@ -2017,6 +2017,8 @@ export class Game {
         }
         const avgFrameTime = sum / this.frameTimeHistory.length;
         this.reducedEffects = avgFrameTime > 22;
+        Platform.setReducedEffects(this.reducedEffects);
+        ParticleEffects.setReducedEffects(this.reducedEffects);
       }
 
       // Update screen effects with raw time (so animations always play)
@@ -2426,7 +2428,8 @@ export class Game {
       this.player.y + this.player.height / 2,
       playerColor,
       isMoving,
-      this.player.isDashing
+      this.player.isDashing,
+      effectiveSpeedMultiplier
     );
 
     // Update chase mode (wall of death)
@@ -2487,10 +2490,10 @@ export class Game {
     // Update ghost playback
     this.ghostManager.update(deltaTime);
 
-    // Check secret platform reveals
+    // Check secret platform reveals (only iterate secret platforms, not all)
     const playerCenterX = this.player.x + this.player.width / 2;
     const playerCenterY = this.player.y + this.player.height / 2;
-    for (const platform of activePlatforms) {
+    for (const platform of this.level.secretPlatforms) {
       if (platform.checkSecretReveal(playerCenterX, playerCenterY)) {
         // Secret platform revealed! Add feedback
         this.audio.playCoinCollect();
@@ -2503,6 +2506,7 @@ export class Game {
     if (magnetRange > 0) {
       const playerCenterX = this.player.x + this.player.width / 2;
       const playerCenterY = this.player.y + this.player.height / 2;
+      const magnetRangeSq = magnetRange * magnetRange; // Pre-compute squared threshold
 
       // Attract level coins
       for (const coin of this.level.coins) {
@@ -2510,9 +2514,10 @@ export class Game {
 
         const dx = playerCenterX - coin.x;
         const dy = playerCenterY - coin.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Use squared distance to avoid Math.sqrt per coin per frame
+        const distSq = dx * dx + dy * dy;
 
-        if (distance < magnetRange) {
+        if (distSq < magnetRangeSq) {
           coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
         }
       }
@@ -2524,9 +2529,9 @@ export class Game {
 
           const dx = playerCenterX - coin.x;
           const dy = playerCenterY - coin.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+          const distSq = dx * dx + dy * dy;
 
-          if (distance < magnetRange) {
+          if (distSq < magnetRangeSq) {
             coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
           }
         }
@@ -2550,15 +2555,17 @@ export class Game {
 
     // Near-miss detection - check if player is close to spikes/lava without dying
     const nearMissDistance = 15; // pixels
+    const nearMissDistSq = nearMissDistance * nearMissDistance; // Pre-compute squared threshold
     const playerBounds = this.player.getBounds();
     for (const platform of activePlatforms) {
       if (platform.type === 'spike' || platform.type === 'lava') {
         const platBounds = platform.getBounds();
         const dx = Math.max(0, Math.max(platBounds.x - (playerBounds.x + playerBounds.width), playerBounds.x - (platBounds.x + platBounds.width)));
         const dy = Math.max(0, Math.max(platBounds.y - (playerBounds.y + playerBounds.height), playerBounds.y - (platBounds.y + platBounds.height)));
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Use squared distance to avoid expensive Math.sqrt per platform per frame
+        const distSq = dx * dx + dy * dy;
 
-        if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
+        if (distSq < nearMissDistSq && distSq > 0 && this.nearMissTimer <= 0) {
           // Near miss! Add to combo and Flow Meter
           this.nearMissCount++;
           this.nearMissStreak++;
