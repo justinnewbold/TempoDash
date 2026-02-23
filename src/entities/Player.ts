@@ -414,7 +414,14 @@ export class Player {
     const wasGrounded = this.isGrounded;
     this.isGrounded = false;
 
+    // Spatial culling: only check platforms near the player (generous margin for fast movement)
+    const cullMargin = 200;
+    const playerLeft = this.x - cullMargin;
+    const playerRight = this.x + this.width + cullMargin;
+
     for (const platform of platforms) {
+      // Quick spatial reject before expensive checks
+      if (platform.x + platform.width < playerLeft || platform.x > playerRight) continue;
       if (!platform.isCollidable()) continue;
 
       const collision = this.checkCollision(platform);

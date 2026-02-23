@@ -93,6 +93,9 @@ export class Background {
   private cachedScanlinesPattern: CanvasPattern | null = null;
   private cachedScanlinesCtx: CanvasRenderingContext2D | null = null;
 
+  // Cached static gradients to avoid per-frame recreation
+  private cachedStaticGradients: Map<string, CanvasGradient> = new Map();
+
   // Effect-specific data
   private stars: Star[] = [];
   private particles: Particle[] = [];
@@ -331,6 +334,28 @@ export class Background {
 
     // Initialize bubbles for ocean
     this.initializeBubbles();
+  }
+
+  /** Get or create a cached linear gradient. Key must be unique per gradient. */
+  private getCachedLinearGradient(
+    ctx: CanvasRenderingContext2D,
+    key: string,
+    x0: number, y0: number, x1: number, y1: number,
+    stops: [number, string][]
+  ): CanvasGradient {
+    // Invalidate cache if context changed
+    if (this.cachedCtx !== ctx) {
+      this.cachedStaticGradients.clear();
+    }
+    let gradient = this.cachedStaticGradients.get(key);
+    if (!gradient) {
+      gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+      for (const [offset, color] of stops) {
+        gradient.addColorStop(offset, color);
+      }
+      this.cachedStaticGradients.set(key, gradient);
+    }
+    return gradient;
   }
 
   update(deltaTime: number): void {
@@ -740,13 +765,11 @@ export class Background {
   private drawVolcanoBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const parallax = cameraX * 0.05;
 
-    // Fiery sky gradient
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT * 0.6);
-    skyGradient.addColorStop(0, '#1a0500');
-    skyGradient.addColorStop(0.3, '#3d0a00');
-    skyGradient.addColorStop(0.6, '#5c1500');
-    skyGradient.addColorStop(1, '#8b2500');
-    ctx.fillStyle = skyGradient;
+    // Fiery sky gradient (cached - static colors)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'volcano-sky',
+      0, 0, 0, GAME_HEIGHT * 0.6,
+      [[0, '#1a0500'], [0.3, '#3d0a00'], [0.6, '#5c1500'], [1, '#8b2500']]
+    );
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.6);
 
     // Distant volcano silhouette with glow
@@ -800,12 +823,11 @@ export class Background {
     }
     ctx.shadowBlur = 0;
 
-    // Ground lava pools
-    const lavaGround = ctx.createLinearGradient(0, GAME_HEIGHT * 0.7, 0, GAME_HEIGHT);
-    lavaGround.addColorStop(0, '#2d0500');
-    lavaGround.addColorStop(0.3, '#4d0a00');
-    lavaGround.addColorStop(1, '#1a0500');
-    ctx.fillStyle = lavaGround;
+    // Ground lava pools (cached)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'volcano-ground',
+      0, GAME_HEIGHT * 0.7, 0, GAME_HEIGHT,
+      [[0, '#2d0500'], [0.3, '#4d0a00'], [1, '#1a0500']]
+    );
     ctx.fillRect(0, GAME_HEIGHT * 0.7, GAME_WIDTH, GAME_HEIGHT * 0.3);
 
     // Animated lava pools
@@ -840,13 +862,11 @@ export class Background {
   private drawOceanBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const parallax = cameraX * 0.08;
 
-    // Deep ocean gradient
-    const oceanGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    oceanGradient.addColorStop(0, '#001a33');
-    oceanGradient.addColorStop(0.3, '#002244');
-    oceanGradient.addColorStop(0.6, '#003366');
-    oceanGradient.addColorStop(1, '#001a2e');
-    ctx.fillStyle = oceanGradient;
+    // Deep ocean gradient (cached)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'ocean-deep',
+      0, 0, 0, GAME_HEIGHT,
+      [[0, '#001a33'], [0.3, '#002244'], [0.6, '#003366'], [1, '#001a2e']]
+    );
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Caustic light rays from surface
@@ -999,15 +1019,11 @@ export class Background {
   private drawInfernoBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const parallax = cameraX * 0.06;
 
-    // Intense fiery sky gradient - more aggressive than volcano
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    skyGradient.addColorStop(0, '#0a0000');
-    skyGradient.addColorStop(0.2, '#1a0500');
-    skyGradient.addColorStop(0.4, '#3d0800');
-    skyGradient.addColorStop(0.6, '#5c1000');
-    skyGradient.addColorStop(0.8, '#7d1800');
-    skyGradient.addColorStop(1, '#3d0500');
-    ctx.fillStyle = skyGradient;
+    // Intense fiery sky gradient - more aggressive than volcano (cached)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'inferno-sky',
+      0, 0, 0, GAME_HEIGHT,
+      [[0, '#0a0000'], [0.2, '#1a0500'], [0.4, '#3d0800'], [0.6, '#5c1000'], [0.8, '#7d1800'], [1, '#3d0500']]
+    );
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Pulsing danger glow from left (the wall is coming!)
@@ -1038,12 +1054,11 @@ export class Background {
     }
     ctx.shadowBlur = 0;
 
-    // Ground - charred and cracked
-    const groundGradient = ctx.createLinearGradient(0, GAME_HEIGHT * 0.75, 0, GAME_HEIGHT);
-    groundGradient.addColorStop(0, '#1a0800');
-    groundGradient.addColorStop(0.5, '#2d0a00');
-    groundGradient.addColorStop(1, '#0d0400');
-    ctx.fillStyle = groundGradient;
+    // Ground - charred and cracked (cached)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'inferno-ground',
+      0, GAME_HEIGHT * 0.75, 0, GAME_HEIGHT,
+      [[0, '#1a0800'], [0.5, '#2d0a00'], [1, '#0d0400']]
+    );
     ctx.fillRect(0, GAME_HEIGHT * 0.75, GAME_WIDTH, GAME_HEIGHT * 0.25);
 
     // Distant fire pillars
@@ -1091,13 +1106,11 @@ export class Background {
   private drawSkyBackground(ctx: CanvasRenderingContext2D, cameraX: number): void {
     const parallax = cameraX * 0.05;
 
-    // Beautiful sky gradient - light blue to white
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    skyGradient.addColorStop(0, '#4A90D9');
-    skyGradient.addColorStop(0.3, '#87CEEB');
-    skyGradient.addColorStop(0.6, '#B0E0E6');
-    skyGradient.addColorStop(1, '#E0F6FF');
-    ctx.fillStyle = skyGradient;
+    // Beautiful sky gradient - light blue to white (cached)
+    ctx.fillStyle = this.getCachedLinearGradient(ctx, 'sky-gradient',
+      0, 0, 0, GAME_HEIGHT,
+      [[0, '#4A90D9'], [0.3, '#87CEEB'], [0.6, '#B0E0E6'], [1, '#E0F6FF']]
+    );
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Sun in the corner

@@ -24,6 +24,16 @@ export class ParticleEffects {
   private trailSpawnTimer = 0;
   private static readonly TRAIL_SPAWN_INTERVAL = 30; // ms between trail particles
 
+  // Adaptive particle budget: skip spawns when too many active particles
+  private static readonly MAX_ACTIVE_PARTICLES = 300;
+
+  // Reduced effects mode: halve particle counts for expensive spawners
+  private static reducedEffects = false;
+
+  static setReducedEffects(enabled: boolean): void {
+    ParticleEffects.reducedEffects = enabled;
+  }
+
   // Track firework show timeouts for cleanup
   private fireworkTimeouts: ReturnType<typeof setTimeout>[] = [];
 
@@ -39,7 +49,7 @@ export class ParticleEffects {
 
   // Spawn death explosion particles
   spawnDeathExplosion(x: number, y: number, color: string = '#00ffaa'): void {
-    const particleCount = 20;
+    const particleCount = ParticleEffects.reducedEffects ? 10 : 20;
     for (let i = 0; i < particleCount; i++) {
       const particle = this.deathParticles.acquire();
       if (!particle) break;
@@ -153,7 +163,7 @@ export class ParticleEffects {
 
   // Spawn edge bounce burst (when player bounces off platform corner)
   spawnEdgeBounce(x: number, y: number, direction: 'left' | 'right'): void {
-    const particleCount = 12;
+    const particleCount = ParticleEffects.reducedEffects ? 6 : 12;
     const baseAngle = direction === 'left' ? Math.PI * 0.75 : Math.PI * 0.25;
 
     for (let i = 0; i < particleCount; i++) {
@@ -176,7 +186,7 @@ export class ParticleEffects {
 
   // Spawn bounce platform effect
   spawnBounceEffect(x: number, y: number, width: number): void {
-    const particleCount = 8;
+    const particleCount = ParticleEffects.reducedEffects ? 4 : 8;
     for (let i = 0; i < particleCount; i++) {
       const particle = this.burstParticles.acquire();
       if (!particle) break;
@@ -194,6 +204,7 @@ export class ParticleEffects {
 
   // Spawn wall slide sparks
   spawnWallSparks(x: number, y: number, side: 'left' | 'right'): void {
+    if (this.isOverBudget()) return;
     const particle = this.sparkParticles.acquire();
     if (!particle) return;
 
@@ -208,7 +219,7 @@ export class ParticleEffects {
 
   // Spawn power-up collect burst
   spawnPowerUpCollect(x: number, y: number, color: string): void {
-    const particleCount = 15;
+    const particleCount = ParticleEffects.reducedEffects ? 8 : 15;
     for (let i = 0; i < particleCount; i++) {
       const particle = this.burstParticles.acquire();
       if (!particle) break;
@@ -229,7 +240,7 @@ export class ParticleEffects {
 
   // Spawn gravity flip effect
   spawnGravityFlip(x: number, y: number, flipped: boolean): void {
-    const particleCount = 10;
+    const particleCount = ParticleEffects.reducedEffects ? 5 : 10;
     for (let i = 0; i < particleCount; i++) {
       const particle = this.burstParticles.acquire();
       if (!particle) break;
@@ -247,6 +258,7 @@ export class ParticleEffects {
 
   // Spawn ice slide particles
   spawnIceSlide(x: number, y: number): void {
+    if (this.isOverBudget()) return;
     const particle = this.sparkParticles.acquire();
     if (!particle) return;
 
@@ -261,7 +273,7 @@ export class ParticleEffects {
 
   // Spawn crumble particles when platform breaks
   spawnCrumble(x: number, y: number, width: number, height: number): void {
-    const particleCount = 12;
+    const particleCount = ParticleEffects.reducedEffects ? 6 : 12;
     for (let i = 0; i < particleCount; i++) {
       const particle = this.deathParticles.acquire();
       if (!particle) break;
@@ -283,9 +295,10 @@ export class ParticleEffects {
 
   // Spawn a firework burst at position
   spawnFirework(x: number, y: number, color?: string): void {
+    if (this.isOverBudget()) return;
     const colors = ['#ff0000', '#00ff00', '#0088ff', '#ff00ff', '#ffff00', '#00ffff', '#ff8800'];
     const burstColor = color || colors[Math.floor(Math.random() * colors.length)];
-    const particleCount = 30;
+    const particleCount = ParticleEffects.reducedEffects ? 15 : 30;
 
     for (let i = 0; i < particleCount; i++) {
       const particle = this.burstParticles.acquire();
@@ -337,8 +350,9 @@ export class ParticleEffects {
 
   // Spawn celebration confetti
   spawnConfetti(x: number, y: number, width: number): void {
+    if (this.isOverBudget()) return;
     const colors = ['#ff0000', '#00ff00', '#0088ff', '#ff00ff', '#ffff00', '#ff8800', '#00ffff'];
-    const particleCount = 40;
+    const particleCount = ParticleEffects.reducedEffects ? 20 : 40;
 
     for (let i = 0; i < particleCount; i++) {
       const particle = this.deathParticles.acquire();
@@ -359,6 +373,7 @@ export class ParticleEffects {
 
   // Spawn rainbow trail particle
   spawnRainbowTrail(x: number, y: number, hueOffset: number): void {
+    if (this.isOverBudget()) return;
     const particle = this.trailParticles.acquire();
     if (!particle) return;
 
@@ -371,13 +386,24 @@ export class ParticleEffects {
     particle.maxLifetime = 400;
   }
 
+  /** Check if we're over the particle budget and should skip non-essential spawns */
+  private isOverBudget(): boolean {
+    return this.getActiveCount() > ParticleEffects.MAX_ACTIVE_PARTICLES;
+  }
+
   // Update trail spawning based on player movement
-  updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean): void {
+  // speedMultiplier scales the spawn interval so trail density stays consistent at different speeds
+  updateTrail(deltaTime: number, playerX: number, playerY: number, playerColor: string, isMoving: boolean, isDashing: boolean, speedMultiplier: number = 1): void {
     if (!isMoving) return;
 
     this.trailSpawnTimer += deltaTime;
-    if (this.trailSpawnTimer >= ParticleEffects.TRAIL_SPAWN_INTERVAL) {
+    // Scale interval with speed: faster movement = more frequent spawns to maintain visual density
+    const scaledInterval = ParticleEffects.TRAIL_SPAWN_INTERVAL / Math.max(0.5, Math.min(speedMultiplier, 3));
+    if (this.trailSpawnTimer >= scaledInterval) {
       this.trailSpawnTimer = 0;
+
+      // Skip trail particles when over budget to maintain frame rate
+      if (this.isOverBudget()) return;
 
       if (isDashing) {
         this.spawnDashTrail(playerX, playerY, playerColor);

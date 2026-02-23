@@ -12,9 +12,15 @@ export class Platform {
 
   // Static colorblind mode setting
   private static colorblindMode = false;
+  // Static reduced effects flag (set from Game when frame rate drops)
+  private static reducedEffects = false;
 
   static setColorblindMode(enabled: boolean): void {
     Platform.colorblindMode = enabled;
+  }
+
+  static setReducedEffects(enabled: boolean): void {
+    Platform.reducedEffects = enabled;
   }
 
   // Rhythm Lock mode - platforms only solid on beat
@@ -158,9 +164,11 @@ export class Platform {
     }
   }
 
-  // Trigger beat pulse for visualization
+  // Trigger beat pulse for visualization (debounced: skip if previous pulse hasn't decayed enough)
   triggerBeatPulse(): void {
-    this.beatPulse = 1;
+    if (this.beatPulse < 0.5) {
+      this.beatPulse = 1;
+    }
   }
 
   getBeatPulse(): number {
@@ -285,10 +293,11 @@ export class Platform {
         const alpha = minAlpha + (1 - minAlpha) * solidity;
         ctx.globalAlpha *= alpha;
 
-        // Add pulsing glow when on beat
-        if (solidity > 0.5) {
+        // Add pulsing glow when on beat (skip expensive shadow blur when reducedEffects is active)
+        if (solidity > 0.5 && !Platform.reducedEffects) {
           ctx.shadowColor = '#ff00aa';
-          ctx.shadowBlur = 15 * solidity;
+          // Quantize blur to reduce canvas state changes (steps of 5)
+          ctx.shadowBlur = Math.round(solidity * 3) * 5;
         }
       }
     }
@@ -309,8 +318,22 @@ export class Platform {
     ctx.restore();
   }
 
+  // Flat color fallbacks used when reducedEffects is active (avoids gradient allocations)
+  private static readonly FLAT_COLORS: Partial<Record<PlatformType, string>> = {
+    bounce: '#ffa000',
+    ice: 'rgba(175, 220, 255, 0.85)',
+    lava: '#ff4400',
+    crumble: '#946030',
+    moving: '#2098d1',
+    conveyor: '#308858',
+    sticky: '#d9a030',
+    solid: '#4a5a6a',
+  };
+
   private drawPlatform(ctx: CanvasRenderingContext2D, screenX: number): void {
-    const gradient = ctx.createLinearGradient(
+    // When reducedEffects is active, use flat colors to avoid per-frame gradient allocations
+    const useFlat = Platform.reducedEffects;
+    const gradient = useFlat ? null : ctx.createLinearGradient(
       screenX,
       this.y,
       screenX,
@@ -321,8 +344,10 @@ export class Platform {
       case 'spike':
         // Draw triangular spikes (Geometry Dash style)
         ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#ff0000';
-        ctx.shadowBlur = 10;
+        if (!Platform.reducedEffects) {
+          ctx.shadowColor = '#ff0000';
+          ctx.shadowBlur = 10;
+        }
         const spikeHeight = Math.max(this.height, 1); // Prevent division by zero
         const spikeCount = Math.min(Math.floor(this.width / spikeHeight), 100); // Cap to prevent infinite loop
         const spikeWidth = spikeCount > 0 ? this.width / spikeCount : this.width;
@@ -338,9 +363,13 @@ export class Platform {
         break;
 
       case 'bounce':
-        gradient.addColorStop(0, '#ffc107');
-        gradient.addColorStop(1, '#ff9800');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#ffc107');
+          gradient.addColorStop(1, '#ff9800');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.bounce!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Bounce indicator lines
         ctx.strokeStyle = '#fff';
@@ -356,9 +385,13 @@ export class Platform {
         break;
 
       case 'ice':
-        gradient.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
-        gradient.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, 'rgba(200, 240, 255, 0.9)');
+          gradient.addColorStop(1, 'rgba(150, 200, 255, 0.8)');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.ice!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Ice shine effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -366,10 +399,14 @@ export class Platform {
         break;
 
       case 'lava':
-        gradient.addColorStop(0, '#ff4444');
-        gradient.addColorStop(0.5, '#ff6600');
-        gradient.addColorStop(1, '#ff2200');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#ff4444');
+          gradient.addColorStop(0.5, '#ff6600');
+          gradient.addColorStop(1, '#ff2200');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.lava!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Lava bubbles
         ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
@@ -384,9 +421,13 @@ export class Platform {
         break;
 
       case 'crumble':
-        gradient.addColorStop(0, '#a0522d');
-        gradient.addColorStop(1, '#8b4513');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#a0522d');
+          gradient.addColorStop(1, '#8b4513');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.crumble!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Crack lines
         ctx.strokeStyle = '#654321';
@@ -400,9 +441,13 @@ export class Platform {
         break;
 
       case 'moving':
-        gradient.addColorStop(0, '#4fc3f7');
-        gradient.addColorStop(1, '#0288d1');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#4fc3f7');
+          gradient.addColorStop(1, '#0288d1');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.moving!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Movement arrows
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -419,16 +464,20 @@ export class Platform {
         break;
 
       case 'phase':
-        const phaseGradient = ctx.createLinearGradient(
-          screenX,
-          this.y,
-          screenX + this.width,
-          this.y
-        );
-        phaseGradient.addColorStop(0, '#9c27b0');
-        phaseGradient.addColorStop(0.5, '#e040fb');
-        phaseGradient.addColorStop(1, '#9c27b0');
-        ctx.fillStyle = phaseGradient;
+        if (useFlat) {
+          ctx.fillStyle = '#b830d0';
+        } else {
+          const phaseGradient = ctx.createLinearGradient(
+            screenX,
+            this.y,
+            screenX + this.width,
+            this.y
+          );
+          phaseGradient.addColorStop(0, '#9c27b0');
+          phaseGradient.addColorStop(0.5, '#e040fb');
+          phaseGradient.addColorStop(1, '#9c27b0');
+          ctx.fillStyle = phaseGradient;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Phase particles
         ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -444,9 +493,13 @@ export class Platform {
 
       case 'conveyor':
         // Industrial green conveyor belt
-        gradient.addColorStop(0, '#38a169');
-        gradient.addColorStop(1, '#276749');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#38a169');
+          gradient.addColorStop(1, '#276749');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.conveyor!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Animated conveyor lines
         ctx.strokeStyle = '#2d3748';
@@ -474,11 +527,15 @@ export class Platform {
 
       case 'gravity':
         // Magical pink/purple gradient
-        const gravGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y + this.height);
-        gravGradient.addColorStop(0, '#d53f8c');
-        gravGradient.addColorStop(0.5, '#805ad5');
-        gravGradient.addColorStop(1, '#d53f8c');
-        ctx.fillStyle = gravGradient;
+        if (useFlat) {
+          ctx.fillStyle = '#b04cb0';
+        } else {
+          const gravGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y + this.height);
+          gravGradient.addColorStop(0, '#d53f8c');
+          gravGradient.addColorStop(0.5, '#805ad5');
+          gravGradient.addColorStop(1, '#d53f8c');
+          ctx.fillStyle = gravGradient;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Floating particles effect
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -510,9 +567,13 @@ export class Platform {
 
       case 'sticky':
         // Yellow/amber honey-like platform
-        gradient.addColorStop(0, '#ecc94b');
-        gradient.addColorStop(1, '#d69e2e');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#ecc94b');
+          gradient.addColorStop(1, '#d69e2e');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.sticky!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Dripping honey effect
         ctx.fillStyle = '#d69e2e';
@@ -563,14 +624,18 @@ export class Platform {
 
       case 'slowmo':
         // Cyan/blue time-warp zone
-        const slowmoGradient = ctx.createRadialGradient(
-          screenX + this.width / 2, this.y + this.height / 2, 0,
-          screenX + this.width / 2, this.y + this.height / 2, Math.max(this.width, this.height)
-        );
-        slowmoGradient.addColorStop(0, 'rgba(0, 200, 255, 0.4)');
-        slowmoGradient.addColorStop(0.5, 'rgba(0, 150, 255, 0.2)');
-        slowmoGradient.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
-        ctx.fillStyle = slowmoGradient;
+        if (useFlat) {
+          ctx.fillStyle = 'rgba(0, 150, 255, 0.25)';
+        } else {
+          const slowmoGradient = ctx.createRadialGradient(
+            screenX + this.width / 2, this.y + this.height / 2, 0,
+            screenX + this.width / 2, this.y + this.height / 2, Math.max(this.width, this.height)
+          );
+          slowmoGradient.addColorStop(0, 'rgba(0, 200, 255, 0.4)');
+          slowmoGradient.addColorStop(0.5, 'rgba(0, 150, 255, 0.2)');
+          slowmoGradient.addColorStop(1, 'rgba(0, 100, 255, 0.1)');
+          ctx.fillStyle = slowmoGradient;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Clock/time particles
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
@@ -595,11 +660,15 @@ export class Platform {
 
       case 'wall':
         // Vertical wall for wall-jumping (dark metallic)
-        const wallGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y);
-        wallGradient.addColorStop(0, '#4a5568');
-        wallGradient.addColorStop(0.5, '#718096');
-        wallGradient.addColorStop(1, '#4a5568');
-        ctx.fillStyle = wallGradient;
+        if (useFlat) {
+          ctx.fillStyle = '#5a6a80';
+        } else {
+          const wallGradient = ctx.createLinearGradient(screenX, this.y, screenX + this.width, this.y);
+          wallGradient.addColorStop(0, '#4a5568');
+          wallGradient.addColorStop(0.5, '#718096');
+          wallGradient.addColorStop(1, '#4a5568');
+          ctx.fillStyle = wallGradient;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Grip texture lines
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
@@ -632,11 +701,15 @@ export class Platform {
         } else {
           // Fade in golden platform
           ctx.globalAlpha = this.secretRevealProgress;
-          const secretGradient = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
-          secretGradient.addColorStop(0, '#ffd700');
-          secretGradient.addColorStop(0.5, '#ffec8b');
-          secretGradient.addColorStop(1, '#ffd700');
-          ctx.fillStyle = secretGradient;
+          if (useFlat) {
+            ctx.fillStyle = '#ffd700';
+          } else {
+            const secretGradient = ctx.createLinearGradient(screenX, this.y, screenX, this.y + this.height);
+            secretGradient.addColorStop(0, '#ffd700');
+            secretGradient.addColorStop(0.5, '#ffec8b');
+            secretGradient.addColorStop(1, '#ffd700');
+            ctx.fillStyle = secretGradient;
+          }
           ctx.fillRect(screenX, this.y, this.width, this.height);
           // Sparkle effect
           ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -660,9 +733,13 @@ export class Platform {
         break;
 
       default: // solid
-        gradient.addColorStop(0, '#5a6a7a');
-        gradient.addColorStop(1, '#3a4a5a');
-        ctx.fillStyle = gradient;
+        if (gradient) {
+          gradient.addColorStop(0, '#5a6a7a');
+          gradient.addColorStop(1, '#3a4a5a');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = Platform.FLAT_COLORS.solid!;
+        }
         ctx.fillRect(screenX, this.y, this.width, this.height);
         // Top highlight
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';

@@ -64,6 +64,10 @@ export class AudioManager {
   private intensitySmoothingFactor = 0.05;
   private enableDynamicMusic = true;
 
+  // Pre-rendered audio buffers for reuse (avoids per-hit allocations)
+  private snareBuffer: AudioBuffer | null = null;
+  private snareBufferSampleRate = 0;
+
   // Music presets from Neon Pulse Engine
   private presets: Record<MusicStyle, MusicPreset> = {
     // Neon Noir (90 BPM) - D Minor Blues: smooth, jazzy
@@ -197,6 +201,9 @@ export class AudioManager {
       this.sfxGain = this.audioContext.createGain();
       this.sfxGain.gain.value = this.sfxVolume;
       this.sfxGain.connect(this.masterGain);
+
+      // Pre-render snare noise buffer (reused on every snare hit instead of allocating new ones)
+      this.initSnareBuffer();
     } catch (e) {
       console.warn('Web Audio API not supported');
     }
@@ -271,6 +278,8 @@ export class AudioManager {
   }
 
   setStyle(style: MusicStyle): void {
+    if (style === this.currentStyle) return;
+
     const wasPlaying = this.isPlaying;
     if (wasPlaying) {
       this.stop();
@@ -280,7 +289,8 @@ export class AudioManager {
     this.currentPreset = this.presets[style];
 
     if (wasPlaying) {
-      this.start();
+      // Cross-fade: start new style at zero volume and ramp up
+      this.fadeIn(400);
     }
   }
 
@@ -444,6 +454,17 @@ export class AudioManager {
     osc.stop(time + 0.35);
   }
 
+  /** Pre-render a white noise buffer for snare reuse */
+  private initSnareBuffer(): void {
+    if (!this.audioContext) return;
+    const sampleRate = this.audioContext.sampleRate;
+    const bufferSize = sampleRate * 0.1;
+    this.snareBuffer = this.audioContext.createBuffer(1, bufferSize, sampleRate);
+    const data = this.snareBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    this.snareBufferSampleRate = sampleRate;
+  }
+
   // --- SYNTHESIZERS ---
 
   private playKick(time: number, vol: number): void {
@@ -464,13 +485,13 @@ export class AudioManager {
   private playSnare(time: number): void {
     if (!this.audioContext || !this.musicGain) return;
 
-    const bufferSize = this.audioContext.sampleRate * 0.1;
-    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    // Reuse pre-rendered noise buffer (re-create only if sample rate changed)
+    if (!this.snareBuffer || this.snareBufferSampleRate !== this.audioContext.sampleRate) {
+      this.initSnareBuffer();
+    }
 
     const noise = this.audioContext.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.snareBuffer;
 
     const filter = this.audioContext.createBiquadFilter();
     if (this.currentPreset.drumStyle === 'bit') {

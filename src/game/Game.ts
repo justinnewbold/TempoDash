@@ -139,6 +139,10 @@ export class Game {
   private static readonly SPEED_INCREASE_PER_JUMP = 0.01; // 1%
   private static readonly MAX_SPEED_MULTIPLIER = 3.0; // Cap to prevent runaway speed
 
+  // Performance: adaptive quality to maintain frame rate at high tempo
+  private frameTimeHistory: number[] = [];
+  private reducedEffects = false; // true when FPS drops, reduces shadowBlur and particles
+
   // Orientation and screen sizing
   private isPortrait = false;
   private orientationMessageTimer = 0;
@@ -891,12 +895,12 @@ export class Game {
       const panelX = 80;
       const panelY = 100;
       const panelW = GAME_WIDTH - 160;
-      const panelH = 300;
+      const panelH = 425;
 
       // Check if click is inside the panel
       if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
         // Check modifier button clicks
-        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible', 'rhythmLock', 'chaosMode', 'lowGravity', 'hyperSpeed'];
         const btnW = 180;
         const btnH = 50;
         const btnGapX = 20;
@@ -1574,6 +1578,9 @@ export class Game {
     } else {
       this.audio.start();
     }
+
+    // Smooth fade-in when entering a level
+    this.transition.startIn('fade', 250);
   }
 
   private startLevelAtSection(levelId: number, sectionIndex: number): void {
@@ -1733,20 +1740,32 @@ export class Game {
 
   private nextLevel(): void {
     if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.state.currentLevel++;
-      // Auto-unlock next level if not already (without spending points)
-      if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
-        this.save.grantLevel(this.state.currentLevel);
-      }
-      this.loadLevel(this.state.currentLevel);
-      this.attempts = 1;
-      this.levelScoreThisRun = 0;
-      this.isPracticeMode = false;
-      this.checkpointX = this.level.playerStart.x;
-      this.checkpointY = this.level.playerStart.y;
-      this.lastCheckpointProgress = 0;
-      this.state.gameStatus = 'playing';
-      this.audio.start();
+      // Fade out, load new level, fade in
+      this.transition.startOut('fade', 300, () => {
+        this.state.currentLevel++;
+        // Auto-unlock next level if not already (without spending points)
+        if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
+          this.save.grantLevel(this.state.currentLevel);
+        }
+        this.loadLevel(this.state.currentLevel);
+        this.attempts = 1;
+        this.levelScoreThisRun = 0;
+        this.isPracticeMode = false;
+        this.checkpointX = this.level.playerStart.x;
+        this.checkpointY = this.level.playerStart.y;
+        this.lastCheckpointProgress = 0;
+        this.state.gameStatus = 'playing';
+        this.resetGameplaySystems();
+        this.levelStartTime = performance.now();
+        this.levelElapsedTime = 0;
+        this.levelDeathCount = 0;
+        this.splitTimes = [];
+        this.lastCheckpointIndex = 0;
+        this.splitDisplay = null;
+        this.bestSplitTimes = this.save.getBestSplitTimes?.(this.state.currentLevel) || [];
+        this.audio.start();
+        this.transition.startIn('fade', 300);
+      });
     } else {
       this.state.gameStatus = 'mainMenu';
       this.audio.stop();
@@ -1999,6 +2018,23 @@ export class Game {
       const currentTime = performance.now();
       const rawDeltaTime = Math.min(currentTime - this.lastTime, 50);
       this.lastTime = currentTime;
+
+      // Track frame times for adaptive quality (rolling window of 30 frames)
+      this.frameTimeHistory.push(rawDeltaTime);
+      if (this.frameTimeHistory.length > 30) {
+        this.frameTimeHistory.shift();
+      }
+      // Enable reduced effects if average frame time exceeds ~22ms (below 45fps)
+      if (this.frameTimeHistory.length >= 10) {
+        let sum = 0;
+        for (let i = 0; i < this.frameTimeHistory.length; i++) {
+          sum += this.frameTimeHistory[i];
+        }
+        const avgFrameTime = sum / this.frameTimeHistory.length;
+        this.reducedEffects = avgFrameTime > 22;
+        Platform.setReducedEffects(this.reducedEffects);
+        ParticleEffects.setReducedEffects(this.reducedEffects);
+      }
 
       // Update screen effects with raw time (so animations always play)
       this.screenEffects.update(rawDeltaTime);
@@ -2407,8 +2443,13 @@ export class Game {
       this.player.y + this.player.height / 2,
       playerColor,
       isMoving,
-      this.player.isDashing
+      this.player.isDashing,
+      effectiveSpeedMultiplier
     );
+
+    // Update dynamic music reactivity — music responds to gameplay tension
+    this.audio.updatePlayerSpeed(Math.min(1, (effectiveSpeedMultiplier - 1) / 2)); // Normalize: 1x=0, 3x=1
+    this.audio.updateIntensity();
 
     // Update chase mode (wall of death)
     if (!this.isEndlessMode) {
@@ -2468,10 +2509,10 @@ export class Game {
     // Update ghost playback
     this.ghostManager.update(deltaTime);
 
-    // Check secret platform reveals
+    // Check secret platform reveals (only iterate secret platforms, not all)
     const playerCenterX = this.player.x + this.player.width / 2;
     const playerCenterY = this.player.y + this.player.height / 2;
-    for (const platform of activePlatforms) {
+    for (const platform of this.level.secretPlatforms) {
       if (platform.checkSecretReveal(playerCenterX, playerCenterY)) {
         // Secret platform revealed! Add feedback
         this.audio.playCoinCollect();
@@ -2484,6 +2525,7 @@ export class Game {
     if (magnetRange > 0) {
       const playerCenterX = this.player.x + this.player.width / 2;
       const playerCenterY = this.player.y + this.player.height / 2;
+      const magnetRangeSq = magnetRange * magnetRange; // Pre-compute squared threshold
 
       // Attract level coins
       for (const coin of this.level.coins) {
@@ -2491,9 +2533,10 @@ export class Game {
 
         const dx = playerCenterX - coin.x;
         const dy = playerCenterY - coin.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Use squared distance to avoid Math.sqrt per coin per frame
+        const distSq = dx * dx + dy * dy;
 
-        if (distance < magnetRange) {
+        if (distSq < magnetRangeSq) {
           coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
         }
       }
@@ -2505,9 +2548,9 @@ export class Game {
 
           const dx = playerCenterX - coin.x;
           const dy = playerCenterY - coin.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+          const distSq = dx * dx + dy * dy;
 
-          if (distance < magnetRange) {
+          if (distSq < magnetRangeSq) {
             coin.attractToward(playerCenterX, playerCenterY, 400, deltaTime);
           }
         }
@@ -2531,21 +2574,24 @@ export class Game {
 
     // Near-miss detection - check if player is close to spikes/lava without dying
     const nearMissDistance = 15; // pixels
+    const nearMissDistSq = nearMissDistance * nearMissDistance; // Pre-compute squared threshold
     const playerBounds = this.player.getBounds();
     for (const platform of activePlatforms) {
       if (platform.type === 'spike' || platform.type === 'lava') {
         const platBounds = platform.getBounds();
         const dx = Math.max(0, Math.max(platBounds.x - (playerBounds.x + playerBounds.width), playerBounds.x - (platBounds.x + platBounds.width)));
         const dy = Math.max(0, Math.max(platBounds.y - (playerBounds.y + playerBounds.height), playerBounds.y - (platBounds.y + platBounds.height)));
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Use squared distance to avoid expensive Math.sqrt per platform per frame
+        const distSq = dx * dx + dy * dy;
 
-        if (distance < nearMissDistance && distance > 0 && this.nearMissTimer <= 0) {
+        if (distSq < nearMissDistSq && distSq > 0 && this.nearMissTimer <= 0) {
           // Near miss! Add to combo and Flow Meter
           this.nearMissCount++;
           this.nearMissStreak++;
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
+          this.audio.pulseIntensity(0.2); // Spike music tension on near-miss
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
           this.comboMeterPulse = 1;
@@ -2575,6 +2621,11 @@ export class Game {
     if (this.nearMissTimer > 0) {
       this.nearMissTimer -= deltaTime;
     }
+
+    // Update danger level for dynamic music based on proximity to hazards and chase wall
+    const chaseDanger = this.chaseMode.isChaseActive() ? this.chaseMode.getWarningLevel(this.player.x) : 0;
+    const nearMissDanger = this.nearMissTimer > 0 ? 0.6 : 0;
+    this.audio.updateDangerLevel(Math.max(chaseDanger, nearMissDanger));
 
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
@@ -2925,8 +2976,9 @@ export class Game {
         // Increment level death count for star calculation
         this.levelDeathCount++;
 
-        // Update Flow Meter on death
+        // Update Flow Meter on death and reset music tension
         this.flowMeter.onDeath();
+        this.audio.updateDangerLevel(0);
 
         // Check if Time Rewind is available
         if (this.timeRewind.canRewind()) {
@@ -3228,11 +3280,34 @@ export class Game {
     }
   }
 
+  // Saved original shadowBlur descriptor for adaptive quality toggling
+  private static shadowBlurDescriptor: PropertyDescriptor | null = null;
+
   private render(): void {
     // Editor mode has its own rendering
     if (this.state.gameStatus === 'editor') {
       this.renderEditor();
       return;
+    }
+
+    // Adaptive quality: when FPS drops, disable all shadowBlur calls via property override.
+    // This is far cheaper than checking each of the 100+ shadowBlur assignments individually.
+    if (this.reducedEffects) {
+      if (!Game.shadowBlurDescriptor) {
+        Game.shadowBlurDescriptor = Object.getOwnPropertyDescriptor(
+          CanvasRenderingContext2D.prototype, 'shadowBlur'
+        ) || null;
+      }
+      if (Game.shadowBlurDescriptor) {
+        Object.defineProperty(this.ctx, 'shadowBlur', {
+          get: () => 0,
+          set: () => {},
+          configurable: true,
+        });
+      }
+    } else if (this.ctx.hasOwnProperty('shadowBlur')) {
+      // Restore original shadowBlur behavior when FPS recovers
+      delete (this.ctx as any).shadowBlur;
     }
 
     // Get shake offset
@@ -4682,7 +4757,7 @@ export class Game {
     const panelX = 80;
     const panelY = 100;
     const panelW = GAME_WIDTH - 160;
-    const panelH = 300;
+    const panelH = 425;
 
     // Panel background
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
@@ -4703,8 +4778,8 @@ export class Game {
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.fillText('Enable modifiers for bonus score multipliers', GAME_WIDTH / 2, panelY + 55);
 
-    // Modifier buttons - 2 columns, 3 rows
-    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+    // Modifier buttons - 2 columns, 5 rows
+    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible', 'rhythmLock', 'chaosMode', 'lowGravity', 'hyperSpeed'];
     const btnW = 180;
     const btnH = 50;
     const btnGapX = 20;
