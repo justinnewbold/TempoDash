@@ -895,12 +895,12 @@ export class Game {
       const panelX = 80;
       const panelY = 100;
       const panelW = GAME_WIDTH - 160;
-      const panelH = 300;
+      const panelH = 425;
 
       // Check if click is inside the panel
       if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
         // Check modifier button clicks
-        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+        const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible', 'rhythmLock', 'chaosMode', 'lowGravity', 'hyperSpeed'];
         const btnW = 180;
         const btnH = 50;
         const btnGapX = 20;
@@ -1578,6 +1578,9 @@ export class Game {
     } else {
       this.audio.start();
     }
+
+    // Smooth fade-in when entering a level
+    this.transition.startIn('fade', 250);
   }
 
   private startLevelAtSection(levelId: number, sectionIndex: number): void {
@@ -1737,20 +1740,32 @@ export class Game {
 
   private nextLevel(): void {
     if (this.state.currentLevel < TOTAL_LEVELS) {
-      this.state.currentLevel++;
-      // Auto-unlock next level if not already (without spending points)
-      if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
-        this.save.grantLevel(this.state.currentLevel);
-      }
-      this.loadLevel(this.state.currentLevel);
-      this.attempts = 1;
-      this.levelScoreThisRun = 0;
-      this.isPracticeMode = false;
-      this.checkpointX = this.level.playerStart.x;
-      this.checkpointY = this.level.playerStart.y;
-      this.lastCheckpointProgress = 0;
-      this.state.gameStatus = 'playing';
-      this.audio.start();
+      // Fade out, load new level, fade in
+      this.transition.startOut('fade', 300, () => {
+        this.state.currentLevel++;
+        // Auto-unlock next level if not already (without spending points)
+        if (!this.save.isLevelUnlocked(this.state.currentLevel)) {
+          this.save.grantLevel(this.state.currentLevel);
+        }
+        this.loadLevel(this.state.currentLevel);
+        this.attempts = 1;
+        this.levelScoreThisRun = 0;
+        this.isPracticeMode = false;
+        this.checkpointX = this.level.playerStart.x;
+        this.checkpointY = this.level.playerStart.y;
+        this.lastCheckpointProgress = 0;
+        this.state.gameStatus = 'playing';
+        this.resetGameplaySystems();
+        this.levelStartTime = performance.now();
+        this.levelElapsedTime = 0;
+        this.levelDeathCount = 0;
+        this.splitTimes = [];
+        this.lastCheckpointIndex = 0;
+        this.splitDisplay = null;
+        this.bestSplitTimes = this.save.getBestSplitTimes?.(this.state.currentLevel) || [];
+        this.audio.start();
+        this.transition.startIn('fade', 300);
+      });
     } else {
       this.state.gameStatus = 'mainMenu';
       this.audio.stop();
@@ -2432,6 +2447,10 @@ export class Game {
       effectiveSpeedMultiplier
     );
 
+    // Update dynamic music reactivity — music responds to gameplay tension
+    this.audio.updatePlayerSpeed(Math.min(1, (effectiveSpeedMultiplier - 1) / 2)); // Normalize: 1x=0, 3x=1
+    this.audio.updateIntensity();
+
     // Update chase mode (wall of death)
     if (!this.isEndlessMode) {
       const basePlayerSpeed = 350; // Base player speed in px/s
@@ -2572,6 +2591,7 @@ export class Game {
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
+          this.audio.pulseIntensity(0.2); // Spike music tension on near-miss
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
           this.comboMeterPulse = 1;
@@ -2601,6 +2621,11 @@ export class Game {
     if (this.nearMissTimer > 0) {
       this.nearMissTimer -= deltaTime;
     }
+
+    // Update danger level for dynamic music based on proximity to hazards and chase wall
+    const chaseDanger = this.chaseMode.isChaseActive() ? this.chaseMode.getWarningLevel(this.player.x) : 0;
+    const nearMissDanger = this.nearMissTimer > 0 ? 0.6 : 0;
+    this.audio.updateDangerLevel(Math.max(chaseDanger, nearMissDanger));
 
     // Check coin collection
     const coinsCollected = this.level.checkCoinCollection(this.player);
@@ -2951,8 +2976,9 @@ export class Game {
         // Increment level death count for star calculation
         this.levelDeathCount++;
 
-        // Update Flow Meter on death
+        // Update Flow Meter on death and reset music tension
         this.flowMeter.onDeath();
+        this.audio.updateDangerLevel(0);
 
         // Check if Time Rewind is available
         if (this.timeRewind.canRewind()) {
@@ -4731,7 +4757,7 @@ export class Game {
     const panelX = 80;
     const panelY = 100;
     const panelW = GAME_WIDTH - 160;
-    const panelH = 300;
+    const panelH = 425;
 
     // Panel background
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
@@ -4752,8 +4778,8 @@ export class Game {
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.fillText('Enable modifiers for bonus score multipliers', GAME_WIDTH / 2, panelY + 55);
 
-    // Modifier buttons - 2 columns, 3 rows
-    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible'];
+    // Modifier buttons - 2 columns, 5 rows
+    const modIds: ModifierId[] = ['speedDemon', 'noDoubleJump', 'fragile', 'mirrorMode', 'timeAttack', 'invisible', 'rhythmLock', 'chaosMode', 'lowGravity', 'hyperSpeed'];
     const btnW = 180;
     const btnH = 50;
     const btnGapX = 20;

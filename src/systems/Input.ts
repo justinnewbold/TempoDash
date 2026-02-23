@@ -39,6 +39,10 @@ export class InputManager {
   private isMobile = false;
   private hapticEnabled = true;
 
+  // Gamepad state tracking (for proper button release detection)
+  private gamepadJumpWasPressed = false;
+  private gamepadDashWasPressed = false;
+
   // UI exclusion zones - touches in these areas don't trigger game input
   private exclusionZones: ExclusionZone[] = [];
   // Callback for when a touch is in an exclusion zone (for UI handling)
@@ -315,11 +319,52 @@ export class InputManager {
   }
 
   update(): Readonly<InputState> {
+    // Poll gamepad state (Gamepad API is poll-based, not event-based)
+    this.pollGamepad();
+
     this.state.jumpPressed = this.state.jump && !this.previousJump;
     this.state.dashPressed = this.state.dash && !this.previousDash;
     this.previousJump = this.state.jump;
     this.previousDash = this.state.dash;
     return this.state; // Return direct reference - avoid allocation every frame
+  }
+
+  /** Poll connected gamepads for jump/dash input (standard mapping) */
+  private pollGamepad(): void {
+    if (!navigator.getGamepads) return;
+
+    const gamepads = navigator.getGamepads();
+    for (let i = 0; i < gamepads.length; i++) {
+      const gp = gamepads[i];
+      if (!gp || !gp.connected) continue;
+
+      // Standard mapping: A/Cross = jump (button 0), D-pad up (12), left stick up
+      const gpJump = gp.buttons[0]?.pressed ||
+                     gp.buttons[12]?.pressed ||
+                     gp.axes[1] < -0.5;
+
+      // B/Circle (1), X/Square (2), shoulder buttons (4, 5) = dash
+      const gpDash = gp.buttons[1]?.pressed || gp.buttons[2]?.pressed ||
+                     gp.buttons[4]?.pressed || gp.buttons[5]?.pressed;
+
+      // Gamepad overrides: set true when pressed, set false when released
+      // (only affects state if gamepad provides input, doesn't clear keyboard/touch)
+      if (gpJump) {
+        this.state.jump = true;
+      } else if (this.gamepadJumpWasPressed) {
+        this.state.jump = false;
+      }
+      if (gpDash) {
+        this.state.dash = true;
+      } else if (this.gamepadDashWasPressed) {
+        this.state.dash = false;
+      }
+      this.gamepadJumpWasPressed = gpJump;
+      this.gamepadDashWasPressed = gpDash;
+
+      // Only use first connected gamepad
+      break;
+    }
   }
 
   getState(): Readonly<InputState> {

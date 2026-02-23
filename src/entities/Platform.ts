@@ -344,8 +344,10 @@ export class Platform {
       case 'spike':
         // Draw triangular spikes (Geometry Dash style)
         ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#ff0000';
-        ctx.shadowBlur = 10;
+        if (!Platform.reducedEffects) {
+          ctx.shadowColor = '#ff0000';
+          ctx.shadowBlur = 10;
+        }
         const spikeHeight = Math.max(this.height, 1); // Prevent division by zero
         const spikeCount = Math.min(Math.floor(this.width / spikeHeight), 100); // Cap to prevent infinite loop
         const spikeWidth = spikeCount > 0 ? this.width / spikeCount : this.width;

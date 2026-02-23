@@ -278,6 +278,8 @@ export class AudioManager {
   }
 
   setStyle(style: MusicStyle): void {
+    if (style === this.currentStyle) return;
+
     const wasPlaying = this.isPlaying;
     if (wasPlaying) {
       this.stop();
@@ -287,7 +289,8 @@ export class AudioManager {
     this.currentPreset = this.presets[style];
 
     if (wasPlaying) {
-      this.start();
+      // Cross-fade: start new style at zero volume and ramp up
+      this.fadeIn(400);
     }
   }
 
