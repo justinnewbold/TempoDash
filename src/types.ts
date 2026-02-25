@@ -211,6 +211,14 @@ export interface SaveData {
   // Leaderboard
   playerName?: string;
   localLeaderboards?: Record<number, LeaderboardEntry[]>; // levelId -> local entries
+  // Challenge data
+  challengeData?: {
+    currentStreak: number;
+    longestStreak: number;
+    lastParticipationDate: string;
+    totalChallengesCompleted: number;
+    challengeHistory: Record<string, { challengeId: string; completed: boolean; bestScore: number; attempts: number; completedAt?: number }>;
+  };
 }
 
 // Ghost replay frame

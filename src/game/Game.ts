@@ -26,7 +26,7 @@ import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
 import { PowerUpManager } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
-import { ChallengeManager, Challenge, CHALLENGE_TYPES } from '../systems/Challenges';
+import { ChallengeManager, Challenge, CHALLENGE_TYPES, GauntletStage } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
 import { LevelSharingManager } from '../systems/LevelSharing';
 import { GhostManager, encodeReplay } from '../systems/GhostManager';
@@ -169,6 +169,23 @@ export class Game {
   private challengeScore = 0;
   private challengeCoins: Coin[] = [];
   private challengeCoinsCollected = 0;
+
+  // Gauntlet mode state
+  private gauntletStages: GauntletStage[] = [];
+  private gauntletCurrentStage = 0;
+  private gauntletTotalScore = 0;
+  private gauntletStageComplete = false;
+  private gauntletStageTimer = 0;
+
+  // Challenge celebration state
+  private challengeCelebration: {
+    active: boolean;
+    timer: number;
+    type: 'stage' | 'complete' | 'streak';
+    message: string;
+    subMessage: string;
+    color: string;
+  } | null = null;
 
   // Chase mode (wall of death)
   private chaseMode: ChaseModeManager;
@@ -365,6 +382,11 @@ export class Game {
     this.powerUps = new PowerUpManager();
     this.modifiers = new ModifierManager();
     this.challengeManager = new ChallengeManager();
+    // Load challenge data from SaveManager if available
+    const savedChallengeData = this.save.getChallengeData();
+    if (savedChallengeData) {
+      this.challengeManager.loadFromSaveData(savedChallengeData);
+    }
     this.chaseMode = new ChaseModeManager();
     this.ghostManager = new GhostManager();
     this.screenEffects = new ScreenEffects();
@@ -2001,6 +2023,10 @@ export class Game {
     this.isEndlessMode = false;
     this.isPracticeMode = false;
     this.currentChallenge = null;
+    this.gauntletStages = [];
+    this.gauntletCurrentStage = 0;
+    this.gauntletStageComplete = false;
+    this.challengeCelebration = null;
     this.deathTimer = 0;
     this.isWaitingForRewindInput = false;
     this.rewindInputWindow = 0;
@@ -2185,6 +2211,23 @@ export class Game {
 
     // Update badge notifications
     this.updateBadgeNotification(deltaTime);
+
+    // Update challenge celebration timer
+    if (this.challengeCelebration?.active) {
+      this.challengeCelebration.timer -= deltaTime;
+      if (this.challengeCelebration.timer <= 0) {
+        this.challengeCelebration = null;
+      }
+    }
+
+    // Update gauntlet stage transition timer
+    if (this.gauntletStageComplete && this.gauntletStageTimer > 0) {
+      this.gauntletStageTimer -= deltaTime;
+      if (this.gauntletStageTimer <= 0) {
+        this.gauntletStageComplete = false;
+        this.startGauntletStage(this.gauntletCurrentStage + 1);
+      }
+    }
 
     // Update weather effects
     if (this.state.gameStatus === 'playing' || this.state.gameStatus === 'practice') {
@@ -3069,20 +3112,61 @@ export class Game {
         this.deathTimer = 0;
 
         if (this.currentChallenge) {
-          // Challenge mode death - record attempt and calculate score
-          const score = Math.floor(this.endlessDistance + this.challengeScore);
-          const completed = this.endlessDistance >= 500; // 500m = challenge complete
-          this.challengeManager.recordAttempt(this.currentChallenge.id, score, completed);
+          // Gauntlet mode: check stage completion
+          if (this.currentChallenge.type === 'weeklyGauntlet') {
+            const stage = this.gauntletStages[this.gauntletCurrentStage];
+            const stageComplete = this.endlessDistance >= stage.targetDistance;
 
-          if (completed) {
-            // Challenge completed! Return to challenge menu
-            this.isEndlessMode = false;
-            this.currentChallenge = null;
-            this.state.gameStatus = 'challenges';
-            this.audio.stop();
+            if (stageComplete) {
+              // Stage completed - add score and advance
+              this.gauntletTotalScore += Math.floor(this.endlessDistance + this.challengeScore);
+
+              if (this.gauntletCurrentStage >= 4) {
+                // All 5 stages complete!
+                this.challengeManager.recordAttempt(this.currentChallenge.id, this.gauntletTotalScore, true);
+                this.syncChallengeData();
+                this.showChallengeCelebration('complete', 'GAUNTLET COMPLETE!', `Total Score: ${this.gauntletTotalScore}`, '#ffd700');
+                this.isEndlessMode = false;
+                this.currentChallenge = null;
+                this.state.gameStatus = 'challenges';
+                this.audio.stop();
+              } else {
+                // Show stage complete celebration, then advance
+                this.showChallengeCelebration('stage', `Stage ${this.gauntletCurrentStage + 1} Complete!`, stage.name, '#00ff88');
+                this.gauntletStageComplete = true;
+                this.gauntletStageTimer = 2000; // 2 second pause before next stage
+              }
+            } else {
+              // Failed gauntlet stage - record partial score, game over
+              this.challengeManager.recordAttempt(this.currentChallenge.id, this.gauntletTotalScore + Math.floor(this.endlessDistance), false);
+              this.syncChallengeData();
+              this.isEndlessMode = false;
+              this.currentChallenge = null;
+              this.gauntletStages = [];
+              this.state.gameStatus = 'challenges';
+              this.audio.stop();
+            }
           } else {
-            // Try again - respawn with seeded platforms
-            this.restartChallenge();
+            // Non-gauntlet challenge mode death
+            const score = Math.floor(this.endlessDistance + this.challengeScore);
+            const completed = this.currentChallenge.type === 'dailyCoinRush'
+              ? this.endlessDistance >= 500
+              : this.endlessDistance >= 500;
+            this.challengeManager.recordAttempt(this.currentChallenge.id, score, completed);
+            this.syncChallengeData();
+
+            if (completed) {
+              // Challenge completed! Show celebration then return to menu
+              this.showChallengeCelebration('complete', 'CHALLENGE COMPLETE!', `Score: ${score}`, '#00ff88');
+              this.checkStreakRewards();
+              this.isEndlessMode = false;
+              this.currentChallenge = null;
+              this.state.gameStatus = 'challenges';
+              this.audio.stop();
+            } else {
+              // Try again - respawn with seeded platforms
+              this.restartChallenge();
+            }
           }
         } else if (this.isEndlessMode) {
           // Game over in endless mode
@@ -3462,6 +3546,10 @@ export class Game {
         break;
       case 'challenges':
         this.renderChallenges();
+        // Show celebration overlay on top of challenge menu
+        if (this.challengeCelebration?.active) {
+          this.renderChallengeCelebration();
+        }
         break;
       case 'platformGuide':
         this.renderPlatformGuide();
@@ -5626,12 +5714,22 @@ export class Game {
     // Streak display
     const streakInfo = this.challengeManager.getStreakInfo();
     this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = streakInfo.current > 0 ? '#ffd700' : 'rgba(255, 255, 255, 0.5)';
     this.ctx.shadowColor = '#ffd700';
     this.ctx.shadowBlur = 10;
     if (streakInfo.current > 0) {
-      this.ctx.fillText(`🔥 ${streakInfo.current} Day Streak! (Best: ${streakInfo.longest})`, GAME_WIDTH / 2, 100);
+      this.ctx.fillStyle = '#ffd700';
+      this.ctx.fillText(`🔥 ${streakInfo.current} Day Streak! (Best: ${streakInfo.longest})`, GAME_WIDTH / 2, 96);
+      // Next streak reward info
+      const nextReward = this.challengeManager.getNextStreakReward();
+      if (nextReward) {
+        this.ctx.font = '13px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#00ffaa';
+        this.ctx.shadowColor = '#00ffaa';
+        this.ctx.shadowBlur = 5;
+        this.ctx.fillText(`Next: ${nextReward.icon} ${nextReward.name} (${nextReward.streakRequired - streakInfo.current} days away)`, GAME_WIDTH / 2, 114);
+      }
     } else {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.fillText('Start a streak by completing today\'s challenge!', GAME_WIDTH / 2, 100);
     }
 
@@ -6211,6 +6309,17 @@ export class Game {
     this.challengeScore = 0;
     this.challengeCoinsCollected = 0;
 
+    // Handle gauntlet mode differently
+    if (challenge.type === 'weeklyGauntlet') {
+      this.gauntletStages = this.challengeManager.generateGauntletStages(challenge.seed);
+      this.gauntletCurrentStage = 0;
+      this.gauntletTotalScore = 0;
+      this.gauntletStageComplete = false;
+      this.gauntletStageTimer = 0;
+      this.startGauntletStage(0);
+      return;
+    }
+
     // Start endless mode with the challenge seed
     this.isEndlessMode = true;
     this.endlessDistance = 0;
@@ -6252,6 +6361,60 @@ export class Game {
 
     // Clear any active powerups
     this.powerUps.clear();
+
+    // Start music
+    this.audio.start();
+
+    this.state.gameStatus = 'challengePlaying';
+  }
+
+  private startGauntletStage(stageIndex: number): void {
+    if (stageIndex >= this.gauntletStages.length) return;
+
+    const stage = this.gauntletStages[stageIndex];
+    this.gauntletCurrentStage = stageIndex;
+    this.gauntletStageComplete = false;
+    this.gauntletStageTimer = 0;
+
+    // Set up as endless mode with stage-specific parameters
+    this.isEndlessMode = true;
+    this.endlessDistance = 0;
+    this.speedMultiplier = stage.speedMultiplier;
+    this.jumpCount = 0;
+    this.prevAirJumpsRemaining = 4;
+    this.challengeScore = 0;
+    this.audio.resetGameSpeed();
+
+    // Generate procedural platforms using stage seed
+    this.endlessPlatforms = [];
+    const GROUND_Y = GAME_HEIGHT - 40;
+
+    // Starting ground platform
+    this.endlessPlatforms.push(new Platform({ x: 0, y: GROUND_Y, width: 400, height: 40, type: 'solid' }));
+    this.nextPlatformX = 400;
+
+    // Generate gauntlet-specific platforms
+    const seedPlatforms = this.challengeManager.generateGauntletPlatforms(stage, this.nextPlatformX, 25);
+    for (const p of seedPlatforms) {
+      this.endlessPlatforms.push(new Platform({ x: p.x, y: p.y, width: p.width, height: p.height, type: p.type }));
+    }
+    if (seedPlatforms.length > 0) {
+      this.nextPlatformX = seedPlatforms[seedPlatforms.length - 1].x + seedPlatforms[seedPlatforms.length - 1].width + 200;
+    }
+
+    // No special coins for gauntlet
+    this.challengeCoins = [];
+    this.challengeCoinsCollected = 0;
+
+    // Clear any active powerups
+    this.powerUps.clear();
+
+    // Reset all gameplay systems
+    this.resetGameplaySystems();
+
+    // Reset player
+    this.player.reset({ x: 100, y: GROUND_Y - 50 });
+    this.cameraX = 0;
 
     // Start music
     this.audio.start();
@@ -6307,6 +6470,45 @@ export class Game {
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
     this.cameraX = 0;
     this.attempts++;
+  }
+
+  // Sync challenge data to SaveManager for unified storage
+  private syncChallengeData(): void {
+    const challengeData = this.challengeManager.getChallengeData();
+    this.save.saveChallengeData(challengeData);
+  }
+
+  // Show challenge celebration overlay
+  private showChallengeCelebration(type: 'stage' | 'complete' | 'streak', message: string, subMessage: string, color: string): void {
+    this.challengeCelebration = {
+      active: true,
+      timer: type === 'stage' ? 2000 : 3000,
+      type,
+      message,
+      subMessage,
+      color,
+    };
+  }
+
+  // Check and award streak rewards after challenge completion
+  private checkStreakRewards(): void {
+    const newRewards = this.challengeManager.getNewStreakRewards();
+    for (const reward of newRewards) {
+      if (reward.type === 'skin') {
+        this.save.grantStreakSkin(reward.rewardId);
+        this.showChallengeCelebration('streak', `Streak Reward: ${reward.name}!`, reward.description, '#ffd700');
+      } else if (reward.type === 'achievement') {
+        this.tryUnlockAchievement(reward.rewardId);
+      } else if (reward.type === 'points') {
+        const pointsMatch = reward.name.match(/(\d+)/);
+        if (pointsMatch) {
+          this.save.addPoints(parseInt(pointsMatch[1]));
+        }
+        this.showChallengeCelebration('streak', `${reward.icon} ${reward.name}!`, reward.description, '#00ffaa');
+      }
+      this.challengeManager.claimStreakReward(reward.rewardId);
+    }
+    this.syncChallengeData();
   }
 
   private renderToggle(x: number, y: number, enabled: boolean): void {
@@ -6669,8 +6871,55 @@ export class Game {
 
     const challengeColor = this.currentChallenge.isWeekly ? '#9933ff' : '#ff6600';
     const isCoinRush = this.currentChallenge.type === 'dailyCoinRush';
+    const isGauntlet = this.currentChallenge.type === 'weeklyGauntlet';
 
-    if (isCoinRush) {
+    if (isGauntlet) {
+      // Gauntlet mode: show stage progress
+      const stage = this.gauntletStages[this.gauntletCurrentStage];
+      if (stage) {
+        this.ctx.textAlign = 'center';
+        this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#9933ff';
+        this.ctx.shadowColor = '#9933ff';
+        this.ctx.shadowBlur = 15;
+        this.ctx.fillText(`${this.endlessDistance}m`, GAME_WIDTH / 2, 50);
+
+        // Target distance for this stage
+        this.ctx.font = '16px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = this.endlessDistance >= stage.targetDistance ? '#00ff88' : '#9933ff';
+        this.ctx.shadowBlur = 5;
+        const targetText = this.endlessDistance >= stage.targetDistance ? '✓ STAGE CLEAR!' : `Target: ${stage.targetDistance}m`;
+        this.ctx.fillText(targetText, GAME_WIDTH / 2, 75);
+
+        // Stage indicator dots
+        const dotY = 95;
+        const dotSpacing = 25;
+        const dotsStartX = GAME_WIDTH / 2 - (4 * dotSpacing) / 2;
+        for (let i = 0; i < 5; i++) {
+          const dx = dotsStartX + i * dotSpacing;
+          this.ctx.beginPath();
+          this.ctx.arc(dx, dotY, 6, 0, Math.PI * 2);
+          if (i < this.gauntletCurrentStage) {
+            this.ctx.fillStyle = '#00ff88'; // Completed
+          } else if (i === this.gauntletCurrentStage) {
+            this.ctx.fillStyle = '#9933ff'; // Current
+          } else {
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; // Upcoming
+          }
+          this.ctx.fill();
+        }
+
+        // Stage name
+        this.ctx.font = '12px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        this.ctx.fillText(`Stage ${stage.stageNumber}/5: ${stage.name}`, GAME_WIDTH / 2, 112);
+
+        // Cumulative score
+        this.ctx.font = '11px "Segoe UI", sans-serif';
+        this.ctx.fillStyle = '#ffd700';
+        this.ctx.fillText(`Total: ${this.gauntletTotalScore + Math.floor(this.endlessDistance)}`, GAME_WIDTH / 2, 128);
+      }
+    } else if (isCoinRush) {
       // Coin Rush: show coins collected as main metric
       this.ctx.textAlign = 'center';
       this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
@@ -6759,7 +7008,49 @@ export class Game {
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
+    // Celebration overlay
+    if (this.challengeCelebration?.active) {
+      this.renderChallengeCelebration();
+    }
+
     this.ctx.restore();
+  }
+
+  private renderChallengeCelebration(): void {
+    if (!this.challengeCelebration) return;
+
+    const c = this.challengeCelebration;
+    const progress = Math.min(1, 1 - c.timer / (c.type === 'stage' ? 2000 : 3000));
+
+    // Fade in/out
+    const alpha = progress < 0.1 ? progress / 0.1 : progress > 0.8 ? (1 - progress) / 0.2 : 1;
+
+    // Background overlay
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.6})`;
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Main message with scale-in
+    const scale = progress < 0.15 ? 0.5 + (progress / 0.15) * 0.5 : 1;
+    this.ctx.save();
+    this.ctx.translate(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20);
+    this.ctx.scale(scale, scale);
+
+    this.ctx.textAlign = 'center';
+    this.ctx.font = 'bold 42px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = c.color;
+    this.ctx.shadowColor = c.color;
+    this.ctx.shadowBlur = 30;
+    this.ctx.globalAlpha = alpha;
+    this.ctx.fillText(c.message, 0, 0);
+
+    // Sub message
+    this.ctx.font = '20px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    this.ctx.shadowBlur = 10;
+    this.ctx.fillText(c.subMessage, 0, 40);
+
+    this.ctx.restore();
+    this.ctx.globalAlpha = 1;
   }
 
   private renderOverlay(): void {
