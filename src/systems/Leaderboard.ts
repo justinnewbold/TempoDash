@@ -169,7 +169,9 @@ export class LeaderboardService {
 
     this.saveLocalData();
 
-    return { rank, isNewHighScore };
+    // Return 0 for rank if entry was sliced off (not in top N)
+    const stillInBoard = this.localData[key].some(e => e.id === entry.id);
+    return { rank: stillInBoard ? rank : 0, isNewHighScore };
   }
 
   // Get leaderboard entries

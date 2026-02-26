@@ -2142,6 +2142,7 @@ export class Game {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    this.audio.setBeatCallback(null);
     this.audio.stop();
     this.input.destroy();
 
@@ -3162,9 +3163,12 @@ export class Game {
           if (this.currentChallenge.type === 'weeklyGauntlet') {
             const stage = this.gauntletStages[this.gauntletCurrentStage];
             if (!stage) {
-              // Safety: stage index out of bounds - end gauntlet
+              // Stage index out of bounds - treat as gauntlet failure
+              this.challengeManager.recordAttempt(this.currentChallenge.id, this.gauntletTotalScore, false);
+              this.syncChallengeData();
               this.isEndlessMode = false;
               this.currentChallenge = null;
+              this.gauntletStages = [];
               this.state.gameStatus = 'challenges';
               this.audio.stop();
               return;
@@ -3204,7 +3208,7 @@ export class Game {
             // Non-gauntlet challenge mode death
             const score = Math.floor(this.endlessDistance + this.challengeScore);
             const completed = this.currentChallenge.type === 'dailyCoinRush'
-              ? this.endlessDistance >= 500
+              ? this.challengeCoinsCollected >= this.challengeCoins.length
               : this.endlessDistance >= 500;
             this.challengeManager.recordAttempt(this.currentChallenge.id, score, completed);
             this.syncChallengeData();
@@ -4404,8 +4408,16 @@ export class Game {
     if (x >= pauseX && x <= pauseX + buttonSize && y >= topY && y <= topY + buttonSize) {
       this.audio.playSelect();
       if (this.state.gameStatus === 'paused') {
-        // Resume
-        this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+        // Resume to the correct mode (match keyboard handler logic)
+        if (this.currentChallenge) {
+          this.state.gameStatus = 'challengePlaying';
+        } else if (this.isEndlessMode) {
+          this.state.gameStatus = 'endless';
+        } else if (this.isPracticeMode) {
+          this.state.gameStatus = 'practice';
+        } else {
+          this.state.gameStatus = 'playing';
+        }
         this.audio.start();
       } else {
         // Pause
@@ -4450,7 +4462,16 @@ export class Game {
     // Resume button
     if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY && y <= btnStartY + btnHeight) {
       this.audio.playSelect();
-      this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
+      // Resume to the correct mode (match keyboard handler logic)
+      if (this.currentChallenge) {
+        this.state.gameStatus = 'challengePlaying';
+      } else if (this.isEndlessMode) {
+        this.state.gameStatus = 'endless';
+      } else if (this.isPracticeMode) {
+        this.state.gameStatus = 'practice';
+      } else {
+        this.state.gameStatus = 'playing';
+      }
       this.audio.start();
       return;
     }
@@ -4615,6 +4636,7 @@ export class Game {
     }
 
     this.ctx.fillText(text, x, y);
+    this.ctx.shadowBlur = 0;
   }
 
   private renderLevelSelect(): void {
@@ -5172,6 +5194,7 @@ export class Game {
       }
 
       // Find max intensity for normalization
+      if (heatGrid.size === 0) return;
       const maxIntensity = Math.max(...heatGrid.values());
 
       // Draw heat spots
@@ -6448,7 +6471,7 @@ export class Game {
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
     this.cameraX = 0;
-    this.attempts = 0;
+    this.attempts = 1;
 
     // Clear any active powerups
     this.powerUps.clear();
@@ -7441,7 +7464,7 @@ export class Game {
     this.player = new Player(config.playerStart);
     this.player.setSkin(this.save.getSelectedSkin());
     this.cameraX = 0;
-    this.attempts = 0;
+    this.attempts = 1;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = false;
     this.isEndlessMode = false;
@@ -7896,7 +7919,7 @@ export class Game {
 
     // Set camera to center on test position
     this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
-    this.attempts = 0;
+    this.attempts = 1;
     this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing
 
@@ -9639,9 +9662,10 @@ export class Game {
   }
 
   private updateRainWeather(dt: number): void {
-    // Spawn new rain particles
+    // Spawn new rain particles (cap at 200)
     const spawnRate = this.weatherIntensity * 5;
     for (let i = 0; i < spawnRate; i++) {
+      if (this.weatherParticles.length >= 200) break;
       if (Math.random() < 0.3) {
         this.weatherParticles.push({
           x: Math.random() * (GAME_WIDTH + 200) - 100,
@@ -9665,7 +9689,7 @@ export class Game {
         this.weatherParticles[writeIdx++] = p;
       }
     }
-    this.weatherParticles.length = Math.min(writeIdx, 200);
+    this.weatherParticles.length = writeIdx;
   }
 
   private updateWindWeather(dt: number): void {
@@ -9674,8 +9698,8 @@ export class Game {
       this.weatherDirection = Math.random() > 0.5 ? 1 : -1;
     }
 
-    // Spawn wind streaks
-    if (Math.random() < this.weatherIntensity * 0.5) {
+    // Spawn wind streaks (cap at 50)
+    if (Math.random() < this.weatherIntensity * 0.5 && this.weatherParticles.length < 50) {
       this.weatherParticles.push({
         x: this.weatherDirection > 0 ? -50 : GAME_WIDTH + 50,
         y: Math.random() * GAME_HEIGHT,
@@ -9698,15 +9722,15 @@ export class Game {
         this.weatherParticles[writeIdx++] = p;
       }
     }
-    this.weatherParticles.length = Math.min(writeIdx, 50);
+    this.weatherParticles.length = writeIdx;
   }
 
   private updateFogWeather(dt: number): void {
     // Gradually increase fog
     this.fogOpacity = Math.min(this.weatherIntensity * 0.4, this.fogOpacity + dt * 0.1);
 
-    // Floating fog wisps
-    if (Math.random() < 0.05) {
+    // Floating fog wisps (cap at 20)
+    if (Math.random() < 0.05 && this.weatherParticles.length < 20) {
       this.weatherParticles.push({
         x: Math.random() * GAME_WIDTH,
         y: GAME_HEIGHT / 2 + (Math.random() - 0.5) * GAME_HEIGHT,
@@ -9729,15 +9753,15 @@ export class Game {
         this.weatherParticles[writeIdx++] = p;
       }
     }
-    this.weatherParticles.length = Math.min(writeIdx, 20);
+    this.weatherParticles.length = writeIdx;
   }
 
   private updateSnowWeather(dt: number): void {
     // Cache Date.now() outside loop for performance
     const now = Date.now();
 
-    // Spawn snowflakes
-    if (Math.random() < this.weatherIntensity * 0.3) {
+    // Spawn snowflakes (cap at 150)
+    if (Math.random() < this.weatherIntensity * 0.3 && this.weatherParticles.length < 150) {
       this.weatherParticles.push({
         x: Math.random() * (GAME_WIDTH + 100) - 50,
         y: -10,
@@ -9759,7 +9783,7 @@ export class Game {
         this.weatherParticles[writeIdx++] = p;
       }
     }
-    this.weatherParticles.length = Math.min(writeIdx, 150);
+    this.weatherParticles.length = writeIdx;
   }
 
   private renderWeatherEffects(): void {

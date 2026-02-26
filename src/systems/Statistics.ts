@@ -93,6 +93,8 @@ export class StatisticsManager {
       stats = { attempts: 0, bestTime: Infinity, lastTime: 0, deathLocations: [] };
       this.levelStats.set(levelId, stats);
     }
+    // Count completion as an attempt (so levels beaten first try show 1 attempt, not 0)
+    stats.attempts++;
     stats.lastTime = time;
     if (time < stats.bestTime) {
       stats.bestTime = time;
