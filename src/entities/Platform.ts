@@ -80,6 +80,12 @@ export class Platform {
   private glassBreaking = false;
   private conveyorAnimTime = 0;
 
+  // Wind zone properties
+  windDirectionX = 0;   // Normalized direction X (-1 to 1)
+  windDirectionY = 0;   // Normalized direction Y (-1 to 1)
+  windStrengthValue = PLATFORM.WIND_DEFAULT_STRENGTH;
+  private windAnimTime = 0;
+
   // Secret platform properties
   private secretRevealed = false;
   private secretRevealProgress = 0;
@@ -106,6 +112,15 @@ export class Platform {
     // Conveyor default speed
     if (config.conveyorSpeed !== undefined) {
       this.conveyorSpeed = config.conveyorSpeed;
+    }
+
+    // Wind zone properties
+    if (config.windDirection) {
+      this.windDirectionX = config.windDirection.x;
+      this.windDirectionY = config.windDirection.y;
+    }
+    if (config.windStrength !== undefined) {
+      this.windStrengthValue = config.windStrength;
     }
   }
 
@@ -151,6 +166,11 @@ export class Platform {
       if (this.crumbleProgress >= 1) {
         this.isDestroyed = true;
       }
+    }
+
+    // Handle wind zone animation
+    if (this.type === 'wind') {
+      this.windAnimTime += deltaTime * 0.003;
     }
 
     // Handle secret platform reveal animation
@@ -732,6 +752,62 @@ export class Platform {
         }
         break;
 
+      case 'wind':
+        // Wind zone - translucent area with animated wind lines
+        if (useFlat) {
+          ctx.fillStyle = 'rgba(126, 200, 227, 0.2)';
+        } else {
+          const windGradient = ctx.createLinearGradient(
+            screenX, this.y, screenX + this.width, this.y + this.height
+          );
+          windGradient.addColorStop(0, 'rgba(126, 200, 227, 0.1)');
+          windGradient.addColorStop(0.5, 'rgba(126, 200, 227, 0.3)');
+          windGradient.addColorStop(1, 'rgba(126, 200, 227, 0.1)');
+          ctx.fillStyle = windGradient;
+        }
+        ctx.fillRect(screenX, this.y, this.width, this.height);
+
+        // Animated wind streaks
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1.5;
+        const windDirX = this.windDirectionX || 1;
+        const windDirY = this.windDirectionY || 0;
+        const streakCount = Math.max(4, Math.floor(this.width / 40));
+        for (let i = 0; i < streakCount; i++) {
+          const phase = (this.windAnimTime * 3 + i * 0.5) % 1;
+          const alpha = Math.sin(phase * Math.PI) * 0.5;
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+          const baseX = screenX + (this.width * phase);
+          const baseY = this.y + (this.height / (streakCount + 1)) * (i + 1);
+          const streakLen = 25 + Math.sin(this.windAnimTime + i) * 10;
+          ctx.beginPath();
+          ctx.moveTo(baseX, baseY);
+          ctx.lineTo(baseX + windDirX * streakLen, baseY + windDirY * streakLen);
+          ctx.stroke();
+        }
+
+        // Wind direction arrow indicator in center
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        const arrowCX = screenX + this.width / 2;
+        const arrowCY = this.y + this.height / 2;
+        const arrowLen = 12;
+        const perpX = -windDirY;
+        const perpY = windDirX;
+        ctx.beginPath();
+        ctx.moveTo(arrowCX + windDirX * arrowLen, arrowCY + windDirY * arrowLen);
+        ctx.lineTo(arrowCX - windDirX * 6 + perpX * 5, arrowCY - windDirY * 6 + perpY * 5);
+        ctx.lineTo(arrowCX - windDirX * 6 - perpX * 5, arrowCY - windDirY * 6 - perpY * 5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Dashed border
+        ctx.setLineDash([8, 4]);
+        ctx.strokeStyle = 'rgba(126, 200, 227, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(screenX, this.y, this.width, this.height);
+        ctx.setLineDash([]);
+        break;
+
       default: // solid
         if (gradient) {
           gradient.addColorStop(0, '#5a6a7a');
@@ -747,8 +823,8 @@ export class Platform {
         break;
     }
 
-    // Border (except for spikes)
-    if (this.type !== 'spike') {
+    // Border (except for spikes and zones that draw their own border)
+    if (this.type !== 'spike' && this.type !== 'wind') {
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
       ctx.lineWidth = 2;
       ctx.strokeRect(screenX, this.y, this.width, this.height);
@@ -937,6 +1013,21 @@ export class Platform {
         if (this.secretRevealed) {
           ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
           ctx.fillText('?', centerX, centerY);
+        }
+        break;
+
+      case 'wind':
+        // Wavy lines (wind)
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.lineWidth = 2;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          for (let j = -10; j <= 10; j += 2) {
+            const wx = centerX + j;
+            const wy = centerY + i * 8 + Math.sin(j * 0.5) * 3;
+            if (j === -10) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+          }
+          ctx.stroke();
         }
         break;
 

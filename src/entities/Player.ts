@@ -81,6 +81,10 @@ export class Player {
   // Slow-mo zone state
   isInSlowMo = false;
 
+  // Wind zone state
+  windForceX = 0;
+  windForceY = 0;
+
   // Coyote time (grace period after leaving a platform)
   private coyoteTimer = 0;
   private static readonly COYOTE_TIME = 80; // ms - brief grace period to still jump after walking off edge
@@ -148,6 +152,8 @@ export class Player {
     this.isWallSliding = false;
     this.wallJumpCooldown = 0;
     this.isInSlowMo = false;
+    this.windForceX = 0;
+    this.windForceY = 0;
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.landingEvent = false;
@@ -187,6 +193,8 @@ export class Player {
     this.onConveyor = null;
     this.isWallSliding = false;
     this.isInSlowMo = false;
+    this.windForceX = 0;
+    this.windForceY = 0;
 
     // Update wall jump cooldown
     if (this.wallJumpCooldown > 0) {
@@ -396,6 +404,12 @@ export class Player {
       this.x += conveyorSpeed * (deltaTime / 1000);
     }
 
+    // Apply wind zone forces
+    if (this.windForceX !== 0 || this.windForceY !== 0) {
+      this.x += this.windForceX * (deltaTime / 1000);
+      this.velocityY += this.windForceY * (deltaTime / 1000);
+    }
+
     // Reset gravity flip when landing on solid ground (not a gravity platform)
     // Gravity flip persists in the air and resets on the next solid landing
     if (this.isGrounded && this.gravityFlipped) {
@@ -500,6 +514,13 @@ export class Player {
         case 'slowmo':
           // Slow-mo zones affect player regardless of collision direction
           this.isInSlowMo = true;
+          // Don't resolve collision - it's a zone, not solid
+          continue;
+
+        case 'wind':
+          // Wind zones apply directional force to player
+          this.windForceX = platform.windDirectionX * platform.windStrengthValue;
+          this.windForceY = platform.windDirectionY * platform.windStrengthValue;
           // Don't resolve collision - it's a zone, not solid
           continue;
 

@@ -53,6 +53,7 @@ export const PLATFORM = {
   BEAT_SOLID_WINDOW: 0.4,
   SECRET_REVEAL_DISTANCE: 150,
   GLASS_HITS_TO_BREAK: 2,
+  WIND_DEFAULT_STRENGTH: 300,  // Default wind force in px/s²
 };
 
 // Scoring constants
@@ -120,6 +121,7 @@ export const COLORS = {
     slowmo: '#00c8ff',     // Cyan - time warp
     wall: '#718096',       // Dark gray - metallic wall
     secret: '#ffd700',     // Gold - hidden treasure
+    wind: '#7ec8e3',       // Light blue - airy wind
   },
 
   // Level 1 - City Night

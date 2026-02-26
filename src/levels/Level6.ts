@@ -68,6 +68,15 @@ const level6Config: LevelConfig = {
     { x: BEAT * 26, y: GROUND_Y - 110, type: 'sapphire' },   // Above phase + crumble nightmare
     { x: BEAT * 45, y: GROUND_Y - 80, type: 'emerald' },     // Near the finale
   ],
+  // Teleport portals - shortcuts through the abyss
+  portals: [
+    // Portal pair 1: Skip past the elevated crumble section (risky shortcut)
+    { id: 'abyss-a1', x: BEAT * 9, y: GROUND_Y - 50, linkedPortalId: 'abyss-a2', color: '#00ccff' },
+    { id: 'abyss-a2', x: BEAT * 15, y: GROUND_Y - 50, linkedPortalId: 'abyss-a1', color: '#00ccff' },
+    // Portal pair 2: Emergency escape from the phase+crumble nightmare
+    { id: 'abyss-b1', x: BEAT * 26, y: GROUND_Y - 100, linkedPortalId: 'abyss-b2', color: '#ff66cc' },
+    { id: 'abyss-b2', x: BEAT * 31, y: GROUND_Y - 50, linkedPortalId: 'abyss-b1', color: '#ff66cc' },
+  ],
   // Gravity wells adding depth to the abyssal theme
   gravityWells: [
     { x: BEAT * 34, y: GROUND_Y - 80, radius: 120, strength: 300 },   // Attract - pulls into the abyss descent
@@ -125,6 +134,9 @@ const level6Config: LevelConfig = {
     { x: BEAT * 31.5, y: GROUND_Y, width: 80, height: GROUND_HEIGHT, type: 'crumble' },
 
     // ===== SECTION 5 (Beats 32.5-38): THE ABYSS - vertical descent =====
+    // Wind zone pushing player upward - deep ocean current
+    { x: BEAT * 32.5, y: GROUND_Y - 150, width: BEAT * 2, height: 130, type: 'wind',
+      windDirection: { x: 0, y: -1 }, windStrength: 250 },
     // Falling through crumbling platforms!
     { x: BEAT * 33, y: GROUND_Y - 120, width: 100, height: 20, type: 'crumble' },
     { x: BEAT * 34, y: GROUND_Y - 90, width: 100, height: 20, type: 'crumble' },

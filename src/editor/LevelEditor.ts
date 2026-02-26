@@ -17,7 +17,7 @@ import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyI
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret'];
+const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
@@ -35,6 +35,7 @@ const PLATFORM_COLORS: Record<PlatformType, string> = {
   slowmo: '#00c8ff',
   wall: '#718096',
   secret: '#ffd700',
+  wind: '#7ec8e3',
 };
 
 const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean'];

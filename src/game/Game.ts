@@ -651,7 +651,7 @@ export class Game {
         break;
       }
       case 'platformGuide': {
-        const maxScroll = 600; // Platform guide content is longer
+        const maxScroll = 700; // Platform guide content is longer (16 platform types)
         this.encyclopediaScrollOffset = Math.max(0, Math.min(maxScroll, this.encyclopediaScrollOffset + delta));
         break;
       }
@@ -1907,13 +1907,21 @@ export class Game {
       // Platform type selection — progressive unlocking
       let type: PlatformType = 'solid';
       const typeRoll = Math.random();
+      let conveyorSpeed: number | undefined;
 
-      if (difficulty > 0.7 && typeRoll < 0.06) {
-        type = 'crumble'; // High difficulty: time-pressure platforms
+      if (difficulty > 0.8 && typeRoll < 0.04) {
+        type = 'gravity';  // Very high difficulty: disorienting gravity flip
+      } else if (difficulty > 0.75 && typeRoll < 0.05) {
+        type = 'glass';    // High difficulty: breaks after 2 landings
+      } else if (difficulty > 0.7 && typeRoll < 0.06) {
+        type = 'crumble';  // High difficulty: time-pressure platforms
+      } else if (difficulty > 0.65 && typeRoll < 0.07) {
+        type = 'sticky';   // High-mid difficulty: movement trap
       } else if (difficulty > 0.6 && typeRoll < 0.08) {
-        type = 'phase';   // Mid-high difficulty: timing platforms
+        type = 'phase';    // Mid-high difficulty: timing platforms
       } else if (difficulty > 0.5 && typeRoll < 0.10) {
         type = 'conveyor'; // Mid difficulty: directional challenge
+        conveyorSpeed = Math.random() < 0.5 ? -1 : 1;
       } else if (difficulty > 0.4 && typeRoll < 0.15) {
         type = 'ice';      // Mid difficulty: momentum control
       } else if (difficulty > 0.3 && typeRoll < 0.12) {
@@ -1928,6 +1936,7 @@ export class Game {
         width,
         height: GROUND_HEIGHT,
         type,
+        conveyorSpeed,
       }));
 
       // Coin rewards on platforms (more common at lower difficulty)
@@ -1944,6 +1953,21 @@ export class Game {
           width: 30 + Math.floor(difficulty * 20),
           height: 30,
           type: 'spike',
+        }));
+      }
+
+      // Wind zones — environmental hazard/helper at mid+ difficulty
+      if (difficulty > 0.4 && Math.random() < 0.08) {
+        const windDirX = Math.random() < 0.5 ? -1 : 1;
+        const windDirY = Math.random() < 0.3 ? -1 : 0; // Occasional updraft
+        this.endlessPlatforms.push(new Platform({
+          x: x - 50,
+          y: y - 120,
+          width: width + 100,
+          height: 120,
+          type: 'wind',
+          windDirection: { x: windDirX, y: windDirY },
+          windStrength: 200 + difficulty * 200,
         }));
       }
 
@@ -5952,6 +5976,9 @@ export class Game {
       { type: 'secret', name: 'SECRET', color: '#ffd700', icon: '?',
         desc: 'Hidden platform! Only appears when you get close.',
         tip: 'Look for faint shimmers. Often lead to bonus coins!' },
+      { type: 'wind', name: 'WIND ZONE', color: '#7ec8e3', icon: '~',
+        desc: 'Pushes you with directional force. Check the arrow!',
+        tip: 'Use wind to reach higher areas or fight it for precision.' },
     ];
 
     let y = 90 + scrollY;
@@ -6278,6 +6305,40 @@ export class Game {
         ctx.textAlign = 'center';
         ctx.fillText('?', x + w / 2, y + h / 2 + 5);
         ctx.globalAlpha = 1;
+        break;
+
+      case 'wind':
+        const windGrad = ctx.createLinearGradient(x, y, x + w, y + h);
+        windGrad.addColorStop(0, 'rgba(126, 200, 227, 0.1)');
+        windGrad.addColorStop(0.5, 'rgba(126, 200, 227, 0.3)');
+        windGrad.addColorStop(1, 'rgba(126, 200, 227, 0.1)');
+        ctx.fillStyle = windGrad;
+        ctx.fillRect(x, y, w, h);
+        // Animated wind streaks
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          const phase = (time * 0.003 + i * 0.3) % 1;
+          const sx = x + w * phase;
+          const sy = y + (h / 5) * (i + 1);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + 15, sy);
+          ctx.stroke();
+        }
+        // Arrow
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(x + w / 2 + 8, y + h / 2);
+        ctx.lineTo(x + w / 2 - 4, y + h / 2 - 5);
+        ctx.lineTo(x + w / 2 - 4, y + h / 2 + 5);
+        ctx.closePath();
+        ctx.fill();
+        // Dashed border
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = 'rgba(126, 200, 227, 0.5)';
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
         break;
 
       default:

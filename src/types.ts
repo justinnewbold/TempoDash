@@ -21,6 +21,8 @@ export interface PlatformConfig {
   phaseGroup?: number;
   color?: string;
   conveyorSpeed?: number;  // Speed for conveyor (-1 to 1, negative = left)
+  windDirection?: { x: number; y: number };  // Wind force direction for 'wind' type (normalized, e.g. {x:1,y:0} = right)
+  windStrength?: number;  // Wind force strength (pixels/s², default 300)
 }
 
 export type PlatformType =
@@ -38,7 +40,8 @@ export type PlatformType =
   | 'glass'      // Breaks after 2nd landing
   | 'slowmo'     // Slows down time while player is in zone
   | 'wall'       // Vertical wall for wall-jumping
-  | 'secret';    // Hidden platform revealed on proximity
+  | 'secret'     // Hidden platform revealed on proximity
+  | 'wind';      // Wind zone - applies directional force to player
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
