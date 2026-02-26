@@ -257,7 +257,7 @@ export class Player {
           this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
           // Trigger a dash effect
           this.isDashing = true;
-          this.dashTimer = 300; // Short dash
+          this.dashTimer = Player.DASH_DURATION;
         }
       } else {
         this.isInRescueWindow = false;
@@ -353,8 +353,8 @@ export class Player {
         this.velocityY = -PLAYER.JUMP_FORCE * 0.9;
         this.wallJumpCooldown = Player.WALL_JUMP_COOLDOWN;
         this.isWallSliding = false;
-        // Reset air jumps on wall jump
-        this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 1);
+        // Reset air jumps on wall jump - reward the skill with 2 guaranteed jumps
+        this.airJumpsRemaining = Math.max(this.airJumpsRemaining, 2);
       }
 
       // Apply gravity (flipped if on gravity platform)

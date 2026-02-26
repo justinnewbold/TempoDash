@@ -107,12 +107,16 @@ export class PowerUpManager {
     return null;
   }
 
-  // Activate a power-up
+  // Activate a power-up (extends duration if already active)
   activatePowerUp(type: PowerUpType): void {
     const config = POWER_UP_CONFIG[type];
+    const existing = this.activePowerUps.get(type);
+    const remainingTime = existing
+      ? Math.min(existing.remainingTime + config.duration, config.duration * 2)
+      : config.duration;
     this.activePowerUps.set(type, {
       type,
-      remainingTime: config.duration,
+      remainingTime,
       maxTime: config.duration,
     });
   }

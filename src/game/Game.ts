@@ -1579,8 +1579,9 @@ export class Game {
     this.splitDisplay = null;
     this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
 
-    // Reset encouragement and celebration
+    // Reset encouragement, celebration, and assist mode offer
     this.consecutiveDeaths = 0;
+    this.assistModeOffered = false;
     this.encouragementMessage = null;
     this.celebrationActive = false;
     this.celebrationTimer = 0;
@@ -1613,6 +1614,27 @@ export class Game {
     this.isPracticeMode = true; // Always practice mode for section practice
     this.state.gameStatus = 'practice';
 
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
+
+    // Initialize level timing and stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
+
+    // Reset split time tracking
+    this.splitTimes = [];
+    this.lastCheckpointIndex = 0;
+    this.splitDisplay = null;
+    this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
+
+    // Reset encouragement and celebration
+    this.consecutiveDeaths = 0;
+    this.assistModeOffered = false;
+    this.encouragementMessage = null;
+    this.celebrationActive = false;
+    this.celebrationTimer = 0;
+
     // Get checkpoint position for the selected section
     const checkpoints = this.getCheckpointsForLevel(levelId);
     if (sectionIndex > 0 && sectionIndex <= checkpoints.length) {
@@ -1632,9 +1654,6 @@ export class Game {
       this.lastCheckpointProgress = 0;
     }
 
-    // Reset modifier timers
-    this.modifiers.resetForLevel();
-
     // Initialize BPM for beat visualization
     const config = this.level.getConfig();
     this.currentBPM = config.bpm || 128;
@@ -1642,6 +1661,9 @@ export class Game {
 
     // Start audio
     this.audio.start();
+
+    // Smooth fade-in
+    this.transition.startIn('fade', 250);
   }
 
   // Handle death respawn when rewind is not used
@@ -3139,6 +3161,14 @@ export class Game {
           // Gauntlet mode: check stage completion
           if (this.currentChallenge.type === 'weeklyGauntlet') {
             const stage = this.gauntletStages[this.gauntletCurrentStage];
+            if (!stage) {
+              // Safety: stage index out of bounds - end gauntlet
+              this.isEndlessMode = false;
+              this.currentChallenge = null;
+              this.state.gameStatus = 'challenges';
+              this.audio.stop();
+              return;
+            }
             const stageComplete = this.endlessDistance >= stage.targetDistance;
 
             if (stageComplete) {

@@ -148,10 +148,9 @@ export class Platform {
 
     // Handle phasing
     if (this.type === 'phase') {
-      this.phaseTimer += deltaTime;
       const cycleTime = PLATFORM.PHASE_ON_TIME + PLATFORM.PHASE_OFF_TIME;
-      const cyclePosition = this.phaseTimer % cycleTime;
-      this.isPhased = cyclePosition > PLATFORM.PHASE_ON_TIME;
+      this.phaseTimer = (this.phaseTimer + deltaTime) % cycleTime;
+      this.isPhased = this.phaseTimer > PLATFORM.PHASE_ON_TIME;
     }
 
     // Handle conveyor animation
@@ -205,7 +204,7 @@ export class Platform {
     const dy = playerY - centerY;
     // Use distance-squared to avoid expensive Math.sqrt() call
     const distanceSquared = dx * dx + dy * dy;
-    const revealDistance = 150;
+    const revealDistance = PLATFORM.SECRET_REVEAL_DISTANCE;
 
     if (distanceSquared < revealDistance * revealDistance) {
       this.secretRevealed = true;
@@ -221,7 +220,7 @@ export class Platform {
   private updateMovement(deltaTime: number): void {
     if (!this.movePattern) return;
 
-    this.moveTime += deltaTime * 0.001 * this.movePattern.speed;
+    this.moveTime = (this.moveTime + deltaTime * 0.001 * this.movePattern.speed) % (Math.PI * 2);
 
     switch (this.movePattern.type) {
       case 'horizontal':
@@ -525,7 +524,7 @@ export class Platform {
         ctx.strokeStyle = '#2d3748';
         ctx.lineWidth = 3;
         const lineSpacing = 20;
-        const offset = (this.conveyorAnimTime * 50) % lineSpacing;
+        const offset = ((this.conveyorAnimTime * 50) % lineSpacing + lineSpacing) % lineSpacing;
         for (let lx = -lineSpacing + offset; lx < this.width + lineSpacing; lx += lineSpacing) {
           ctx.beginPath();
           ctx.moveTo(screenX + lx, this.y);
