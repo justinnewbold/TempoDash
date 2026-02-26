@@ -107,6 +107,10 @@ export class PropertyInspector {
         rows += 2; // Pattern + distance/speed
       } else if (this.element.data.type === 'phase') {
         rows += 1; // Phase offset
+      } else if (this.element.data.type === 'conveyor') {
+        rows += 1; // Conveyor speed
+      } else if (this.element.data.type === 'wind') {
+        rows += 2; // Wind direction + strength
       }
     }
 
@@ -208,6 +212,31 @@ export class PropertyInspector {
       const phaseOffset = this.element.data.phaseOffset || 0;
       this.renderSliderRow(ctx, 'Phase', [
         { label: 'Offset', property: 'phaseOffset', value: phaseOffset, min: 0, max: 1, step: 0.1 },
+      ], this.padding, y, canvasWidth - this.padding * 2);
+      y += this.rowHeight;
+    }
+
+    // Conveyor platform options
+    if (this.element.type === 'platform' && this.element.data.type === 'conveyor') {
+      const speed = this.element.data.conveyorSpeed ?? 1;
+      this.renderSliderRow(ctx, 'Conveyor', [
+        { label: 'Speed', property: 'conveyorSpeed', value: speed, min: -1, max: 1, step: 0.1 },
+      ], this.padding, y, canvasWidth - this.padding * 2);
+      y += this.rowHeight;
+    }
+
+    // Wind zone options
+    if (this.element.type === 'platform' && this.element.data.type === 'wind') {
+      const windDir = this.element.data.windDirection || { x: 1, y: 0 };
+      this.renderSliderRow(ctx, 'Wind Dir', [
+        { label: 'X', property: 'windDirection.x', value: windDir.x, min: -1, max: 1, step: 0.1 },
+        { label: 'Y', property: 'windDirection.y', value: windDir.y, min: -1, max: 1, step: 0.1 },
+      ], this.padding, y, canvasWidth - this.padding * 2);
+      y += this.rowHeight;
+
+      const strength = this.element.data.windStrength ?? 300;
+      this.renderSliderRow(ctx, 'Wind', [
+        { label: 'Strength', property: 'windStrength', value: strength, min: 50, max: 600, step: 10 },
       ], this.padding, y, canvasWidth - this.padding * 2);
       y += this.rowHeight;
     }
@@ -608,7 +637,11 @@ export class PropertyInspector {
     }
 
     const currentValue = (this.getProperty(property) as number) ?? 0;
-    const newValue = Math.max(0, currentValue + delta);
+    // Allow negative values for directional properties (conveyor speed, wind direction)
+    const allowNegative = property === 'conveyorSpeed'
+      || property.startsWith('windDirection')
+      || property === 'movePattern.speed';
+    const newValue = allowNegative ? currentValue + delta : Math.max(0, currentValue + delta);
 
     this.onChange({
       elementType: this.element.type,
