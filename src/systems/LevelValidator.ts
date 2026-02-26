@@ -120,7 +120,7 @@ export class LevelValidator {
 
     // Check for very large gaps that might be unjumpable
     const sorted = [...config.platforms]
-      .filter(p => p.type !== 'spike' && p.type !== 'lava')
+      .filter(p => p.type !== 'spike' && p.type !== 'lava' && p.type !== 'wind' && p.type !== 'slowmo')
       .sort((a, b) => a.x - b.x);
 
     const maxJumpDistance = PLAYER.SPEED * 1.5; // ~525px at base speed

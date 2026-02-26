@@ -78,6 +78,8 @@ export class LevelSharingManager {
           t: p.type,
           ...(p.movePattern && { m: p.movePattern }),
           ...(p.conveyorSpeed !== undefined && { cs: p.conveyorSpeed }),
+          ...(p.windDirection && { wd: p.windDirection }),
+          ...(p.windStrength !== undefined && { ws: p.windStrength }),
         })),
         c: level.coins.map(c => ({
           x: Math.round(c.x),
@@ -146,6 +148,8 @@ export class LevelSharingManager {
             type: string;
             movePattern?: unknown;
             conveyorSpeed?: number;
+            windDirection?: { x: number; y: number };
+            windStrength?: number;
           } = {
             x: p.x as number,
             y: p.y as number,
@@ -155,6 +159,8 @@ export class LevelSharingManager {
           };
           if (p.m) platform.movePattern = p.m;
           if (p.cs !== undefined) platform.conveyorSpeed = p.cs as number;
+          if (p.wd) platform.windDirection = p.wd as { x: number; y: number };
+          if (p.ws !== undefined) platform.windStrength = p.ws as number;
           return platform;
         }),
         coins: (shareData.c || []).map((c: Record<string, unknown>) => ({

@@ -605,6 +605,13 @@ export class LevelEditor {
 
     if (this.state.selectedPlatformType === 'moving') {
       newPlatform.movePattern = { type: 'vertical', distance: 80, speed: 1, startOffset: 0 };
+    } else if (this.state.selectedPlatformType === 'wind') {
+      newPlatform.windDirection = { x: 1, y: 0 };
+      newPlatform.windStrength = 300;
+      newPlatform.width = 200;
+      newPlatform.height = 120;
+    } else if (this.state.selectedPlatformType === 'conveyor') {
+      newPlatform.conveyorSpeed = 1;
     }
 
     this.level.platforms.push(newPlatform);
@@ -1736,6 +1743,13 @@ export class LevelEditor {
         speed: 2,
         startOffset: 0,
       };
+    } else if (this.state.selectedPlatformType === 'wind') {
+      platform.windDirection = { x: 1, y: 0 };
+      platform.windStrength = 300;
+      platform.width = 200;
+      platform.height = 120;
+    } else if (this.state.selectedPlatformType === 'conveyor') {
+      platform.conveyorSpeed = 1;
     }
 
     this.level.platforms.push(platform);
