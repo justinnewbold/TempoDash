@@ -686,6 +686,11 @@ export class LevelEditor {
           platform.type = change.value as PlatformType;
           if (platform.type === 'moving' && !platform.movePattern) {
             platform.movePattern = { type: 'vertical', distance: 80, speed: 1, startOffset: 0 };
+          } else if (platform.type === 'wind' && !platform.windDirection) {
+            platform.windDirection = { x: 1, y: 0 };
+            platform.windStrength = 300;
+          } else if (platform.type === 'conveyor' && platform.conveyorSpeed === undefined) {
+            platform.conveyorSpeed = 1;
           }
         } else if (change.property === 'x') {
           platform.x = change.value as number;
@@ -705,6 +710,18 @@ export class LevelEditor {
             platform.movePattern.speed = change.value as number;
           } else if (subProp === 'type') {
             platform.movePattern.type = change.value as 'vertical' | 'horizontal' | 'circular';
+          }
+        } else if (change.property === 'conveyorSpeed') {
+          platform.conveyorSpeed = change.value as number;
+        } else if (change.property === 'windStrength') {
+          platform.windStrength = change.value as number;
+        } else if (change.property.startsWith('windDirection.')) {
+          if (!platform.windDirection) platform.windDirection = { x: 1, y: 0 };
+          const axis = change.property.split('.')[1];
+          if (axis === 'x') {
+            platform.windDirection.x = change.value as number;
+          } else if (axis === 'y') {
+            platform.windDirection.y = change.value as number;
           }
         }
         this.saveUndoState();
