@@ -16,7 +16,7 @@ describe('Platform', () => {
       const types = [
         'solid', 'bounce', 'crumble', 'moving', 'ice', 'lava',
         'phase', 'spike', 'conveyor', 'gravity', 'sticky', 'glass',
-        'slowmo', 'wall', 'secret'
+        'slowmo', 'wall', 'secret', 'wind'
       ] as const;
 
       for (const type of types) {

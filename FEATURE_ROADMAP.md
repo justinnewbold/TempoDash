@@ -64,10 +64,10 @@ Replayability through gameplay mutators that can be toggled on/off.
 Seeded procedural challenges that are the same for all players.
 
 ### 3.1 Challenge System
-- [ ] Create ChallengeManager class
-- [ ] Implement date-based seeding for procedural generation
-- [ ] Define challenge types (Endless, Speedrun, Coin Rush, Survival)
-- [ ] Add challenge-specific scoring rules
+- [x] Create ChallengeManager class
+- [x] Implement date-based seeding for procedural generation
+- [x] Define challenge types (Endless, Speedrun, Coin Rush, Survival)
+- [x] Add challenge-specific scoring rules
 
 ### 3.2 Challenge Types
 | Type | Duration | Goal |
@@ -78,10 +78,10 @@ Seeded procedural challenges that are the same for all players.
 | Weekly Gauntlet | 7 days | Complete 5 seeded challenge levels |
 
 ### 3.3 UI & Rewards
-- [ ] Challenge menu with current/upcoming challenges
-- [ ] Countdown timer to next challenge
-- [ ] Streak tracking (consecutive days participated)
-- [ ] Streak rewards (bonus skins, achievement progress)
+- [x] Challenge menu with current/upcoming challenges
+- [x] Countdown timer to next challenge
+- [x] Streak tracking (consecutive days participated)
+- [x] Streak rewards (bonus skins, achievement progress)
 
 ---
 

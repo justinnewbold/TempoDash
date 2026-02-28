@@ -33,6 +33,36 @@ export interface ChallengeData {
   challengeHistory: Record<string, ChallengeProgress>;
 }
 
+// Gauntlet stage definition
+export interface GauntletStage {
+  stageNumber: number; // 1-5
+  seed: number;
+  targetDistance: number; // meters to complete
+  platformTypes: PlatformType[]; // allowed platform types
+  speedMultiplier: number; // base speed scaling
+  name: string;
+}
+
+// Streak reward milestones
+export interface StreakReward {
+  streakRequired: number;
+  type: 'skin' | 'achievement' | 'points';
+  rewardId: string;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export const STREAK_REWARDS: StreakReward[] = [
+  { streakRequired: 3, type: 'points', rewardId: 'streak_3', name: '500 Bonus Points', description: '3-day streak reward', icon: '💎' },
+  { streakRequired: 5, type: 'points', rewardId: 'streak_5', name: '1000 Bonus Points', description: '5-day streak reward', icon: '💎' },
+  { streakRequired: 7, type: 'achievement', rewardId: 'challenge_streak', name: 'Challenger Badge', description: 'Complete 7 daily challenges in a row', icon: '📅' },
+  { streakRequired: 10, type: 'skin', rewardId: 'streak_flame', name: 'Streak Flame Skin', description: 'Exclusive skin for 10-day streak', icon: '🔥' },
+  { streakRequired: 14, type: 'points', rewardId: 'streak_14', name: '2500 Bonus Points', description: '14-day streak reward', icon: '💎' },
+  { streakRequired: 21, type: 'skin', rewardId: 'streak_champion', name: 'Champion Skin', description: 'Exclusive skin for 21-day streak', icon: '🏆' },
+  { streakRequired: 30, type: 'points', rewardId: 'streak_30', name: '5000 Bonus Points', description: '30-day streak reward', icon: '👑' },
+];
+
 // Seeded random number generator for consistent challenge generation
 class SeededRandom {
   private seed: number;
@@ -127,11 +157,13 @@ export class ChallengeManager {
     return date.toISOString().split('T')[0];
   }
 
-  // Get the week number of the year
+  // Get the ISO 8601 week number of the year
   private getWeekNumber(date: Date = new Date()): number {
-    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    // Set to nearest Thursday: current date + 4 - current day number (Monday=1, Sunday=7)
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
   // Generate a seed from a date string
@@ -465,5 +497,134 @@ export class ChallengeManager {
     }
 
     return coins;
+  }
+
+  // Generate 5 gauntlet stages with increasing difficulty
+  generateGauntletStages(seed: number): GauntletStage[] {
+    const rng = new SeededRandom(seed + 9999);
+    const stages: GauntletStage[] = [];
+
+    const stageConfigs: Array<{
+      name: string;
+      types: PlatformType[];
+      targetDistance: number;
+      speed: number;
+    }> = [
+      { name: 'The Warm-Up', types: ['solid', 'solid', 'bounce'], targetDistance: 300, speed: 1.0 },
+      { name: 'Shifting Ground', types: ['solid', 'moving', 'phase', 'crumble'], targetDistance: 350, speed: 1.1 },
+      { name: 'Hazard Run', types: ['solid', 'bounce', 'ice', 'conveyor', 'crumble'], targetDistance: 400, speed: 1.2 },
+      { name: 'The Gauntlet', types: ['solid', 'moving', 'phase', 'ice', 'gravity', 'bounce'], targetDistance: 450, speed: 1.3 },
+      { name: 'Final Stand', types: ['solid', 'crumble', 'phase', 'moving', 'ice', 'gravity', 'bounce'], targetDistance: 500, speed: 1.4 },
+    ];
+
+    for (let i = 0; i < 5; i++) {
+      const config = stageConfigs[i];
+      stages.push({
+        stageNumber: i + 1,
+        seed: seed + rng.nextInt(1000, 9999),
+        targetDistance: config.targetDistance,
+        platformTypes: config.types,
+        speedMultiplier: config.speed,
+        name: config.name,
+      });
+    }
+
+    return stages;
+  }
+
+  // Generate platforms for a specific gauntlet stage
+  generateGauntletPlatforms(stage: GauntletStage, startX: number, count: number): Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    type: PlatformType;
+  }> {
+    const rng = new SeededRandom(stage.seed + startX);
+    const platforms: Array<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      type: PlatformType;
+    }> = [];
+
+    const GROUND_Y = 460;
+    let currentX = startX;
+
+    for (let i = 0; i < count; i++) {
+      // Harder stages get narrower platforms and bigger gaps
+      const difficultyScale = stage.stageNumber / 5;
+      const minWidth = Math.max(60, 100 - difficultyScale * 30);
+      const maxWidth = Math.max(80, 150 - difficultyScale * 40);
+      const minGap = 100 + difficultyScale * 30;
+      const maxGap = 200 + difficultyScale * 40;
+
+      const width = rng.nextInt(minWidth, maxWidth);
+      const gap = rng.nextInt(minGap, maxGap);
+      const heightOffset = rng.nextInt(0, 60 + stage.stageNumber * 15);
+      const type = rng.pick(stage.platformTypes);
+
+      platforms.push({
+        x: currentX + gap,
+        y: GROUND_Y - heightOffset,
+        width,
+        height: 20,
+        type,
+      });
+
+      currentX += gap + width;
+    }
+
+    return platforms;
+  }
+
+  // Check and return newly earned streak rewards
+  getNewStreakRewards(): StreakReward[] {
+    const rewards: StreakReward[] = [];
+    for (const reward of STREAK_REWARDS) {
+      if (this.data.currentStreak >= reward.streakRequired) {
+        // Check if this reward was already claimed
+        const claimedKey = `claimed_${reward.rewardId}`;
+        if (!this.data.challengeHistory[claimedKey]) {
+          rewards.push(reward);
+        }
+      }
+    }
+    return rewards;
+  }
+
+  // Mark a streak reward as claimed
+  claimStreakReward(rewardId: string): void {
+    const claimedKey = `claimed_${rewardId}`;
+    this.data.challengeHistory[claimedKey] = {
+      challengeId: claimedKey,
+      completed: true,
+      bestScore: 0,
+      attempts: 0,
+      completedAt: Date.now(),
+    };
+    this.saveData();
+  }
+
+  // Get the next upcoming streak reward
+  getNextStreakReward(): StreakReward | null {
+    for (const reward of STREAK_REWARDS) {
+      if (this.data.currentStreak < reward.streakRequired) {
+        return reward;
+      }
+    }
+    return null;
+  }
+
+  // Get all challenge data for SaveManager integration
+  getChallengeData(): ChallengeData {
+    return { ...this.data };
+  }
+
+  // Load challenge data from SaveManager
+  loadFromSaveData(data: ChallengeData): void {
+    this.data = { ...data };
+    this.saveData();
   }
 }

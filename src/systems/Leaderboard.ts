@@ -141,6 +141,18 @@ export class LeaderboardService {
       this.localData[key] = [];
     }
 
+    // Deduplicate: remove existing entry from same player if new score is better
+    const existingIdx = this.localData[key].findIndex(e => e.playerName === entry.playerName);
+    if (existingIdx !== -1) {
+      if (this.localData[key][existingIdx].score >= entry.score) {
+        // Existing score is better or equal, keep it
+        const rank = this.localData[key].sort((a, b) => b.score - a.score)
+          .findIndex(e => e.playerName === entry.playerName) + 1;
+        return { rank, isNewHighScore };
+      }
+      this.localData[key].splice(existingIdx, 1);
+    }
+
     // Add new entry
     this.localData[key].push(entry);
 
@@ -157,7 +169,9 @@ export class LeaderboardService {
 
     this.saveLocalData();
 
-    return { rank, isNewHighScore };
+    // Return 0 for rank if entry was sliced off (not in top N)
+    const stillInBoard = this.localData[key].some(e => e.id === entry.id);
+    return { rank: stillInBoard ? rank : 0, isNewHighScore };
   }
 
   // Get leaderboard entries

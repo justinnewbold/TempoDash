@@ -146,7 +146,7 @@ export class GhostReplay {
 
   getPlaybackProgress(): number {
     if (!this.isPlayingBack || this.playbackFrames.length === 0) return 0;
-    return this.playbackIndex / (this.playbackFrames.length * GhostReplay.RECORD_INTERVAL);
+    return this.playbackIndex / this.playbackFrames.length;
   }
 
   // Save ghost data to localStorage

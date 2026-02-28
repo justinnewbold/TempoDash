@@ -17,7 +17,7 @@ import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyI
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret'];
+const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
@@ -35,6 +35,7 @@ const PLATFORM_COLORS: Record<PlatformType, string> = {
   slowmo: '#00c8ff',
   wall: '#718096',
   secret: '#ffd700',
+  wind: '#7ec8e3',
 };
 
 const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean'];
@@ -604,6 +605,13 @@ export class LevelEditor {
 
     if (this.state.selectedPlatformType === 'moving') {
       newPlatform.movePattern = { type: 'vertical', distance: 80, speed: 1, startOffset: 0 };
+    } else if (this.state.selectedPlatformType === 'wind') {
+      newPlatform.windDirection = { x: 1, y: 0 };
+      newPlatform.windStrength = 300;
+      newPlatform.width = 200;
+      newPlatform.height = 120;
+    } else if (this.state.selectedPlatformType === 'conveyor') {
+      newPlatform.conveyorSpeed = 1;
     }
 
     this.level.platforms.push(newPlatform);
@@ -678,6 +686,11 @@ export class LevelEditor {
           platform.type = change.value as PlatformType;
           if (platform.type === 'moving' && !platform.movePattern) {
             platform.movePattern = { type: 'vertical', distance: 80, speed: 1, startOffset: 0 };
+          } else if (platform.type === 'wind' && !platform.windDirection) {
+            platform.windDirection = { x: 1, y: 0 };
+            platform.windStrength = 300;
+          } else if (platform.type === 'conveyor' && platform.conveyorSpeed === undefined) {
+            platform.conveyorSpeed = 1;
           }
         } else if (change.property === 'x') {
           platform.x = change.value as number;
@@ -697,6 +710,18 @@ export class LevelEditor {
             platform.movePattern.speed = change.value as number;
           } else if (subProp === 'type') {
             platform.movePattern.type = change.value as 'vertical' | 'horizontal' | 'circular';
+          }
+        } else if (change.property === 'conveyorSpeed') {
+          platform.conveyorSpeed = change.value as number;
+        } else if (change.property === 'windStrength') {
+          platform.windStrength = change.value as number;
+        } else if (change.property.startsWith('windDirection.')) {
+          if (!platform.windDirection) platform.windDirection = { x: 1, y: 0 };
+          const axis = change.property.split('.')[1];
+          if (axis === 'x') {
+            platform.windDirection.x = change.value as number;
+          } else if (axis === 'y') {
+            platform.windDirection.y = change.value as number;
           }
         }
         this.saveUndoState();
@@ -800,25 +825,36 @@ export class LevelEditor {
   private paste(): void {
     if (this.clipboard.length === 0) return;
 
+    const pasteX = this.screenToWorldX(this.mouseX);
+    const pasteY = this.screenToWorldY(this.mouseY);
+    const newElements: SelectedElement[] = [];
+
     for (const item of this.clipboard) {
       if ('type' in item && 'width' in item) {
         // Platform
         const platform = item as PlatformConfig;
         this.level.platforms.push({
           ...platform,
-          x: this.screenToWorldX(this.mouseX) || platform.x + 40,
-          y: this.screenToWorldY(this.mouseY) || platform.y,
+          x: pasteX ?? platform.x + 40,
+          y: pasteY ?? platform.y,
         });
+        newElements.push({ type: 'platform', index: this.level.platforms.length - 1 });
       } else {
         // Coin
         const coin = item as CoinConfig;
         this.level.coins.push({
-          x: this.screenToWorldX(this.mouseX) || coin.x + 40,
-          y: this.screenToWorldY(this.mouseY) || coin.y,
+          x: pasteX ?? coin.x + 40,
+          y: pasteY ?? coin.y,
         });
+        newElements.push({ type: 'coin', index: this.level.coins.length - 1 });
       }
     }
 
+    // Select pasted elements (match pasteClipboard() behavior)
+    this.selectedElements = newElements;
+    if (newElements.length > 0) {
+      this.state.selectedElement = newElements[0];
+    }
     this.saveUndoState();
   }
 
@@ -1492,6 +1528,7 @@ export class LevelEditor {
         this.level = JSON.parse(previous);
         this.background = new Background(this.level.background);
         this.state.selectedElement = null;
+        this.selectedElements = [];
       } catch {
         // Restore stack state on parse error
         this.redoStack.pop();
@@ -1509,6 +1546,7 @@ export class LevelEditor {
         this.level = JSON.parse(next);
         this.background = new Background(this.level.background);
         this.state.selectedElement = null;
+        this.selectedElements = [];
       } catch {
         // Restore stack state on parse error
         this.undoStack.pop();
@@ -1735,6 +1773,13 @@ export class LevelEditor {
         speed: 2,
         startOffset: 0,
       };
+    } else if (this.state.selectedPlatformType === 'wind') {
+      platform.windDirection = { x: 1, y: 0 };
+      platform.windStrength = 300;
+      platform.width = 200;
+      platform.height = 120;
+    } else if (this.state.selectedPlatformType === 'conveyor') {
+      platform.conveyorSpeed = 1;
     }
 
     this.level.platforms.push(platform);

@@ -61,8 +61,11 @@ export class ChaseModeManager {
       return;
     }
 
-    // Accelerate over time
-    this.speedMultiplier += this.config.accelerationRate * deltaTime;
+    // Accelerate over time (cap at 5x to prevent impossible speeds)
+    this.speedMultiplier = Math.min(
+      this.speedMultiplier + this.config.accelerationRate * deltaTime,
+      5.0
+    );
 
     // Move the wall forward
     const wallSpeed = playerSpeed * this.config.baseSpeed * this.speedMultiplier;

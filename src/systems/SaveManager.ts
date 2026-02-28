@@ -2,7 +2,7 @@ import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFra
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
-const SAVE_VERSION = 2; // Increment when SaveData schema changes
+const SAVE_VERSION = 3; // Increment when SaveData schema changes
 
 /**
  * Migration functions: each migrates from version N to N+1.
@@ -16,6 +16,30 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
     if (!data.rhythmAccuracy) data.rhythmAccuracy = {};
     if (!data.playerName) data.playerName = '';
     if (!data.localLeaderboards) data.localLeaderboards = {};
+    return data;
+  },
+  // v2 -> v3: Add challengeData, migrate from separate localStorage key
+  2: (data) => {
+    if (!data.challengeData) {
+      // Attempt to migrate from old separate challenge storage
+      try {
+        const oldChallengeData = localStorage.getItem('tempodash_challenges');
+        if (oldChallengeData) {
+          data.challengeData = JSON.parse(oldChallengeData);
+        }
+      } catch {
+        // Ignore migration errors
+      }
+      if (!data.challengeData) {
+        data.challengeData = {
+          currentStreak: 0,
+          longestStreak: 0,
+          lastParticipationDate: '',
+          totalChallengesCompleted: 0,
+          challengeHistory: {},
+        };
+      }
+    }
     return data;
   },
 };
@@ -158,6 +182,27 @@ export const PLAYER_SKINS: PlayerSkin[] = [
     eyeColor: '#ffff00',
     trailColor: 'rgba(68, 68, 170, 0.4)',
     cost: 1000,
+  },
+  // Streak reward skins (unlocked via challenge streaks, not purchasable)
+  {
+    id: 'streak_flame',
+    name: 'Streak Flame',
+    primaryColor: '#ff4400',
+    secondaryColor: '#ff8800',
+    glowColor: '#ff6600',
+    eyeColor: '#ffff00',
+    trailColor: 'rgba(255, 100, 0, 0.5)',
+    cost: 0, // Unlocked via 10-day streak
+  },
+  {
+    id: 'streak_champion',
+    name: 'Champion',
+    primaryColor: '#ffd700',
+    secondaryColor: '#ff8c00',
+    glowColor: '#ffa500',
+    eyeColor: '#ffffff',
+    trailColor: 'rgba(255, 215, 0, 0.5)',
+    cost: 0, // Unlocked via 21-day streak
   },
 ];
 
@@ -909,6 +954,27 @@ export class SaveManager {
       ghostRuns: {},
     };
     this.save();
+  }
+
+  // --- CHALLENGE DATA ---
+
+  getChallengeData(): SaveData['challengeData'] {
+    return this.data.challengeData;
+  }
+
+  saveChallengeData(challengeData: NonNullable<SaveData['challengeData']>): void {
+    this.data.challengeData = challengeData;
+    this.save();
+  }
+
+  // Grant a streak reward skin (no points cost)
+  grantStreakSkin(skinId: string): boolean {
+    if (!this.data.unlockedSkins.includes(skinId)) {
+      this.data.unlockedSkins.push(skinId);
+      this.save();
+      return true;
+    }
+    return false;
   }
 
   // --- STORAGE USAGE ---
