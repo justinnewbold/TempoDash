@@ -825,25 +825,36 @@ export class LevelEditor {
   private paste(): void {
     if (this.clipboard.length === 0) return;
 
+    const pasteX = this.screenToWorldX(this.mouseX);
+    const pasteY = this.screenToWorldY(this.mouseY);
+    const newElements: SelectedElement[] = [];
+
     for (const item of this.clipboard) {
       if ('type' in item && 'width' in item) {
         // Platform
         const platform = item as PlatformConfig;
         this.level.platforms.push({
           ...platform,
-          x: this.screenToWorldX(this.mouseX) || platform.x + 40,
-          y: this.screenToWorldY(this.mouseY) || platform.y,
+          x: pasteX ?? platform.x + 40,
+          y: pasteY ?? platform.y,
         });
+        newElements.push({ type: 'platform', index: this.level.platforms.length - 1 });
       } else {
         // Coin
         const coin = item as CoinConfig;
         this.level.coins.push({
-          x: this.screenToWorldX(this.mouseX) || coin.x + 40,
-          y: this.screenToWorldY(this.mouseY) || coin.y,
+          x: pasteX ?? coin.x + 40,
+          y: pasteY ?? coin.y,
         });
+        newElements.push({ type: 'coin', index: this.level.coins.length - 1 });
       }
     }
 
+    // Select pasted elements (match pasteClipboard() behavior)
+    this.selectedElements = newElements;
+    if (newElements.length > 0) {
+      this.state.selectedElement = newElements[0];
+    }
     this.saveUndoState();
   }
 
@@ -1517,6 +1528,7 @@ export class LevelEditor {
         this.level = JSON.parse(previous);
         this.background = new Background(this.level.background);
         this.state.selectedElement = null;
+        this.selectedElements = [];
       } catch {
         // Restore stack state on parse error
         this.redoStack.pop();
@@ -1534,6 +1546,7 @@ export class LevelEditor {
         this.level = JSON.parse(next);
         this.background = new Background(this.level.background);
         this.state.selectedElement = null;
+        this.selectedElements = [];
       } catch {
         // Restore stack state on parse error
         this.undoStack.pop();

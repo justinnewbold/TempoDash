@@ -2880,6 +2880,7 @@ export class Game {
           // Gems add to combo
           this.comboCount += 3;
           this.comboTimer = this.comboDuration;
+          this.comboDisplayTimer = 500;
           this.comboMeterPulse = 1;
           this.flowMeter.onCoinCollect();
         }
@@ -6584,6 +6585,9 @@ export class Game {
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
     this.cameraX = 0;
     this.attempts++;
+
+    // Resume audio (every other restart path calls this)
+    this.audio.start();
   }
 
   // Sync challenge data to SaveManager for unified storage
