@@ -66,10 +66,6 @@ export class Game {
   private menuAnimation = 0;
   private levelScoreThisRun = 0;
 
-  // Screen shake
-  private shakeIntensity = 0;
-  private shakeDuration = 0;
-  private shakeTimer = 0;
 
   // Death flash effect
   private deathFlashOpacity = 0;
@@ -2219,10 +2215,7 @@ export class Game {
       }
     }
 
-    // Decay screen shake
-    if (this.shakeTimer > 0) {
-      this.shakeTimer -= deltaTime;
-    }
+    // Screen shake disabled — no decay needed
 
     // Decay death flash
     if (this.deathFlashOpacity > 0) {
@@ -7176,25 +7169,13 @@ export class Game {
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 
-  private triggerShake(intensity: number, duration: number): void {
-    // Only shake if screen shake is enabled in settings
-    if (!this.save.getSettings().screenShake) return;
-
-    this.shakeIntensity = intensity;
-    this.shakeDuration = duration;
-    this.shakeTimer = duration;
+  private triggerShake(_intensity: number, _duration: number): void {
+    // Screen shake permanently disabled — screen stays static
+    return;
   }
 
   private getShakeOffset(): { x: number; y: number } {
-    if (this.shakeTimer <= 0) return { x: 0, y: 0 };
-
-    const progress = this.shakeTimer / this.shakeDuration;
-    const currentIntensity = this.shakeIntensity * progress;
-
-    return {
-      x: (Math.random() - 0.5) * currentIntensity * 2,
-      y: (Math.random() - 0.5) * currentIntensity * 2,
-    };
+    return { x: 0, y: 0 };
   }
 
   // Format time for speedrun display (mm:ss.mmm)
