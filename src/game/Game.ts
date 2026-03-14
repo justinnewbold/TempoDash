@@ -1115,16 +1115,9 @@ export class Game {
       this.audio.playSelect();
     }
 
-    // Screen shake toggle (right column)
+    // Reduced motion toggle (right column)
     const rightToggleX = rightColX - toggleWidth / 2;
     if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
-      const currentShake = this.save.getSettings().screenShake;
-      this.save.updateSettings({ screenShake: !currentShake });
-      this.audio.playSelect();
-    }
-
-    // Reduced motion toggle (right column)
-    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 225 && y <= 260) {
       this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
       this.audio.playSelect();
     }
@@ -1826,6 +1819,7 @@ export class Game {
       this.attempts = 1;
       this.levelScoreThisRun = 0;
       this.state.gameStatus = 'editorTest';
+      this.resetGameplaySystems();
       this.audio.start();
       return;
     }
@@ -5421,15 +5415,11 @@ export class Game {
     this.ctx.fillStyle = '#00ffff';
     this.ctx.fillText('DISPLAY', rightColX, 100);
 
-    // Screen shake toggle
+    // Reduced motion toggle
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Screen Shake', rightColX, 135);
-    this.renderToggle(rightColX, 160, this.save.getSettings().screenShake);
-
-    // Reduced motion toggle
-    this.ctx.fillText('Reduced Motion', rightColX, 210);
-    this.renderToggle(rightColX, 235, this.save.isReducedMotionEnabled());
+    this.ctx.fillText('Reduced Motion', rightColX, 135);
+    this.renderToggle(rightColX, 160, this.save.isReducedMotionEnabled());
 
     // === ACCESSIBILITY SECTION ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
