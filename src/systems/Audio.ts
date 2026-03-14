@@ -858,6 +858,36 @@ export class AudioManager {
     });
   }
 
+  // Perfect beat landing - harmonized landing sound
+  playBeatLanding(): void {
+    this.initAudioContext();
+    if (!this.audioContext || !this.sfxGain) return;
+
+    const time = this.audioContext.currentTime;
+
+    // Resonant chime for on-beat landing
+    const osc = this.audioContext.createOscillator();
+    const osc2 = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, time); // C5
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(659.25, time); // E5
+
+    gain.gain.setValueAtTime(0.2, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+    osc.connect(gain);
+    osc2.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(time);
+    osc2.start(time);
+    osc.stop(time + 0.25);
+    osc2.stop(time + 0.25);
+  }
+
   // Coin collection sound - quick melodic "ding"
   playCoinCollect(): void {
     this.initAudioContext();

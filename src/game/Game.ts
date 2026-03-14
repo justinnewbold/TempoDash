@@ -1,5 +1,5 @@
 import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { GAME_WIDTH, GAME_HEIGHT, COLORS, TIMING } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
@@ -2436,6 +2436,9 @@ export class Game {
         this.audio.playLevelComplete(); // Dramatic sound
         this.screenEffects.triggerBeatDrop(500);
         this.screenEffects.triggerZoomPulse(1.2, 300);
+        this.screenEffects.triggerFlash('#ffff00', 0.4);
+        this.screenEffects.triggerChromaticAberration(10);
+        this.screenEffects.triggerFreezeFrame(3);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 5);
       }
     }
@@ -2517,7 +2520,17 @@ export class Game {
 
     // Play landing sound when player touches ground
     if (this.player.landingEvent) {
-      this.audio.playLanding();
+      // Check if landing is on-beat for enhanced feedback
+      const timeSinceBeat = performance.now() - this.lastBeatTime;
+      const beatInterval = 60000 / this.audio.getBPM();
+      const distToBeat = Math.min(timeSinceBeat, beatInterval - timeSinceBeat);
+      if (distToBeat < TIMING.BEAT_PERFECT_WINDOW) {
+        this.audio.playBeatLanding();
+        this.flowMeter.onPerfectLanding();
+        this.screenEffects.triggerZoomPulse(1.03, 80);
+      } else {
+        this.audio.playLanding();
+      }
     }
 
     // Update player trail particles
@@ -2678,6 +2691,7 @@ export class Game {
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
+          this.audio.playDangerStinger();
           this.audio.pulseIntensity(0.2); // Spike music tension on near-miss
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
@@ -2765,17 +2779,20 @@ export class Game {
       if (prevCombo < 15 && this.comboCount >= 15) {
         this.screenEffects.triggerZoomPulse(1.1, 200);
         this.screenEffects.triggerBeatDrop(300);
+        this.screenEffects.triggerChromaticAberration(6);
         this.triggerMilestone('combo', 15);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
         this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
+        this.screenEffects.triggerChromaticAberration(8);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
         this.triggerMilestone('combo', 20);
       }
       if (prevCombo < 25 && this.comboCount >= 25) {
         this.screenEffects.triggerZoomPulse(1.15, 300);
         this.screenEffects.triggerBeatDrop(500);
+        this.screenEffects.triggerChromaticAberration(12);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 3);
         this.triggerMilestone('combo', 25);
       }
@@ -3089,9 +3106,15 @@ export class Game {
       this.checkpointFeedbackTimer -= deltaTime;
     }
 
-    /// Horizontal scrolling: keep player near left of screen as they run right
-    const targetCameraX = this.player.x - 150;
-    this.cameraX = Math.max(0, targetCameraX);
+    /// Horizontal scrolling: smooth camera easing
+    // When dead, ease camera toward respawn point; otherwise follow player
+    let targetCameraX: number;
+    if (this.player.isDead && !this.isEndlessMode) {
+      targetCameraX = Math.max(0, this.checkpointX - 150);
+    } else {
+      targetCameraX = Math.max(0, this.player.x - 150);
+    }
+    this.cameraX += (targetCameraX - this.cameraX) * 0.12;
 
     // Update checkpoints and split times (every 25% progress)
     const progress = this.level.getProgress(this.player.x);
