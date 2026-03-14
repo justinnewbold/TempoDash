@@ -1,5 +1,5 @@
 import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../constants';
+import { GAME_WIDTH, GAME_HEIGHT, COLORS, TIMING } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
@@ -66,10 +66,6 @@ export class Game {
   private menuAnimation = 0;
   private levelScoreThisRun = 0;
 
-  // Screen shake
-  private shakeIntensity = 0;
-  private shakeDuration = 0;
-  private shakeTimer = 0;
 
   // Death flash effect
   private deathFlashOpacity = 0;
@@ -898,7 +894,9 @@ export class Game {
         if (x >= playBtnX && x <= playBtnX + playBtnW && y >= playBtnY && y <= playBtnY + playBtnH) {
           // Start the level at the selected section
           this.showSectionPractice = false;
-          this.startLevelAtSection(levelId, this.selectedSection);
+          const section = this.selectedSection;
+          this.selectedSection = 0;
+          this.startLevelAtSection(levelId, section);
           this.audio.playSelect();
           return;
         }
@@ -1119,16 +1117,9 @@ export class Game {
       this.audio.playSelect();
     }
 
-    // Screen shake toggle (right column)
+    // Reduced motion toggle (right column)
     const rightToggleX = rightColX - toggleWidth / 2;
     if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
-      const currentShake = this.save.getSettings().screenShake;
-      this.save.updateSettings({ screenShake: !currentShake });
-      this.audio.playSelect();
-    }
-
-    // Reduced motion toggle (right column)
-    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 225 && y <= 260) {
       this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
       this.audio.playSelect();
     }
@@ -1830,6 +1821,7 @@ export class Game {
       this.attempts = 1;
       this.levelScoreThisRun = 0;
       this.state.gameStatus = 'editorTest';
+      this.resetGameplaySystems();
       this.audio.start();
       return;
     }
@@ -1865,6 +1857,14 @@ export class Game {
 
     // Generate initial platforms
     this.generateEndlessPlatforms(1500);
+
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
+
+    // Initialize timing stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
 
     this.state.gameStatus = 'endless';
     this.audio.start();
@@ -2219,10 +2219,7 @@ export class Game {
       }
     }
 
-    // Decay screen shake
-    if (this.shakeTimer > 0) {
-      this.shakeTimer -= deltaTime;
-    }
+    // Screen shake disabled — no decay needed
 
     // Decay death flash
     if (this.deathFlashOpacity > 0) {
@@ -2439,6 +2436,9 @@ export class Game {
         this.audio.playLevelComplete(); // Dramatic sound
         this.screenEffects.triggerBeatDrop(500);
         this.screenEffects.triggerZoomPulse(1.2, 300);
+        this.screenEffects.triggerFlash('#ffff00', 0.4);
+        this.screenEffects.triggerChromaticAberration(10);
+        this.screenEffects.triggerFreezeFrame(3);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 5);
       }
     }
@@ -2520,7 +2520,17 @@ export class Game {
 
     // Play landing sound when player touches ground
     if (this.player.landingEvent) {
-      this.audio.playLanding();
+      // Check if landing is on-beat for enhanced feedback
+      const timeSinceBeat = performance.now() - this.lastBeatTime;
+      const beatInterval = 60000 / this.audio.getBPM();
+      const distToBeat = Math.min(timeSinceBeat, beatInterval - timeSinceBeat);
+      if (distToBeat < TIMING.BEAT_PERFECT_WINDOW) {
+        this.audio.playBeatLanding();
+        this.flowMeter.onPerfectLanding();
+        this.screenEffects.triggerZoomPulse(1.03, 80);
+      } else {
+        this.audio.playLanding();
+      }
     }
 
     // Update player trail particles
@@ -2681,6 +2691,7 @@ export class Game {
           this.comboCount += 1;
           this.comboTimer = this.comboDuration;
           this.flowMeter.onNearMiss();
+          this.audio.playDangerStinger();
           this.audio.pulseIntensity(0.2); // Spike music tension on near-miss
           this.comboDisplayTimer = 400;
           this.nearMissTimer = 500; // Cooldown to prevent spam
@@ -2768,17 +2779,20 @@ export class Game {
       if (prevCombo < 15 && this.comboCount >= 15) {
         this.screenEffects.triggerZoomPulse(1.1, 200);
         this.screenEffects.triggerBeatDrop(300);
+        this.screenEffects.triggerChromaticAberration(6);
         this.triggerMilestone('combo', 15);
       }
       if (prevCombo < 20 && this.comboCount >= 20) {
         this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
+        this.screenEffects.triggerChromaticAberration(8);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
         this.triggerMilestone('combo', 20);
       }
       if (prevCombo < 25 && this.comboCount >= 25) {
         this.screenEffects.triggerZoomPulse(1.15, 300);
         this.screenEffects.triggerBeatDrop(500);
+        this.screenEffects.triggerChromaticAberration(12);
         this.particles.spawnFireworkShow(this.player.x, this.player.y - 50, 3);
         this.triggerMilestone('combo', 25);
       }
@@ -3092,9 +3106,15 @@ export class Game {
       this.checkpointFeedbackTimer -= deltaTime;
     }
 
-    /// Horizontal scrolling: keep player near left of screen as they run right
-    const targetCameraX = this.player.x - 150;
-    this.cameraX = Math.max(0, targetCameraX);
+    /// Horizontal scrolling: smooth camera easing
+    // When dead, ease camera toward respawn point; otherwise follow player
+    let targetCameraX: number;
+    if (this.player.isDead && !this.isEndlessMode) {
+      targetCameraX = Math.max(0, this.checkpointX - 150);
+    } else {
+      targetCameraX = Math.max(0, this.player.x - 150);
+    }
+    this.cameraX += (targetCameraX - this.cameraX) * 0.12;
 
     // Update checkpoints and split times (every 25% progress)
     const progress = this.level.getProgress(this.player.x);
@@ -5428,15 +5448,11 @@ export class Game {
     this.ctx.fillStyle = '#00ffff';
     this.ctx.fillText('DISPLAY', rightColX, 100);
 
-    // Screen shake toggle
+    // Reduced motion toggle
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Screen Shake', rightColX, 135);
-    this.renderToggle(rightColX, 160, this.save.getSettings().screenShake);
-
-    // Reduced motion toggle
-    this.ctx.fillText('Reduced Motion', rightColX, 210);
-    this.renderToggle(rightColX, 235, this.save.isReducedMotionEnabled());
+    this.ctx.fillText('Reduced Motion', rightColX, 135);
+    this.renderToggle(rightColX, 160, this.save.isReducedMotionEnabled());
 
     // === ACCESSIBILITY SECTION ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
@@ -6477,6 +6493,14 @@ export class Game {
     // Clear any active powerups
     this.powerUps.clear();
 
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
+
+    // Initialize timing stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
+
     // Start music
     this.audio.start();
 
@@ -6539,6 +6563,13 @@ export class Game {
 
   private restartChallenge(): void {
     if (!this.currentChallenge) return;
+
+    // Gauntlet challenges should restart the current stage with its parameters
+    if (this.currentChallenge.type === 'weeklyGauntlet') {
+      this.attempts++;
+      this.startGauntletStage(this.gauntletCurrentStage);
+      return;
+    }
 
     // Reset with same seed
     this.endlessDistance = 0;
@@ -7176,25 +7207,13 @@ export class Game {
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   }
 
-  private triggerShake(intensity: number, duration: number): void {
-    // Only shake if screen shake is enabled in settings
-    if (!this.save.getSettings().screenShake) return;
-
-    this.shakeIntensity = intensity;
-    this.shakeDuration = duration;
-    this.shakeTimer = duration;
+  private triggerShake(_intensity: number, _duration: number): void {
+    // Screen shake permanently disabled — screen stays static
+    return;
   }
 
   private getShakeOffset(): { x: number; y: number } {
-    if (this.shakeTimer <= 0) return { x: 0, y: 0 };
-
-    const progress = this.shakeTimer / this.shakeDuration;
-    const currentIntensity = this.shakeIntensity * progress;
-
-    return {
-      x: (Math.random() - 0.5) * currentIntensity * 2,
-      y: (Math.random() - 0.5) * currentIntensity * 2,
-    };
+    return { x: 0, y: 0 };
   }
 
   // Format time for speedrun display (mm:ss.mmm)

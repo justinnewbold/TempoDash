@@ -296,10 +296,22 @@ export class Platform {
 
     ctx.save();
 
-    // Handle phase transparency
+    // Handle phase transparency with countdown shimmer
     if (this.type === 'phase') {
-      const alpha = this.isPhased ? 0.2 : 1;
-      ctx.globalAlpha = alpha;
+      if (this.isPhased) {
+        ctx.globalAlpha = 0.2;
+      } else {
+        // Shimmer warning when about to phase out (last 30% of on-time)
+        const timeInPhase = this.phaseTimer;
+        const warningStart = PLATFORM.PHASE_ON_TIME * 0.7;
+        if (timeInPhase > warningStart) {
+          const warningProgress = (timeInPhase - warningStart) / (PLATFORM.PHASE_ON_TIME - warningStart);
+          const flicker = 0.6 + Math.sin(warningProgress * Math.PI * 6) * 0.4;
+          ctx.globalAlpha = flicker;
+        } else {
+          ctx.globalAlpha = 1;
+        }
+      }
     }
 
     // Handle rhythm lock visual feedback
@@ -321,14 +333,25 @@ export class Platform {
       }
     }
 
-    // Handle crumble shake
-    if (this.isCrumbling && this.crumbleProgress < 1) {
-      const shake = (1 - this.crumbleProgress) * 3;
-      ctx.translate(
-        (Math.random() - 0.5) * shake,
-        (Math.random() - 0.5) * shake
-      );
-      ctx.globalAlpha = 1 - this.crumbleProgress;
+    // Handle crumble visual feedback
+    if (this.isCrumbling) {
+      if (this.crumbleProgress > 0 && this.crumbleProgress < 1) {
+        // Breaking apart: shake and fade
+        const shake = (1 - this.crumbleProgress) * 3;
+        ctx.translate(
+          (Math.random() - 0.5) * shake,
+          (Math.random() - 0.5) * shake
+        );
+        ctx.globalAlpha = 1 - this.crumbleProgress;
+      } else if (this.crumbleProgress === 0) {
+        // During delay: pulsing warning glow
+        const delayProgress = this.crumbleTimer / PLATFORM.CRUMBLE_DELAY;
+        const pulse = 0.3 + Math.sin(delayProgress * Math.PI * 4) * 0.3;
+        if (!Platform.reducedEffects) {
+          ctx.shadowColor = '#ff4444';
+          ctx.shadowBlur = 10 + pulse * 15;
+        }
+      }
     }
 
     // Draw platform base with camera offset
@@ -718,8 +741,12 @@ export class Platform {
           ctx.fillRect(screenX, this.y, this.width, this.height);
           ctx.globalAlpha = 1;
         } else {
-          // Fade in golden platform
+          // Gradual reveal with expanding glow
           ctx.globalAlpha = this.secretRevealProgress;
+          if (this.secretRevealProgress < 1 && !Platform.reducedEffects) {
+            ctx.shadowColor = '#ffd700';
+            ctx.shadowBlur = 20 * (1 - this.secretRevealProgress);
+          }
           if (useFlat) {
             ctx.fillStyle = '#ffd700';
           } else {

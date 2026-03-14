@@ -97,6 +97,9 @@ export class Player {
   // Landing event for sound feedback
   landingEvent = false;
 
+  // Variable jump height: track if jump was held last frame
+  private jumpWasHeld = false;
+
   // Flying mode state
   private flyingMode = false;
   private static readonly FLYING_LIFT_FORCE = 800;  // Upward force when holding jump
@@ -158,6 +161,7 @@ export class Player {
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.landingEvent = false;
+    this.jumpWasHeld = false;
     this.boomerangVelocityX = 0;
     this.boomerangActive = false;
     this.boomerangTimer = 0;
@@ -358,6 +362,12 @@ export class Player {
 
         this.airJumpsRemaining--;
       }
+
+      // Variable jump height: cut jump short when button released while rising
+      if (this.jumpWasHeld && !input.jump && this.velocityY < 0) {
+        this.velocityY *= 0.5; // Halve upward velocity for short hop
+      }
+      this.jumpWasHeld = input.jump;
 
       // Wall jump - can jump off walls even without air jumps (use previous frame's state)
       if (input.jumpPressed && wasWallSliding && this.wallJumpCooldown <= 0) {
