@@ -894,7 +894,9 @@ export class Game {
         if (x >= playBtnX && x <= playBtnX + playBtnW && y >= playBtnY && y <= playBtnY + playBtnH) {
           // Start the level at the selected section
           this.showSectionPractice = false;
-          this.startLevelAtSection(levelId, this.selectedSection);
+          const section = this.selectedSection;
+          this.selectedSection = 0;
+          this.startLevelAtSection(levelId, section);
           this.audio.playSelect();
           return;
         }
@@ -1855,6 +1857,14 @@ export class Game {
 
     // Generate initial platforms
     this.generateEndlessPlatforms(1500);
+
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
+
+    // Initialize timing stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
 
     this.state.gameStatus = 'endless';
     this.audio.start();
@@ -6460,6 +6470,14 @@ export class Game {
     // Clear any active powerups
     this.powerUps.clear();
 
+    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
+    this.resetGameplaySystems();
+
+    // Initialize timing stats
+    this.levelStartTime = performance.now();
+    this.levelElapsedTime = 0;
+    this.levelDeathCount = 0;
+
     // Start music
     this.audio.start();
 
@@ -6522,6 +6540,13 @@ export class Game {
 
   private restartChallenge(): void {
     if (!this.currentChallenge) return;
+
+    // Gauntlet challenges should restart the current stage with its parameters
+    if (this.currentChallenge.type === 'weeklyGauntlet') {
+      this.attempts++;
+      this.startGauntletStage(this.gauntletCurrentStage);
+      return;
+    }
 
     // Reset with same seed
     this.endlessDistance = 0;
