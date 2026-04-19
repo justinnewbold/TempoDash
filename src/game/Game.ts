@@ -70,6 +70,15 @@ export class Game {
   // Death flash effect
   private deathFlashOpacity = 0;
 
+  // Death cause banner (shown during kill cam after a death)
+  private deathCauseText: string | null = null;
+  private deathCauseTimer = 0;
+  private static readonly DEATH_CAUSE_DURATION = 900; // ms
+
+  // Resume countdown after unpause (3-2-1-GO)
+  private resumeCountdown = 0;
+  private static readonly RESUME_COUNTDOWN_DURATION = 3000; // ms
+
   // Power-up flash effect
   private powerUpFlashOpacity = 0;
   private powerUpFlashColor = '#00ffaa';
@@ -1124,6 +1133,12 @@ export class Game {
       this.audio.playSelect();
     }
 
+    // Beat visualizer toggle (right column)
+    if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 235 && y <= 270) {
+      this.save.setBeatVisualizer(!this.save.isBeatVisualizerEnabled());
+      this.audio.playSelect();
+    }
+
     // Colorblind mode buttons (left column)
     const modes: Array<{ id: GameSettings['colorblindMode']; label: string }> = [
       { id: 'normal', label: 'Normal' },
@@ -1167,9 +1182,9 @@ export class Game {
       this.audio.playSelect();
     }
 
-    // Haptic feedback toggle (right column)
+    // Assist mode toggle (right column)
     if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 420 && y <= 455) {
-      this.save.setHapticFeedback(!this.save.isHapticFeedbackEnabled());
+      this.save.setAssistMode(!this.save.isAssistModeEnabled());
       this.audio.playSelect();
     }
 
@@ -1416,17 +1431,10 @@ export class Game {
 
       case 'paused':
         if (e.code === 'Escape' || e.code === 'Enter') {
-          // Resume to the correct mode
-          if (this.currentChallenge) {
-            this.state.gameStatus = 'challengePlaying';
-          } else if (this.isEndlessMode) {
-            this.state.gameStatus = 'endless';
-          } else if (this.isPracticeMode) {
-            this.state.gameStatus = 'practice';
-          } else {
-            this.state.gameStatus = 'playing';
+          // Ignore repeated resume presses while the countdown is already running
+          if (this.resumeCountdown <= 0) {
+            this.beginResumeCountdown();
           }
-          this.audio.start();
         } else if (e.code === 'KeyQ') {
           this.returnToMainMenu();
         }
@@ -1543,6 +1551,9 @@ export class Game {
       this.lastCheckpointProgress = 0;
     }
     this.resetGameplaySystems();
+    this.resumeCountdown = 0;
+    this.deathCauseText = null;
+    this.deathCauseTimer = 0;
     this.audio.start();
   }
 
@@ -1835,6 +1846,9 @@ export class Game {
     this.lastCheckpointProgress = 0;
 
     this.resetGameplaySystems();
+    this.resumeCountdown = 0;
+    this.deathCauseText = null;
+    this.deathCauseTimer = 0;
 
     this.state.gameStatus = this.isPracticeMode ? 'practice' : 'playing';
     this.audio.start();
@@ -2076,6 +2090,9 @@ export class Game {
     this.deathTimer = 0;
     this.isWaitingForRewindInput = false;
     this.rewindInputWindow = 0;
+    this.resumeCountdown = 0;
+    this.deathCauseText = null;
+    this.deathCauseTimer = 0;
     this.screenEffects.reset();
     this.audio.stop();
   }
@@ -2239,6 +2256,17 @@ export class Game {
       }
     }
 
+    // Decay death cause banner timer
+    if (this.deathCauseTimer > 0) {
+      this.deathCauseTimer -= deltaTime;
+      if (this.deathCauseTimer <= 0) {
+        this.deathCauseText = null;
+      }
+    }
+
+    // Tick resume countdown (handled in updatePauseResume)
+    this.updateResumeCountdown(deltaTime);
+
     // Decay share notification timer
     if (this.shareNotification && this.shareNotification.timer > 0) {
       this.shareNotification.timer -= deltaTime;
@@ -2344,6 +2372,7 @@ export class Game {
     // Check for time attack expiration
     if (this.modifiers.isTimeExpired() && !this.player.isDead) {
       this.player.isDead = true; // Time's up!
+      this.player.deathCause = 'timeUp';
     }
 
     // Apply slowmo effect from power-ups and speed demon modifier
@@ -2559,6 +2588,7 @@ export class Game {
       // Check if wall caught the player
       if (this.chaseMode.checkCollision(this.player.x) && !this.player.isDead) {
         this.player.isDead = true;
+        this.player.deathCause = 'wallOfDeath';
         this.triggerShake(15, 400); // Strong shake for wall death
       }
 
@@ -2575,6 +2605,7 @@ export class Game {
         // Check if boss hit the player
         if (bossResult.hitPlayer) {
           this.player.isDead = true;
+          this.player.deathCause = 'boss';
           this.triggerShake(15, 400);
           this.screenEffects.triggerChromaticAberration(15);
         }
@@ -3019,6 +3050,7 @@ export class Game {
     if (!this.player.isDead && !this.flowMeter.isInOverdrive()) {
       if (this.beatHazards.checkCollisions(this.player.getBounds())) {
         this.player.isDead = true;
+        this.player.deathCause = 'beatHazard';
       }
     }
 
@@ -3068,6 +3100,10 @@ export class Game {
         this.screenEffects.triggerFreezeFrame(4); // Freeze for impact
         this.screenEffects.triggerKillCam(playerCenterX, playerCenterY, 600); // Slow-mo kill cam
         this.screenEffects.triggerChromaticAberration(10);
+
+        // Capture death cause for the banner overlay
+        this.deathCauseText = this.formatDeathCause(this.player.deathCause);
+        this.deathCauseTimer = Game.DEATH_CAUSE_DURATION;
 
         // Mark perfect run as failed
         this.isPerfectRun = false;
@@ -3596,6 +3632,9 @@ export class Game {
     // Screen effects post-processing (vignette, weather, etc.)
     this.screenEffects.renderPostEffects(this.ctx);
 
+    // Death cause banner (shown briefly during kill cam)
+    this.renderDeathCauseBanner();
+
     this.ctx.restore();
 
     // Show tutorial overlay if active
@@ -4110,12 +4149,88 @@ export class Game {
     // Time Rewind counter (bottom-left)
     this.renderRewindCounter();
 
+    // Jump dots + dash readiness (near player HUD)
+    this.renderJumpIndicator();
+
     // Mobile controls (pause, home, restart buttons)
     if (this.input.isMobileDevice()) {
       this.renderMobileControls();
     }
 
     this.ctx.restore();
+  }
+
+  private renderJumpIndicator(): void {
+    const airJumps = this.player.getAirJumpsRemaining();
+    const totalJumps = 5;
+    const remaining = this.player.isGrounded ? totalJumps : airJumps + 1;
+
+    const dotRadius = 5;
+    const spacing = 16;
+    const totalWidth = (totalJumps - 1) * spacing;
+    const startX = (GAME_WIDTH - totalWidth) / 2;
+    const y = GAME_HEIGHT - 30;
+
+    // Beat-synced pulse when the next jump will land a dash (final air jump)
+    const dashNext = !this.player.isGrounded && airJumps === 1;
+    const dashActive = this.player.isDashing;
+
+    this.ctx.save();
+    for (let i = 0; i < totalJumps; i++) {
+      const x = startX + i * spacing;
+      const available = i < remaining;
+      const isDashSlot = i === totalJumps - 1;
+
+      // Background ring
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, dotRadius + 1.5, 0, Math.PI * 2);
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = 1;
+      this.ctx.stroke();
+
+      if (available) {
+        let color = '#00ffaa';
+        if (isDashSlot) color = dashActive ? '#ffffff' : (dashNext ? '#ff00ff' : '#ff66cc');
+        else if (remaining === 1 && !this.player.isGrounded) color = '#ffaa00';
+
+        if (isDashSlot && dashNext) {
+          const pulse = 0.6 + Math.sin(performance.now() * 0.012) * 0.4;
+          this.ctx.shadowColor = color;
+          this.ctx.shadowBlur = 10 * pulse;
+        } else if (dashActive && isDashSlot) {
+          this.ctx.shadowColor = color;
+          this.ctx.shadowBlur = 14;
+        }
+
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.shadowBlur = 0;
+      }
+    }
+
+    // Small label
+    this.ctx.textAlign = 'center';
+    this.ctx.font = '9px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    const label = dashActive ? 'DASHING' : dashNext ? 'DASH READY' : `JUMPS ${Math.max(0, remaining - 1)}/4`;
+    this.ctx.fillText(label, GAME_WIDTH / 2, y + 16);
+    this.ctx.restore();
+
+    // Beat-timing window ring near beat indicator (bottom-right)
+    if (this.beatPulse > 0.6) {
+      const ringX = GAME_WIDTH - 30;
+      const ringY = GAME_HEIGHT - 30;
+      const ringRadius = 24;
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.arc(ringX, ringY, ringRadius, 0, Math.PI * 2);
+      this.ctx.strokeStyle = `rgba(0, 255, 255, ${(this.beatPulse - 0.6) * 2})`;
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
   }
 
   private renderFlowMeterUI(): void {
@@ -4483,17 +4598,9 @@ export class Game {
     // Resume button
     if (x >= btnX && x <= btnX + btnWidth && y >= btnStartY && y <= btnStartY + btnHeight) {
       this.audio.playSelect();
-      // Resume to the correct mode (match keyboard handler logic)
-      if (this.currentChallenge) {
-        this.state.gameStatus = 'challengePlaying';
-      } else if (this.isEndlessMode) {
-        this.state.gameStatus = 'endless';
-      } else if (this.isPracticeMode) {
-        this.state.gameStatus = 'practice';
-      } else {
-        this.state.gameStatus = 'playing';
+      if (this.resumeCountdown <= 0) {
+        this.beginResumeCountdown();
       }
-      this.audio.start();
       return;
     }
 
@@ -5453,6 +5560,14 @@ export class Game {
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillText('Reduced Motion', rightColX, 135);
     this.renderToggle(rightColX, 160, this.save.isReducedMotionEnabled());
+    this.renderSettingHint('Fewer camera shakes & parallax', rightColX, 195);
+
+    // Beat visualizer toggle
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Beat Visualizer', rightColX, 220);
+    this.renderToggle(rightColX, 245, this.save.isBeatVisualizerEnabled());
+    this.renderSettingHint('Pulsing cues on every beat', rightColX, 280);
 
     // === ACCESSIBILITY SECTION ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
@@ -5464,12 +5579,13 @@ export class Game {
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillText('Colorblind Mode', leftColX, 335);
     this.renderColorblindSelector(leftColX, 365);
+    this.renderSettingHint('Shift hues for easier reading', leftColX, 400);
 
     // Reduce flash effects
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText('Reduce Flash', leftColX, 410);
-    this.renderToggle(leftColX, 435, this.save.isReduceFlashEnabled());
+    this.ctx.fillText('Reduce Flash', leftColX, 420);
+    this.renderToggle(leftColX, 445, this.save.isReduceFlashEnabled());
 
     // High contrast mode
     this.ctx.fillText('High Contrast', leftColX, 480);
@@ -5485,13 +5601,23 @@ export class Game {
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillText('Show Ghost', rightColX, 335);
     this.renderToggle(rightColX, 360, this.save.isShowGhostEnabled());
+    this.renderSettingHint('Race your best run', rightColX, 392);
 
-    // Haptic feedback toggle
-    this.ctx.fillText('Haptic Feedback', rightColX, 405);
-    this.renderToggle(rightColX, 430, this.save.isHapticFeedbackEnabled());
-    this.ctx.font = '10px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    this.ctx.fillText('(mobile only)', rightColX, 465);
+    // Assist Mode toggle
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Assist Mode', rightColX, 405);
+    this.renderToggle(rightColX, 430, this.save.isAssistModeEnabled());
+    this.renderSettingHint('Wider timing windows', rightColX, 462);
+
+    // Haptic feedback toggle (compact, mobile-only)
+    this.ctx.font = '11px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    this.ctx.fillText(
+      `Haptics: ${this.save.isHapticFeedbackEnabled() ? 'ON' : 'OFF'} (mobile)`,
+      rightColX,
+      478
+    );
 
     // Export/Import buttons
     this.ctx.font = 'bold 12px "Segoe UI", sans-serif';
@@ -5545,6 +5671,15 @@ export class Game {
       this.ctx.textAlign = 'center';
       this.ctx.fillText(mode.label, btnX + buttonWidth / 2, y + 16);
     });
+  }
+
+  private renderSettingHint(text: string, x: number, y: number): void {
+    this.ctx.save();
+    this.ctx.font = '10px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText(text, x, y);
+    this.ctx.restore();
   }
 
   private renderSettingsButton(text: string, x: number, y: number, color: string): void {
@@ -6718,6 +6853,12 @@ export class Game {
   }
 
   private renderPaused(): void {
+    // If we're resuming, show the countdown over the live game instead of the pause menu.
+    if (this.resumeCountdown > 0) {
+      this.renderResumeCountdown();
+      return;
+    }
+
     this.renderOverlay();
 
     this.ctx.save();
@@ -7205,6 +7346,120 @@ export class Game {
   private renderOverlay(): void {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  /** Begin the 3-2-1 resume countdown (called by pause menu resume actions). */
+  private beginResumeCountdown(): void {
+    // Remain in 'paused' state until countdown finishes — player physics are frozen there.
+    this.resumeCountdown = Game.RESUME_COUNTDOWN_DURATION;
+  }
+
+  /** Tick the resume countdown; when it hits zero, transition to the actual play state. */
+  private updateResumeCountdown(deltaTime: number): void {
+    if (this.resumeCountdown <= 0) return;
+    if (this.state.gameStatus !== 'paused') {
+      // Safety: if the status changed elsewhere, clear the countdown.
+      this.resumeCountdown = 0;
+      return;
+    }
+
+    this.resumeCountdown -= deltaTime;
+    if (this.resumeCountdown <= 0) {
+      this.resumeCountdown = 0;
+      // Transition to the correct play mode (mirrors keyboard/click resume logic)
+      if (this.currentChallenge) {
+        this.state.gameStatus = 'challengePlaying';
+      } else if (this.isEndlessMode) {
+        this.state.gameStatus = 'endless';
+      } else if (this.isPracticeMode) {
+        this.state.gameStatus = 'practice';
+      } else {
+        this.state.gameStatus = 'playing';
+      }
+      this.audio.start();
+    }
+  }
+
+  private renderResumeCountdown(): void {
+    if (this.resumeCountdown <= 0) return;
+
+    this.ctx.save();
+    // Dim the field so the number pops
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    this.ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    const secondsLeft = this.resumeCountdown / 1000;
+    // Digit shown: 3 for [3,2), 2 for [2,1), 1 for [1,0), "GO!" briefly at 0 (we won't hit this since we transition).
+    const digit = Math.ceil(secondsLeft);
+    const frac = digit - secondsLeft; // 0..1 progress within the current second
+
+    // Scale pulses down as the second elapses for a "tick" feel
+    const scale = 1.4 - frac * 0.5;
+    const alpha = 1 - Math.max(0, frac - 0.7) / 0.3;
+
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.globalAlpha = alpha;
+    this.ctx.fillStyle = '#00ffff';
+    this.ctx.shadowColor = '#00ffff';
+    this.ctx.shadowBlur = 30;
+    this.ctx.font = `bold ${Math.floor(140 * scale)}px "Segoe UI", sans-serif`;
+    this.ctx.fillText(String(digit), GAME_WIDTH / 2, GAME_HEIGHT / 2);
+
+    // Sub-label
+    this.ctx.globalAlpha = 0.8;
+    this.ctx.shadowBlur = 10;
+    this.ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('GET READY', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90);
+    this.ctx.textBaseline = 'alphabetic';
+    this.ctx.restore();
+  }
+
+  private formatDeathCause(cause: import('../types').DeathCause | null): string {
+    switch (cause) {
+      case 'spike': return 'SPIKES';
+      case 'lava': return 'LAVA';
+      case 'sideCollision': return 'WALL IMPACT';
+      case 'fellOffScreen': return 'FELL OFF';
+      case 'wallOfDeath': return 'CAUGHT BY WALL';
+      case 'boss': return 'BOSS HIT';
+      case 'timeUp': return 'TIME\'S UP';
+      case 'beatHazard': return 'BEAT HAZARD';
+      default: return 'ELIMINATED';
+    }
+  }
+
+  private renderDeathCauseBanner(): void {
+    if (!this.deathCauseText || this.deathCauseTimer <= 0) return;
+
+    const progress = this.deathCauseTimer / Game.DEATH_CAUSE_DURATION;
+    // Fade in quickly, hold, fade out
+    const alpha = progress > 0.85 ? (1 - progress) / 0.15 : Math.min(1, progress / 0.2);
+    if (alpha <= 0) return;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = alpha;
+    this.ctx.textAlign = 'center';
+
+    // Backing band for legibility
+    const bandY = GAME_HEIGHT / 2 - 30;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    this.ctx.fillRect(0, bandY, GAME_WIDTH, 80);
+
+    // Label
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = 'rgba(255, 200, 200, 0.9)';
+    this.ctx.fillText('CAUSE OF DEATH', GAME_WIDTH / 2, bandY + 22);
+
+    // Cause
+    this.ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ff4444';
+    this.ctx.shadowColor = '#ff0000';
+    this.ctx.shadowBlur = 15;
+    this.ctx.fillText(this.deathCauseText, GAME_WIDTH / 2, bandY + 60);
+
+    this.ctx.restore();
   }
 
   private triggerShake(_intensity: number, _duration: number): void {
