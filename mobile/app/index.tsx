@@ -176,6 +176,38 @@ export default function MainMenu() {
         </TouchableOpacity>
       </Animated.View>
 
+      {/* Coming Soon to Mobile */}
+      <Animated.View
+        style={[
+          styles.comingSoonContainer,
+          { opacity: buttonsAnim },
+        ]}
+      >
+        <Text style={styles.comingSoonHeader}>COMING SOON TO MOBILE</Text>
+        <View style={styles.comingSoonRow}>
+          <View style={styles.comingSoonChip}>
+            <Ionicons name="person-circle-outline" size={14} color="#00ffaa" />
+            <Text style={styles.comingSoonText}>Ghost Replay</Text>
+          </View>
+          <View style={styles.comingSoonChip}>
+            <Ionicons name="flash-outline" size={14} color="#ff00ff" />
+            <Text style={styles.comingSoonText}>Flow Meter</Text>
+          </View>
+          <View style={styles.comingSoonChip}>
+            <Ionicons name="options-outline" size={14} color="#ffaa00" />
+            <Text style={styles.comingSoonText}>Modifiers</Text>
+          </View>
+          <View style={styles.comingSoonChip}>
+            <Ionicons name="skull-outline" size={14} color="#ff6666" />
+            <Text style={styles.comingSoonText}>Boss Mode</Text>
+          </View>
+          <View style={styles.comingSoonChip}>
+            <Ionicons name="construct-outline" size={14} color="#66ccff" />
+            <Text style={styles.comingSoonText}>Level Editor</Text>
+          </View>
+        </View>
+      </Animated.View>
+
       {/* Version */}
       <Text style={styles.version}>v1.0.0</Text>
     </LinearGradient>
@@ -300,5 +332,39 @@ const styles = StyleSheet.create({
     bottom: 40,
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.3)',
+  },
+  comingSoonContainer: {
+    marginTop: 32,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  comingSoonHeader: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.45)',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  comingSoonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    maxWidth: SCREEN_WIDTH - 40,
+  },
+  comingSoonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  comingSoonText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.65)',
+    letterSpacing: 0.5,
   },
 });

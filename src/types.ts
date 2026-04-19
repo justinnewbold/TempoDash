@@ -273,6 +273,17 @@ export const ACHIEVEMENTS: Achievement[] = [
 
 export type ColorblindMode = 'normal' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 
+export type DeathCause =
+  | 'spike'
+  | 'lava'
+  | 'sideCollision'
+  | 'fellOffScreen'
+  | 'wallOfDeath'
+  | 'boss'
+  | 'timeUp'
+  | 'beatHazard'
+  | 'unknown';
+
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;

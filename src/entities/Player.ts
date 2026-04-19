@@ -1,4 +1,4 @@
-import { Vector2, InputState, Rectangle, PlayerSkin } from '../types';
+import { Vector2, InputState, Rectangle, PlayerSkin, DeathCause } from '../types';
 import { PLAYER, GAME_HEIGHT } from '../constants';
 import { Platform } from './Platform';
 
@@ -34,6 +34,7 @@ export class Player {
 
   isGrounded = false;
   isDead = false;
+  deathCause: DeathCause | null = null;
   private rotation = 0; // Current rotation in degrees
   private targetRotation = 0; // Target rotation (snaps to 90 degree increments)
 
@@ -139,6 +140,7 @@ export class Player {
     this.velocityY = 0;
     this.isGrounded = false;
     this.isDead = false;
+    this.deathCause = null;
     this.rotation = 0;
     this.targetRotation = 0;
     // Reset trail buffer without reallocation
@@ -442,6 +444,7 @@ export class Player {
     const fellOffScreen = this.gravityFlipped ? this.y < deathY : this.y > deathY;
     if (fellOffScreen) {
       this.isDead = true;
+      if (!this.deathCause) this.deathCause = 'fellOffScreen';
     }
   }
 
@@ -469,6 +472,7 @@ export class Player {
         case 'lava':
         case 'spike':
           this.isDead = true;
+          this.deathCause = platform.type === 'spike' ? 'spike' : 'lava';
           return;
 
         case 'bounce':
@@ -580,6 +584,7 @@ export class Player {
 
         // Otherwise it's a real side collision = death
         this.isDead = true;
+        this.deathCause = 'sideCollision';
         return;
       }
 
@@ -609,6 +614,7 @@ export class Player {
 
         // Otherwise it's a real side collision = death
         this.isDead = true;
+        this.deathCause = 'sideCollision';
         return;
       }
 
@@ -675,6 +681,7 @@ export class Player {
       case 'right':
         // Side collisions are death in auto-runner
         this.isDead = true;
+        this.deathCause = 'sideCollision';
         break;
     }
   }
