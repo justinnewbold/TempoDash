@@ -36,6 +36,7 @@ import { FlowMeterManager } from '../systems/FlowMeter';
 import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
 import { TimeRewindManager } from '../systems/TimeRewind';
 import { GravityWellManager } from '../systems/GravityWells';
+import { ScoreManager } from '../systems/ScoreManager';
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -43,6 +44,7 @@ export class Game {
   private input: InputManager;
   private audio: AudioManager;
   private save: SaveManager;
+  private scoreManager!: ScoreManager;
 
   private state: GameState = {
     currentLevel: 1,
@@ -64,7 +66,6 @@ export class Game {
   // Menu state
   private selectedLevelIndex = 0;
   private menuAnimation = 0;
-  private levelScoreThisRun = 0;
 
 
   // Death flash effect
@@ -83,15 +84,7 @@ export class Game {
   private powerUpFlashOpacity = 0;
   private powerUpFlashColor = '#00ffaa';
 
-  // Combo system - expanded
-  private comboCount = 0;
-  private comboTimer = 0;
-  private comboDuration = 2000; // 2 seconds to maintain combo (extended)
-  private comboDisplayTimer = 0; // For animation
-  private comboMultiplier = 1; // Score multiplier based on combo
-  private nearMissTimer = 0; // For near-miss detection
-  private nearMissCount = 0; // Near misses add to combo
-  private comboMeterPulse = 0; // Visual pulse for combo meter
+  // Combo / score state lives in ScoreManager; see src/systems/ScoreManager.ts
 
   // Practice mode
   private isPracticeMode = false;
@@ -374,6 +367,7 @@ export class Game {
     this.setupMobileUIExclusions();
     this.audio = new AudioManager();
     this.save = new SaveManager();
+    this.scoreManager = new ScoreManager(this.save);
     this.customLevelManager = new CustomLevelManager();
 
     // Sync colorblind mode from settings
@@ -1488,13 +1482,9 @@ export class Game {
    * This eliminates the class of bugs where one restart path forgets to reset a system.
    */
   private resetGameplaySystems(): void {
-    // Combo system
-    this.comboCount = 0;
-    this.comboTimer = 0;
-    this.comboMultiplier = 1;
-    this.nearMissTimer = 0;
-    this.nearMissCount = 0;
-    this.comboMeterPulse = 0;
+    // Combo state (preserves levelScoreThisRun - that is reset per restart path)
+    this.scoreManager.resetCombo();
+    this.scoreManager.nearMissCount = 0;
 
     // Milestone tracking
     this.nearMissStreak = 0;
@@ -1548,7 +1538,7 @@ export class Game {
       this.attempts = 1;
     }
     if (options.resetLevelScore) {
-      this.levelScoreThisRun = 0;
+      this.scoreManager.levelScoreThisRun = 0;
     }
     if (options.resetCheckpoint) {
       this.checkpointX = this.level.playerStart.x;
@@ -1742,9 +1732,9 @@ export class Game {
     this.jumpCount = 0;
     this.prevAirJumpsRemaining = 4;
     this.audio.setGameSpeedMultiplier(1.0);
-    this.comboCount = 0;
-    this.comboTimer = 0;
-    this.comboMultiplier = 1;
+    this.scoreManager.comboCount = 0;
+    this.scoreManager.comboTimer = 0;
+    this.scoreManager.comboMultiplier = 1;
     this.timeRewind.clearRecording();
   }
 
@@ -1826,7 +1816,7 @@ export class Game {
         }
         this.loadLevel(this.state.currentLevel);
         this.attempts = 1;
-        this.levelScoreThisRun = 0;
+        this.scoreManager.levelScoreThisRun = 0;
         this.isPracticeMode = false;
         this.checkpointX = this.level.playerStart.x;
         this.checkpointY = this.level.playerStart.y;
@@ -2072,12 +2062,7 @@ export class Game {
     this.checkAssistModeOffer();
 
     // Reset combo on death
-    this.comboCount = 0;
-    this.comboTimer = 0;
-    this.comboDisplayTimer = 0;
-    this.comboMultiplier = 1;
-    this.nearMissTimer = 0;
-    this.comboMeterPulse = 0;
+    this.scoreManager.resetCombo();
 
     // Reset speed multiplier on death
     this.speedMultiplier = 1.0;
@@ -2719,19 +2704,7 @@ export class Game {
     }
 
     // Calculate combo multiplier based on combo count
-    if (this.comboCount >= 25) {
-      this.comboMultiplier = 4;
-    } else if (this.comboCount >= 20) {
-      this.comboMultiplier = 3;
-    } else if (this.comboCount >= 15) {
-      this.comboMultiplier = 2.5;
-    } else if (this.comboCount >= 10) {
-      this.comboMultiplier = 2;
-    } else if (this.comboCount >= 5) {
-      this.comboMultiplier = 1.5;
-    } else {
-      this.comboMultiplier = 1;
-    }
+    this.scoreManager.updateComboMultiplier();
 
     // Near-miss detection - check if player is close to spikes/lava without dying
     const nearMissDistance = 15; // pixels
@@ -2745,18 +2718,18 @@ export class Game {
         // Use squared distance to avoid expensive Math.sqrt per platform per frame
         const distSq = dx * dx + dy * dy;
 
-        if (distSq < nearMissDistSq && distSq > 0 && this.nearMissTimer <= 0) {
+        if (distSq < nearMissDistSq && distSq > 0 && this.scoreManager.nearMissTimer <= 0) {
           // Near miss! Add to combo and Flow Meter
-          this.nearMissCount++;
+          this.scoreManager.nearMissCount++;
           this.nearMissStreak++;
-          this.comboCount += 1;
-          this.comboTimer = this.comboDuration;
+          this.scoreManager.comboCount += 1;
+          this.scoreManager.comboTimer = this.scoreManager.comboDuration;
           this.flowMeter.onNearMiss();
           this.audio.playDangerStinger();
           this.audio.pulseIntensity(0.2); // Spike music tension on near-miss
-          this.comboDisplayTimer = 400;
-          this.nearMissTimer = 500; // Cooldown to prevent spam
-          this.comboMeterPulse = 1;
+          this.scoreManager.comboDisplayTimer = 400;
+          this.scoreManager.nearMissTimer = 500; // Cooldown to prevent spam
+          this.scoreManager.comboMeterPulse = 1;
 
           // Trigger milestone celebration for near-miss streaks
           if (this.nearMissStreak === 3) {
@@ -2780,13 +2753,13 @@ export class Game {
     }
 
     // Decay near-miss cooldown
-    if (this.nearMissTimer > 0) {
-      this.nearMissTimer -= deltaTime;
+    if (this.scoreManager.nearMissTimer > 0) {
+      this.scoreManager.nearMissTimer -= deltaTime;
     }
 
     // Update danger level for dynamic music based on proximity to hazards and chase wall
     const chaseDanger = this.chaseMode.isChaseActive() ? this.chaseMode.getWarningLevel(this.player.x) : 0;
-    const nearMissDanger = this.nearMissTimer > 0 ? 0.6 : 0;
+    const nearMissDanger = this.scoreManager.nearMissTimer > 0 ? 0.6 : 0;
     this.audio.updateDangerLevel(Math.max(chaseDanger, nearMissDanger));
 
     // Check coin collection
@@ -2804,16 +2777,16 @@ export class Game {
       // Also apply Overdrive 3x multiplier if active
       const overdriveMultiplier = this.flowMeter.getScoreMultiplier();
       const pointsMultiplier = this.powerUps.getPointsMultiplier() * overdriveMultiplier;
-      const effectiveCoins = Math.floor(coinsCollected * pointsMultiplier * this.comboMultiplier);
+      const effectiveCoins = Math.floor(coinsCollected * pointsMultiplier * this.scoreManager.comboMultiplier);
 
       // Update combo (with multiplied coins)
-      this.comboCount += coinsCollected; // Raw coins for combo count
-      this.comboTimer = this.comboDuration;
-      this.comboDisplayTimer = 500; // Show combo text for 500ms
-      this.comboMeterPulse = 1;
+      this.scoreManager.comboCount += coinsCollected; // Raw coins for combo count
+      this.scoreManager.comboTimer = this.scoreManager.comboDuration;
+      this.scoreManager.comboDisplayTimer = 500; // Show combo text for 500ms
+      this.scoreManager.comboMeterPulse = 1;
 
       // Show bonus points from multiplier
-      if (this.comboMultiplier > 1) {
+      if (this.scoreManager.comboMultiplier > 1) {
         this.particles.spawnFloatingText(
           this.player.x + this.player.width / 2,
           this.player.y - 40,
@@ -2823,34 +2796,34 @@ export class Game {
       }
 
       // Check combo achievements and trigger zoom pulses on milestones
-      const prevCombo = this.comboCount - coinsCollected;
-      if (prevCombo < 5 && this.comboCount >= 5) {
+      const prevCombo = this.scoreManager.comboCount - coinsCollected;
+      if (prevCombo < 5 && this.scoreManager.comboCount >= 5) {
         this.tryUnlockAchievement('combo_5');
         this.screenEffects.triggerZoomPulse(1.05, 150);
         this.flowMeter.onComboMilestone(5);
         this.triggerMilestone('combo', 5);
       }
-      if (prevCombo < 10 && this.comboCount >= 10) {
+      if (prevCombo < 10 && this.scoreManager.comboCount >= 10) {
         this.tryUnlockAchievement('combo_10');
         this.screenEffects.triggerZoomPulse(1.08, 150);
         this.flowMeter.onComboMilestone(10);
         this.screenEffects.triggerChromaticAberration(4);
         this.triggerMilestone('combo', 10);
       }
-      if (prevCombo < 15 && this.comboCount >= 15) {
+      if (prevCombo < 15 && this.scoreManager.comboCount >= 15) {
         this.screenEffects.triggerZoomPulse(1.1, 200);
         this.screenEffects.triggerBeatDrop(300);
         this.screenEffects.triggerChromaticAberration(6);
         this.triggerMilestone('combo', 15);
       }
-      if (prevCombo < 20 && this.comboCount >= 20) {
+      if (prevCombo < 20 && this.scoreManager.comboCount >= 20) {
         this.tryUnlockAchievement('combo_20');
         this.screenEffects.triggerZoomPulse(1.12, 200);
         this.screenEffects.triggerChromaticAberration(8);
         this.particles.spawnFirework(this.player.x, this.player.y - 50);
         this.triggerMilestone('combo', 20);
       }
-      if (prevCombo < 25 && this.comboCount >= 25) {
+      if (prevCombo < 25 && this.scoreManager.comboCount >= 25) {
         this.screenEffects.triggerZoomPulse(1.15, 300);
         this.screenEffects.triggerBeatDrop(500);
         this.screenEffects.triggerChromaticAberration(12);
@@ -2859,7 +2832,7 @@ export class Game {
       }
 
       // Update longest combo
-      this.save.updateLongestCombo(this.comboCount);
+      this.scoreManager.updateLongestCombo();
     }
 
     // Check challenge coin collection (Coin Rush mode)
@@ -2892,15 +2865,15 @@ export class Game {
         // Apply multipliers
         const overdriveMultiplier = this.flowMeter.getScoreMultiplier();
         const pointsMultiplier = this.powerUps.getPointsMultiplier() * overdriveMultiplier;
-        const effectiveCoins = Math.floor(challengeCollected * pointsMultiplier * this.comboMultiplier);
+        const effectiveCoins = Math.floor(challengeCollected * pointsMultiplier * this.scoreManager.comboMultiplier);
 
         this.challengeScore += effectiveCoins * 100;
-        this.comboCount += challengeCollected;
-        this.comboTimer = this.comboDuration;
-        this.comboDisplayTimer = 500;
-        this.comboMeterPulse = 1;
+        this.scoreManager.comboCount += challengeCollected;
+        this.scoreManager.comboTimer = this.scoreManager.comboDuration;
+        this.scoreManager.comboDisplayTimer = 500;
+        this.scoreManager.comboMeterPulse = 1;
 
-        if (this.comboMultiplier > 1 || pointsMultiplier > 1) {
+        if (this.scoreManager.comboMultiplier > 1 || pointsMultiplier > 1) {
           this.particles.spawnFloatingText(
             this.player.x + this.player.width / 2,
             this.player.y - 40,
@@ -2935,7 +2908,7 @@ export class Game {
       if (gemValues.length > 0) {
         for (const value of gemValues) {
           this.state.score += value;
-          this.levelScoreThisRun += value;
+          this.scoreManager.addLevelScore(value);
           this.audio.playCoinCollect();
           this.input.triggerHaptic('medium');
 
@@ -2953,10 +2926,10 @@ export class Game {
           this.particles.spawnFirework(this.player.x, this.player.y - 30);
 
           // Gems add to combo
-          this.comboCount += 3;
-          this.comboTimer = this.comboDuration;
-          this.comboDisplayTimer = 500;
-          this.comboMeterPulse = 1;
+          this.scoreManager.comboCount += 3;
+          this.scoreManager.comboTimer = this.scoreManager.comboDuration;
+          this.scoreManager.comboDisplayTimer = 500;
+          this.scoreManager.comboMeterPulse = 1;
           this.flowMeter.onCoinCollect();
         }
       }
@@ -2997,22 +2970,8 @@ export class Game {
       }
     }
 
-    // Decay combo timer
-    if (this.comboTimer > 0) {
-      this.comboTimer -= deltaTime;
-      if (this.comboTimer <= 0) {
-        this.comboCount = 0;
-        this.comboMultiplier = 1;
-      }
-    }
-
-    // Decay combo display and pulse
-    if (this.comboDisplayTimer > 0) {
-      this.comboDisplayTimer -= deltaTime;
-    }
-    if (this.comboMeterPulse > 0) {
-      this.comboMeterPulse -= deltaTime / 200;
-    }
+    // Decay combo timers (combo count / multiplier / display / pulse)
+    this.scoreManager.updateTimers(deltaTime);
 
     // Helper to increase speed on any flip (ground or air jump)
     const applyFlipSpeedIncrease = () => {
@@ -3347,18 +3306,15 @@ export class Game {
         const baseScore = 1000;
         const attemptPenalty = (this.attempts - 1) * 50;
         const coinBonus = this.level.coinsCollected * 100;
-        const gemBonus = this.levelScoreThisRun; // Preserve accumulated gem points
+        const gemBonus = this.scoreManager.levelScoreThisRun; // Preserve accumulated gem points
         const rawScore = Math.max(baseScore - attemptPenalty, 100) + coinBonus + gemBonus;
 
         // Apply modifier score multiplier (higher score for harder modifiers)
         const modifierMultiplier = this.modifiers.getScoreMultiplier();
-        this.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
+        this.scoreManager.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
 
-        // Add to total points
-        this.save.addPoints(this.levelScoreThisRun);
-
-        // Check for high score
-        this.save.setHighScore(this.state.currentLevel, this.levelScoreThisRun);
+        // Persist total points and per-level high score
+        this.scoreManager.commitLevelScore(this.state.currentLevel);
 
         // Track level completion for achievements
         this.save.recordLevelComplete();
@@ -3382,7 +3338,7 @@ export class Game {
         // Check achievements
         this.checkAchievements();
       } else {
-        this.levelScoreThisRun = 0; // No points in practice mode
+        this.scoreManager.levelScoreThisRun = 0; // No points in practice mode
       }
 
       // Calculate and save star rating
@@ -4044,7 +4000,7 @@ export class Game {
     }
 
     // Combo counter and meter (center, when active)
-    if (this.comboCount > 1) {
+    if (this.scoreManager.comboCount > 1) {
       const meterWidth = 200;
       const meterHeight = 8;
       const meterX = (GAME_WIDTH - meterWidth) / 2;
@@ -4055,25 +4011,25 @@ export class Game {
       this.ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
 
       // Draw combo meter fill based on timer
-      const fillPercent = Math.max(0, Math.min(1, this.comboTimer / this.comboDuration));
-      const pulseBoost = this.comboMeterPulse * 0.1;
+      const fillPercent = Math.max(0, Math.min(1, this.scoreManager.comboTimer / this.scoreManager.comboDuration));
+      const pulseBoost = this.scoreManager.comboMeterPulse * 0.1;
 
       // Color based on combo tier
       let comboColor = '#ffd700'; // Gold
       let tierName = '';
-      if (this.comboCount >= 25) {
+      if (this.scoreManager.comboCount >= 25) {
         comboColor = '#ff00ff'; // Magenta - LEGENDARY
         tierName = 'LEGENDARY!';
-      } else if (this.comboCount >= 20) {
+      } else if (this.scoreManager.comboCount >= 20) {
         comboColor = '#00ffff'; // Cyan - INSANE
         tierName = 'INSANE!';
-      } else if (this.comboCount >= 15) {
+      } else if (this.scoreManager.comboCount >= 15) {
         comboColor = '#ff0066'; // Pink - EPIC
         tierName = 'EPIC!';
-      } else if (this.comboCount >= 10) {
+      } else if (this.scoreManager.comboCount >= 10) {
         comboColor = '#ff6600'; // Orange - SUPER
         tierName = 'SUPER!';
-      } else if (this.comboCount >= 5) {
+      } else if (this.scoreManager.comboCount >= 5) {
         comboColor = '#ffcc00'; // Yellow - NICE
         tierName = 'NICE!';
       }
@@ -4081,7 +4037,7 @@ export class Game {
       // Pulsing meter fill
       this.ctx.fillStyle = comboColor;
       this.ctx.shadowColor = comboColor;
-      this.ctx.shadowBlur = 10 + this.comboMeterPulse * 20;
+      this.ctx.shadowBlur = 10 + this.scoreManager.comboMeterPulse * 20;
       this.ctx.fillRect(meterX, meterY, meterWidth * (fillPercent + pulseBoost), meterHeight);
       this.ctx.shadowBlur = 0;
 
@@ -4091,9 +4047,9 @@ export class Game {
       this.ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
 
       // Show combo text when recently updated
-      if (this.comboDisplayTimer > 0) {
-        const comboScale = 1 + (this.comboDisplayTimer / 500) * 0.3;
-        const comboAlpha = Math.min(1, this.comboDisplayTimer / 200);
+      if (this.scoreManager.comboDisplayTimer > 0) {
+        const comboScale = 1 + (this.scoreManager.comboDisplayTimer / 500) * 0.3;
+        const comboAlpha = Math.min(1, this.scoreManager.comboDisplayTimer / 200);
 
         this.ctx.textAlign = 'center';
         this.ctx.font = `bold ${Math.floor(28 * comboScale)}px "Segoe UI", sans-serif`;
@@ -4102,12 +4058,12 @@ export class Game {
         this.ctx.shadowColor = comboColor;
         this.ctx.shadowBlur = 15;
         this.ctx.globalAlpha = comboAlpha;
-        this.ctx.fillText(`${this.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
+        this.ctx.fillText(`${this.scoreManager.comboCount}x COMBO!`, GAME_WIDTH / 2, 80);
 
         // Show multiplier below combo count
-        if (this.comboMultiplier > 1) {
+        if (this.scoreManager.comboMultiplier > 1) {
           this.ctx.font = `bold ${Math.floor(16 * comboScale)}px "Segoe UI", sans-serif`;
-          this.ctx.fillText(`${this.comboMultiplier}x POINTS ${tierName}`, GAME_WIDTH / 2, 118);
+          this.ctx.fillText(`${this.scoreManager.comboMultiplier}x POINTS ${tierName}`, GAME_WIDTH / 2, 118);
         }
 
         this.ctx.globalAlpha = 1;
@@ -7065,7 +7021,7 @@ export class Game {
       this.ctx.fillText(`Attempts: ${this.attempts}`, GAME_WIDTH / 2, GAME_HEIGHT / 2);
 
       this.ctx.fillStyle = '#00ffaa';
-      this.ctx.fillText(`+${this.levelScoreThisRun} Points!`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+      this.ctx.fillText(`+${this.scoreManager.levelScoreThisRun} Points!`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
 
       this.ctx.fillStyle = '#ffd700';
       this.ctx.font = '18px "Segoe UI", sans-serif';
@@ -7768,7 +7724,7 @@ export class Game {
     this.player.setSkin(this.save.getSelectedSkin());
     this.cameraX = 0;
     this.attempts = 1;
-    this.levelScoreThisRun = 0;
+    this.scoreManager.levelScoreThisRun = 0;
     this.isPracticeMode = false;
     this.isEndlessMode = false;
 
@@ -8223,7 +8179,7 @@ export class Game {
     // Set camera to center on test position
     this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
     this.attempts = 1;
-    this.levelScoreThisRun = 0;
+    this.scoreManager.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Use practice mode for testing
 
     // Restore canvas size for gameplay with high-DPI support
@@ -9718,7 +9674,7 @@ export class Game {
   private addToLeaderboard(): void {
     const entry: Omit<LeaderboardEntry, 'rank'> = {
       playerName: this.save.getPlayerName(),
-      score: this.levelScoreThisRun,
+      score: this.scoreManager.levelScoreThisRun,
       time: this.levelElapsedTime,
       deaths: this.levelDeathCount,
       date: Date.now(),
