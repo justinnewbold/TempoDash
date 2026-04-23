@@ -1525,6 +1525,69 @@ export class Game {
     this.currentBeatNumber = 0;
   }
 
+  /**
+   * Unified reset entry point used by every restart path.
+   * Always invokes resetGameplaySystems(); individual option flags cover the
+   * field resets that historically differed between startLevel / restartLevel /
+   * quickRestart / restartChallenge. Mode-specific setup (loading a level,
+   * positioning the player, starting audio, picking gameStatus) stays in the
+   * caller.
+   */
+  private resetGameState(options: {
+    resetAttempts?: boolean;
+    resetLevelScore?: boolean;
+    resetCheckpoint?: boolean;
+    resetSpeedAndJumps?: boolean;
+    resetLevelTiming?: boolean;
+    resetSplits?: boolean;
+    splitsLevelId?: number;
+    resetEncouragement?: boolean;
+    clearPowerUps?: boolean;
+  } = {}): void {
+    if (options.resetAttempts) {
+      this.attempts = 1;
+    }
+    if (options.resetLevelScore) {
+      this.levelScoreThisRun = 0;
+    }
+    if (options.resetCheckpoint) {
+      this.checkpointX = this.level.playerStart.x;
+      this.checkpointY = this.level.playerStart.y;
+      this.lastCheckpointProgress = 0;
+    }
+    if (options.resetSpeedAndJumps) {
+      this.speedMultiplier = 1.0;
+      this.jumpCount = 0;
+      this.prevAirJumpsRemaining = 4;
+      this.audio.resetGameSpeed();
+    }
+    if (options.clearPowerUps) {
+      this.powerUps.clear();
+    }
+    if (options.resetLevelTiming) {
+      this.levelStartTime = performance.now();
+      this.levelElapsedTime = 0;
+      this.levelDeathCount = 0;
+    }
+    if (options.resetSplits) {
+      this.splitTimes = [];
+      this.lastCheckpointIndex = 0;
+      this.splitDisplay = null;
+      this.bestSplitTimes = options.splitsLevelId !== undefined
+        ? (this.save.getBestSplitTimes?.(options.splitsLevelId) || [])
+        : [];
+    }
+    if (options.resetEncouragement) {
+      this.consecutiveDeaths = 0;
+      this.assistModeOffered = false;
+      this.encouragementMessage = null;
+      this.celebrationActive = false;
+      this.celebrationTimer = 0;
+    }
+
+    this.resetGameplaySystems();
+  }
+
   // Quick restart the current level
   private quickRestart(): void {
     if (this.isEndlessMode) {
@@ -1536,21 +1599,19 @@ export class Game {
       this.loadLevel(1);
       this.player.setSkin(this.save.getSelectedSkin());
       this.generateEndlessPlatforms(1500);
-      this.attempts = 1;
-      this.speedMultiplier = 1.0;
-      this.jumpCount = 0;
-      this.prevAirJumpsRemaining = 4;
-      this.audio.resetGameSpeed();
+      this.resetGameState({
+        resetAttempts: true,
+        resetSpeedAndJumps: true,
+      });
     } else {
       // Restart current level
       this.loadLevel(this.state.currentLevel);
-      this.attempts = 1;
-      this.levelScoreThisRun = 0;
-      this.checkpointX = this.level.playerStart.x;
-      this.checkpointY = this.level.playerStart.y;
-      this.lastCheckpointProgress = 0;
+      this.resetGameState({
+        resetAttempts: true,
+        resetLevelScore: true,
+        resetCheckpoint: true,
+      });
     }
-    this.resetGameplaySystems();
     this.resumeCountdown = 0;
     this.deathCauseText = null;
     this.deathCauseTimer = 0;
@@ -1559,34 +1620,18 @@ export class Game {
 
   private startLevel(levelId: number, practiceMode = false): void {
     this.loadLevel(levelId);
-    this.attempts = 1;
-    this.levelScoreThisRun = 0;
     this.isPracticeMode = practiceMode;
-    this.checkpointX = this.level.playerStart.x;
-    this.checkpointY = this.level.playerStart.y;
-    this.lastCheckpointProgress = 0;
     this.state.gameStatus = practiceMode ? 'practice' : 'playing';
 
-    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
-    this.resetGameplaySystems();
-
-    // Initialize level timing and stats
-    this.levelStartTime = performance.now();
-    this.levelElapsedTime = 0;
-    this.levelDeathCount = 0;
-
-    // Reset split time tracking
-    this.splitTimes = [];
-    this.lastCheckpointIndex = 0;
-    this.splitDisplay = null;
-    this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
-
-    // Reset encouragement, celebration, and assist mode offer
-    this.consecutiveDeaths = 0;
-    this.assistModeOffered = false;
-    this.encouragementMessage = null;
-    this.celebrationActive = false;
-    this.celebrationTimer = 0;
+    this.resetGameState({
+      resetAttempts: true,
+      resetLevelScore: true,
+      resetCheckpoint: true,
+      resetLevelTiming: true,
+      resetSplits: true,
+      splitsLevelId: levelId,
+      resetEncouragement: true,
+    });
 
     // Start ghost recording
     this.ghostManager.startRecording();
@@ -1611,31 +1656,17 @@ export class Game {
   private startLevelAtSection(levelId: number, sectionIndex: number): void {
     // Start level in practice mode
     this.loadLevel(levelId);
-    this.attempts = 1;
-    this.levelScoreThisRun = 0;
     this.isPracticeMode = true; // Always practice mode for section practice
     this.state.gameStatus = 'practice';
 
-    // Reset all gameplay systems (combo, milestones, modifiers, etc.)
-    this.resetGameplaySystems();
-
-    // Initialize level timing and stats
-    this.levelStartTime = performance.now();
-    this.levelElapsedTime = 0;
-    this.levelDeathCount = 0;
-
-    // Reset split time tracking
-    this.splitTimes = [];
-    this.lastCheckpointIndex = 0;
-    this.splitDisplay = null;
-    this.bestSplitTimes = this.save.getBestSplitTimes?.(levelId) || [];
-
-    // Reset encouragement and celebration
-    this.consecutiveDeaths = 0;
-    this.assistModeOffered = false;
-    this.encouragementMessage = null;
-    this.celebrationActive = false;
-    this.celebrationTimer = 0;
+    this.resetGameState({
+      resetAttempts: true,
+      resetLevelScore: true,
+      resetLevelTiming: true,
+      resetSplits: true,
+      splitsLevelId: levelId,
+      resetEncouragement: true,
+    });
 
     // Get checkpoint position for the selected section
     const checkpoints = this.getCheckpointsForLevel(levelId);
@@ -1829,23 +1860,22 @@ export class Game {
       this.player.setSkin(this.save.getSelectedSkin());
       this.player.setFlyingMode(config.flyingMode ?? false);
       this.cameraX = Math.max(0, startPosition.x - GAME_WIDTH / 3);
-      this.attempts = 1;
-      this.levelScoreThisRun = 0;
       this.state.gameStatus = 'editorTest';
-      this.resetGameplaySystems();
+      this.resetGameState({
+        resetAttempts: true,
+        resetLevelScore: true,
+      });
       this.audio.start();
       return;
     }
 
     // Restart current level from beginning
     this.loadLevel(this.state.currentLevel);
-    this.attempts = 1;
-    this.levelScoreThisRun = 0;
-    this.checkpointX = this.level.playerStart.x;
-    this.checkpointY = this.level.playerStart.y;
-    this.lastCheckpointProgress = 0;
-
-    this.resetGameplaySystems();
+    this.resetGameState({
+      resetAttempts: true,
+      resetLevelScore: true,
+      resetCheckpoint: true,
+    });
     this.resumeCountdown = 0;
     this.deathCauseText = null;
     this.deathCauseTimer = 0;
@@ -6708,12 +6738,8 @@ export class Game {
 
     // Reset with same seed
     this.endlessDistance = 0;
-    this.speedMultiplier = 1.0;
-    this.jumpCount = 0;
-    this.prevAirJumpsRemaining = 4;
     this.challengeCoinsCollected = 0;
     this.challengeScore = 0;
-    this.audio.resetGameSpeed();
 
     // Regenerate procedural platforms using the same seed
     this.endlessPlatforms = [];
@@ -6741,11 +6767,10 @@ export class Game {
       }
     }
 
-    // Clear any active powerups
-    this.powerUps.clear();
-
-    // Reset all gameplay systems
-    this.resetGameplaySystems();
+    this.resetGameState({
+      resetSpeedAndJumps: true,
+      clearPowerUps: true,
+    });
 
     // Reset player
     this.player.reset({ x: 100, y: GROUND_Y - 50 });
