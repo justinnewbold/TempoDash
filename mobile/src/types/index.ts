@@ -1,14 +1,22 @@
-export interface Vector2 {
-  x: number;
-  y: number;
-}
+import type {
+  Vector2,
+  Rectangle,
+  PlatformType,
+  MovePattern,
+  CoinConfig,
+  PowerUpType,
+  PowerUpConfig,
+} from '../../../packages/core';
 
-export interface Rectangle {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type {
+  Vector2,
+  Rectangle,
+  PlatformType,
+  MovePattern,
+  CoinConfig,
+  PowerUpType,
+  PowerUpConfig,
+};
 
 export interface PlatformConfig {
   x: number;
@@ -19,43 +27,6 @@ export interface PlatformConfig {
   movePattern?: MovePattern;
   phaseOffset?: number;
   conveyorSpeed?: number;
-}
-
-export type PlatformType =
-  | 'solid'
-  | 'bounce'
-  | 'crumble'
-  | 'moving'
-  | 'spike'
-  | 'phase'
-  | 'conveyor'
-  | 'gravity'
-  | 'sticky'
-  | 'glass'
-  | 'slowmo'
-  | 'wall'
-  | 'secret'
-  | 'ice'
-  | 'lava';
-
-export interface MovePattern {
-  type: 'horizontal' | 'vertical' | 'circular';
-  distance: number;
-  speed: number;
-  startOffset?: number;
-}
-
-export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
-
-export interface PowerUpConfig {
-  x: number;
-  y: number;
-  type: PowerUpType;
-}
-
-export interface CoinConfig {
-  x: number;
-  y: number;
 }
 
 export interface LevelConfig {

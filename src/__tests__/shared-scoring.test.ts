@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { calculateLevelCompletionScore, calculateComboMultiplier, getGemValue } from '../../shared/scoring';
+import { calculateLevelCompletionScore, calculateComboMultiplier, getGemValue } from '../../packages/core/scoring';
 
-describe('shared/scoring', () => {
+describe('@tempodash/core scoring', () => {
   describe('calculateLevelCompletionScore', () => {
     it('returns base score with no modifiers', () => {
       expect(calculateLevelCompletionScore(1, 0, 0, 1.0)).toBe(1000);
