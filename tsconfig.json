@@ -13,7 +13,12 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tempodash/core": ["packages/core/index.ts"],
+      "@tempodash/core/*": ["packages/core/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "packages/core"]
 }

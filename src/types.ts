@@ -1,14 +1,28 @@
-export interface Vector2 {
-  x: number;
-  y: number;
-}
+import type {
+  Vector2,
+  Rectangle,
+  PlatformType,
+  MovePattern,
+  CoinConfig,
+  GemType,
+  GemConfig,
+  PowerUpType,
+  PowerUpConfig,
+  GhostFrame,
+} from '../packages/core';
 
-export interface Rectangle {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type {
+  Vector2,
+  Rectangle,
+  PlatformType,
+  MovePattern,
+  CoinConfig,
+  GemType,
+  GemConfig,
+  PowerUpType,
+  PowerUpConfig,
+  GhostFrame,
+};
 
 export interface PlatformConfig {
   x: number;
@@ -25,37 +39,6 @@ export interface PlatformConfig {
   windStrength?: number;  // Wind force strength (pixels/s², default 300)
 }
 
-export type PlatformType =
-  | 'solid'      // Normal platform
-  | 'bounce'     // Bouncy platform
-  | 'crumble'    // Crumbles after touching
-  | 'moving'     // Moving platform
-  | 'ice'        // Slippery platform
-  | 'lava'       // Deadly platform
-  | 'phase'      // Phases in and out
-  | 'spike'      // Deadly spike obstacle
-  | 'conveyor'   // Moves player horizontally while standing
-  | 'gravity'    // Flips player gravity on contact
-  | 'sticky'     // Player sticks until jump pressed
-  | 'glass'      // Breaks after 2nd landing
-  | 'slowmo'     // Slows down time while player is in zone
-  | 'wall'       // Vertical wall for wall-jumping
-  | 'secret'     // Hidden platform revealed on proximity
-  | 'wind';      // Wind zone - applies directional force to player
-
-export interface MovePattern {
-  type: 'horizontal' | 'vertical' | 'circular';
-  distance: number;
-  speed: number;
-  startOffset?: number;
-}
-
-export interface CoinConfig {
-  x: number;
-  y: number;
-  isMagnet?: boolean;
-}
-
 export interface PortalConfig {
   id: string;
   x: number;
@@ -64,27 +47,11 @@ export interface PortalConfig {
   color?: string;
 }
 
-export type GemType = 'ruby' | 'sapphire' | 'emerald';
-
-export interface GemConfig {
-  x: number;
-  y: number;
-  type: GemType;
-}
-
 export interface GravityWellConfig {
   x: number;
   y: number;
   radius: number;
   strength: number; // Positive = attract, negative = repel
-}
-
-export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
-
-export interface PowerUpConfig {
-  type: PowerUpType;
-  x: number;
-  y: number;
 }
 
 export interface ChaseConfig {
@@ -222,14 +189,6 @@ export interface SaveData {
     totalChallengesCompleted: number;
     challengeHistory: Record<string, { challengeId: string; completed: boolean; bestScore: number; attempts: number; completedAt?: number }>;
   };
-}
-
-// Ghost replay frame
-export interface GhostFrame {
-  x: number;
-  y: number;
-  rotation: number;
-  time: number;
 }
 
 // Achievement definitions

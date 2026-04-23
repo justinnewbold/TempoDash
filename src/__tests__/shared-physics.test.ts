@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { checkAABBCollision, applyGravity, calculateJumpVelocity, clamp, lerp } from '../../shared/physics';
+import { checkAABBCollision, applyGravity, calculateJumpVelocity, clamp, lerp } from '../../packages/core/physics';
 
-describe('shared/physics', () => {
+describe('@tempodash/core physics', () => {
   describe('checkAABBCollision', () => {
     it('returns null for non-overlapping rectangles', () => {
       expect(checkAABBCollision(0, 0, 10, 10, 20, 20, 10, 10)).toBeNull();

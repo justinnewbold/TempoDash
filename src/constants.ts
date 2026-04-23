@@ -56,24 +56,22 @@ export const PLATFORM = {
   WIND_DEFAULT_STRENGTH: 300,  // Default wind force in px/s²
 };
 
-// Scoring constants
+import { SCORING_DEFAULTS } from '../packages/core';
+
+// Scoring constants - gameplay values re-exported from @tempodash/core so mobile shares them.
 export const SCORING = {
-  BASE_LEVEL_SCORE: 1000,
-  ATTEMPT_PENALTY: 50,
-  COIN_BONUS: 100,
-  MIN_LEVEL_SCORE: 100, // Floor after penalty
+  BASE_LEVEL_SCORE: SCORING_DEFAULTS.BASE_LEVEL_SCORE,
+  ATTEMPT_PENALTY: SCORING_DEFAULTS.ATTEMPT_PENALTY,
+  COIN_BONUS: SCORING_DEFAULTS.COIN_BONUS,
+  MIN_LEVEL_SCORE: SCORING_DEFAULTS.MIN_LEVEL_SCORE,
 
-  // Gem values
-  GEM_RUBY: 500,
-  GEM_SAPPHIRE: 1000,
-  GEM_EMERALD: 2000,
+  GEM_RUBY: SCORING_DEFAULTS.GEM_RUBY,
+  GEM_SAPPHIRE: SCORING_DEFAULTS.GEM_SAPPHIRE,
+  GEM_EMERALD: SCORING_DEFAULTS.GEM_EMERALD,
 
-  // Combo
-  COMBO_DURATION: 2000, // ms to maintain combo
-  NEAR_MISS_DURATION: 500, // ms for near miss window
-
-  // Challenges
-  CHALLENGE_COMPLETE_DISTANCE: 500, // meters
+  COMBO_DURATION: SCORING_DEFAULTS.COMBO_DURATION,
+  NEAR_MISS_DURATION: 500, // ms for near miss window - web-only
+  CHALLENGE_COMPLETE_DISTANCE: 500, // meters - web-only
 };
 
 // Timing constants

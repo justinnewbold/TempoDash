@@ -1,8 +1,4 @@
-/**
- * Shared types used by both web and mobile platforms.
- * Import from this file instead of duplicating types across codebases.
- */
-
+// Geometry primitives shared by every entity on both platforms.
 export interface Vector2 {
   x: number;
   y: number;
@@ -15,6 +11,7 @@ export interface Rectangle {
   height: number;
 }
 
+// Superset of platform kinds; mobile ignores types it has not implemented yet.
 export type PlatformType =
   | 'solid'
   | 'bounce'
@@ -30,19 +27,8 @@ export type PlatformType =
   | 'glass'
   | 'slowmo'
   | 'wall'
-  | 'secret';
-
-export interface PlatformConfig {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  type: PlatformType;
-  movePattern?: MovePattern;
-  phaseOffset?: number;
-  phaseGroup?: number;
-  conveyorSpeed?: number;
-}
+  | 'secret'
+  | 'wind';
 
 export interface MovePattern {
   type: 'horizontal' | 'vertical' | 'circular';
@@ -73,31 +59,10 @@ export interface PowerUpConfig {
   y: number;
 }
 
-/** Ghost replay frame for recording/playback */
+// Recorded player pose sample for ghost playback.
 export interface GhostFrame {
   x: number;
   y: number;
   rotation: number;
   time: number;
-}
-
-/** Game state common to both platforms */
-export interface BaseGameState {
-  score: number;
-  isPlaying: boolean;
-  isDead: boolean;
-  isComplete: boolean;
-  combo: number;
-  maxCombo: number;
-  scoreMultiplier: number;
-}
-
-/** Accessibility settings shared across platforms */
-export interface AccessibilitySettings {
-  colorblindMode: 'normal' | 'deuteranopia' | 'protanopia' | 'tritanopia';
-  reducedMotion: boolean;
-  hapticFeedback: boolean;
-  reduceFlash: boolean;
-  highContrast: boolean;
-  screenReaderAnnouncements: boolean;
 }

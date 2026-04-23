@@ -1,0 +1,9 @@
+{
+  "name": "@tempodash/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-agnostic types and constants shared between web and mobile TempoDash clients.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false
+}
