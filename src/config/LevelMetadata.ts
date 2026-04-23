@@ -102,6 +102,15 @@ export const LEVEL_METADATA: LevelMeta[] = [
     unlockCost: 12000,
     description: 'Fly through the clouds and avoid obstacles',
   },
+  {
+    id: 16,
+    name: 'Stellar Circuit',
+    color: '#aa66ff',
+    difficulty: 4,
+    musicStyle: 'ethereal',
+    unlockCost: 25000,
+    description: 'Race a cosmic circuit with portal shortcuts',
+  },
 ];
 
 // Helper functions

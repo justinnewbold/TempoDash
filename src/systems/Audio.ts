@@ -32,6 +32,7 @@ export const LEVEL_MUSIC: Record<number, MusicStyle> = {
   13: 'focus',     // Level 13: Gravity Flip - precision required
   14: 'industrial', // Level 14: Wall Runner - urban intensity
   15: 'energetic', // Level 15: Ultimate Challenge - final boss energy
+  16: 'ethereal',  // Level 16: Stellar Circuit - cosmic drift
 };
 
 export class AudioManager {
