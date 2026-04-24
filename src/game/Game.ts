@@ -4790,15 +4790,15 @@ export class Game {
       'First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak',
       'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple',
       'Crystal Caverns', 'Storm Surge', 'Shadow Realm', 'Cyber Grid',
-      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension'
+      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension', 'Stellar Circuit'
     ];
     const levelColors = [
       '#00ffaa', '#ff00ff', '#ff6600', '#88ddff',
       '#ff4400', '#00ccff', '#ff0000', '#e94560',
       '#aa66ff', '#ffaa00', '#666699', '#00ffff',
-      '#cc9966', '#aaaaff', '#ff0066'
+      '#cc9966', '#aaaaff', '#ff0066', '#cc88ff'
     ];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5]; // 1-5 stars
+    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5, 4]; // 1-5 stars
 
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
