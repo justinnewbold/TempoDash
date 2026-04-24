@@ -12,7 +12,7 @@ interface GeneratorState {
 }
 
 // Platform type weights by difficulty
-const PLATFORM_WEIGHTS: Record<string, Record<PlatformType, number>> = {
+const PLATFORM_WEIGHTS: Record<string, Partial<Record<PlatformType, number>>> = {
   easy: { solid: 80, bounce: 15, moving: 5, crumble: 0, spike: 0, phase: 0 },
   medium: { solid: 50, bounce: 20, moving: 15, crumble: 10, spike: 5, phase: 0 },
   hard: { solid: 30, bounce: 15, moving: 20, crumble: 15, spike: 10, phase: 10 },
