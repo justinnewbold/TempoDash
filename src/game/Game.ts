@@ -3,6 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT, COLORS, TIMING } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
+import { LEVEL_CARDS } from '../config/LevelMetadata';
 import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
@@ -4786,20 +4787,6 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = [
-      'First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak',
-      'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple',
-      'Crystal Caverns', 'Storm Surge', 'Shadow Realm', 'Cyber Grid',
-      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension', 'Stellar Circuit'
-    ];
-    const levelColors = [
-      '#00ffaa', '#ff00ff', '#ff6600', '#88ddff',
-      '#ff4400', '#00ccff', '#ff0000', '#e94560',
-      '#aa66ff', '#ffaa00', '#666699', '#00ffff',
-      '#cc9966', '#aaaaff', '#ff0066', '#cc88ff'
-    ];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5, 4]; // 1-5 stars
-
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.font = 'bold 40px "Segoe UI", sans-serif';
@@ -4821,6 +4808,7 @@ export class Game {
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
       const isSelected = i === this.selectedLevelIndex;
+      const card = LEVEL_CARDS[i];
 
       // Calculate position relative to selected level
       const offsetFromSelected = i - this.selectedLevelIndex;
@@ -4850,7 +4838,7 @@ export class Game {
 
       // Card background
       this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
-      this.ctx.strokeStyle = isUnlocked ? levelColors[i] : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
+      this.ctx.strokeStyle = isUnlocked ? card.color : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
       this.ctx.lineWidth = isSelected ? 4 : 3;
       this.ctx.beginPath();
       this.ctx.roundRect(scaledCardX, scaledCardY, scaledCardWidth, scaledCardHeight, 15 * scale);
@@ -4859,7 +4847,7 @@ export class Game {
 
       // Selected glow effect
       if (isSelected) {
-        this.ctx.shadowColor = levelColors[i];
+        this.ctx.shadowColor = card.color;
         this.ctx.shadowBlur = 20;
         this.ctx.stroke();
         this.ctx.shadowBlur = 0;
@@ -4870,8 +4858,8 @@ export class Game {
 
       // Level number
       this.ctx.font = `bold ${Math.round(42 * scale)}px "Segoe UI", sans-serif`;
-      this.ctx.fillStyle = isUnlocked ? levelColors[i] : 'rgba(100, 100, 100, 0.8)';
-      this.ctx.shadowColor = levelColors[i];
+      this.ctx.fillStyle = isUnlocked ? card.color : 'rgba(100, 100, 100, 0.8)';
+      this.ctx.shadowColor = card.color;
       this.ctx.shadowBlur = isUnlocked && isSelected ? 15 : 0;
       this.ctx.fillText(`${levelId}`, cardCenterX, scaledCardY + 55 * scale);
 
@@ -4879,11 +4867,10 @@ export class Game {
       this.ctx.font = `bold ${Math.round(15 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText(levelNames[i], cardCenterX, scaledCardY + 85 * scale);
+      this.ctx.fillText(card.name, cardCenterX, scaledCardY + 85 * scale);
 
       // Difficulty stars
-      const difficulty = levelDifficulty[i];
-      const starStr = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
+      const starStr = '★'.repeat(card.difficulty) + '☆'.repeat(5 - card.difficulty);
       this.ctx.font = `${Math.round(10 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffaa00' : 'rgba(150, 150, 150, 0.6)';
       this.ctx.fillText(starStr, cardCenterX, scaledCardY + 100 * scale);
@@ -4932,7 +4919,7 @@ export class Game {
       const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
       this.ctx.beginPath();
       this.ctx.arc(dotX, dotsY, i === this.selectedLevelIndex ? 6 : 4, 0, Math.PI * 2);
-      this.ctx.fillStyle = i === this.selectedLevelIndex ? levelColors[i] : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.fillStyle = i === this.selectedLevelIndex ? LEVEL_CARDS[i].color : 'rgba(255, 255, 255, 0.3)';
       this.ctx.fill();
     }
 
