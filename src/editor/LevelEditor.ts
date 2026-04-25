@@ -13,28 +13,9 @@ import {
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
 import { Background } from '../graphics/Background';
 import { TouchHandler, GestureEvent } from './TouchHandler';
-import { PropertyInspector, InspectorElement, PropertyChange, PLATFORM_TYPES } from './PropertyInspector';
+import { PropertyInspector, InspectorElement, PropertyChange, PLATFORM_TYPES, PLATFORM_COLORS } from './PropertyInspector';
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
-
-const PLATFORM_COLORS: Record<PlatformType, string> = {
-  solid: '#4a9eff',
-  bounce: '#ff6b9d',
-  ice: '#88ddff',
-  lava: '#ff4400',
-  spike: '#ff0000',
-  moving: '#9966ff',
-  phase: '#66ffaa',
-  crumble: '#aa8866',
-  conveyor: '#48bb78',
-  gravity: '#ed64a6',
-  sticky: '#ecc94b',
-  glass: '#e2e8f0',
-  slowmo: '#00c8ff',
-  wall: '#718096',
-  secret: '#ffd700',
-  wind: '#7ec8e3',
-};
 
 const BACKGROUND_CONFIGS: Record<BackgroundType, BackgroundConfig> = {
   city: {
@@ -2451,7 +2432,7 @@ export class LevelEditor {
       const isSelected = this.state.selectedElement?.type === 'platform' &&
                         this.state.selectedElement?.index === i;
 
-      ctx.fillStyle = PLATFORM_COLORS[platform.type] || '#4a9eff';
+      ctx.fillStyle = PLATFORM_COLORS[platform.type];
       ctx.fillRect(screenX, platform.y, platform.width, platform.height);
 
       // Border
