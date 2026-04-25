@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createLevel, TOTAL_LEVELS } from '../levels';
 import { LevelValidator } from '../systems/LevelValidator';
+import { LEVEL_CARDS } from '../config/LevelMetadata';
+import { LEVEL_MUSIC } from '../systems/Audio';
 
 // Smoke-test every shipped level against the same validator used for custom
 // levels. Catches broken player starts, unreachable goals, malformed
@@ -13,6 +15,29 @@ describe('Built-in levels', () => {
     for (let id = 1; id <= TOTAL_LEVELS; id++) {
       const level = createLevel(id);
       expect(level.id).toBe(id);
+    }
+  });
+
+  it('LEVEL_CARDS has exactly TOTAL_LEVELS entries', () => {
+    // If these drift, the level-select card at index TOTAL_LEVELS-1 renders
+    // as "undefined" with no color and no stars (caused the Level 16 bug).
+    expect(LEVEL_CARDS).toHaveLength(TOTAL_LEVELS);
+  });
+
+  it('every LEVEL_CARDS entry matches its level config name', () => {
+    // Card display name and LevelConfig.name should agree, otherwise the
+    // level-select menu and in-game HUD show different titles.
+    for (let id = 1; id <= TOTAL_LEVELS; id++) {
+      const card = LEVEL_CARDS[id - 1];
+      const config = createLevel(id).getConfig();
+      expect(card.name, `Level ${id} card/config name mismatch`).toBe(config.name);
+    }
+  });
+
+  it('LEVEL_MUSIC defines a style for every level', () => {
+    // Missing entries fall back to 'noir' silently - cheap to guard against.
+    for (let id = 1; id <= TOTAL_LEVELS; id++) {
+      expect(LEVEL_MUSIC[id], `Level ${id} missing from LEVEL_MUSIC`).toBeDefined();
     }
   });
 
