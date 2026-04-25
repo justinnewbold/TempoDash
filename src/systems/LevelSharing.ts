@@ -4,7 +4,7 @@
  * Includes cloud storage hooks for future backend integration
  */
 
-import { CustomLevel } from '../types';
+import { CustomLevel, BackgroundType } from '../types';
 
 // Characters used for base64-like encoding (URL-safe)
 const ENCODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -243,20 +243,22 @@ export class LevelSharingManager {
    * Reconstruct background config from type
    */
   private static reconstructBackground(type: string) {
-    const backgrounds: Record<string, { primaryColor: string; secondaryColor: string; accentColor: string }> = {
-      city: { primaryColor: '#0a0a1a', secondaryColor: '#151530', accentColor: '#00ffff' },
-      neon: { primaryColor: '#0d0221', secondaryColor: '#1a0533', accentColor: '#ff00ff' },
-      space: { primaryColor: '#0a1628', secondaryColor: '#1a2a4a', accentColor: '#88ddff' },
-      forest: { primaryColor: '#0a1a0a', secondaryColor: '#1a2a1a', accentColor: '#66ff66' },
+    // Keyed by BackgroundType so adding a new type forces a colour entry here.
+    const backgrounds: Record<BackgroundType, { primaryColor: string; secondaryColor: string; accentColor: string }> = {
+      city:    { primaryColor: '#0a0a1a', secondaryColor: '#151530', accentColor: '#00ffff' },
+      neon:    { primaryColor: '#0d0221', secondaryColor: '#1a0533', accentColor: '#ff00ff' },
+      space:   { primaryColor: '#0a1628', secondaryColor: '#1a2a4a', accentColor: '#88ddff' },
+      forest:  { primaryColor: '#0a1a0a', secondaryColor: '#1a2a1a', accentColor: '#66ff66' },
       volcano: { primaryColor: '#1a0a00', secondaryColor: '#2d1200', accentColor: '#ff4400' },
-      ocean: { primaryColor: '#001a33', secondaryColor: '#002244', accentColor: '#00ccff' },
+      ocean:   { primaryColor: '#001a33', secondaryColor: '#002244', accentColor: '#00ccff' },
       inferno: { primaryColor: '#1a0505', secondaryColor: '#2d0a0a', accentColor: '#ff4400' },
+      sky:     { primaryColor: '#87CEEB', secondaryColor: '#E0F6FF', accentColor: '#FFD700' },
     };
 
-    const bg = backgrounds[type] || backgrounds.city;
+    const resolvedType: BackgroundType = type in backgrounds ? (type as BackgroundType) : 'city';
     return {
-      type: type as 'city' | 'neon' | 'space' | 'forest' | 'volcano' | 'ocean' | 'inferno',
-      ...bg,
+      type: resolvedType,
+      ...backgrounds[resolvedType],
     };
   }
 
