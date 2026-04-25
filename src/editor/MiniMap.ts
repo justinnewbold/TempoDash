@@ -3,7 +3,7 @@
  * Shows entire level with current viewport highlighted
  */
 
-import { CustomLevel } from '../types';
+import { CustomLevel, PlatformType } from '../types';
 
 export type MiniMapCallback = (worldX: number) => void;
 
@@ -224,8 +224,11 @@ export class MiniMap {
     );
   }
 
-  private getPlatformColor(type: string): string {
-    const colors: Record<string, string> = {
+  // Minimap-specific palette: tuned for high contrast at tiny pixel sizes,
+  // not the same as in-game COLORS.PLATFORM. Typed by PlatformType so adding
+  // a new platform variant fails to compile until a colour is chosen here.
+  private getPlatformColor(type: PlatformType): string {
+    const colors: Record<PlatformType, string> = {
       solid: '#4a9eff',
       bounce: '#ff6b9d',
       ice: '#88ddff',
@@ -238,8 +241,12 @@ export class MiniMap {
       gravity: '#ed64a6',
       sticky: '#ecc94b',
       glass: '#e2e8f0',
+      slowmo: '#00c8ff',
+      wall: '#718096',
+      secret: '#ffd700',
+      wind: '#7ec8e3',
     };
-    return colors[type] || '#4a9eff';
+    return colors[type];
   }
 
   // Handle tap on minimap
