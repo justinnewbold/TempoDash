@@ -300,25 +300,6 @@ export class AudioManager {
     this.setStyle(style);
   }
 
-  getStyle(): MusicStyle {
-    return this.currentStyle;
-  }
-
-  getStyleName(): string {
-    const names: Record<MusicStyle, string> = {
-      noir: 'Neon Noir',
-      funk: 'Cyber Funk',
-      sludge: 'Sludge Factory',
-      focus: 'Deep Focus',
-      crystal: 'Crystalline',
-      hazard: 'Biohazard',
-      energetic: 'Festival EDM',
-      industrial: 'Industrial',
-      ethereal: 'Ethereal',
-    };
-    return names[this.currentStyle];
-  }
-
   // --- SCHEDULER (from Neon Pulse Engine) ---
 
   private scheduler(): void {
