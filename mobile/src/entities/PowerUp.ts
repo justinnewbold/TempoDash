@@ -75,16 +75,6 @@ export class PowerUp {
     return `powerup-${this.x}-${this.y}-${this.type}`;
   }
 
-  getDuration(): number {
-    switch (this.type) {
-      case 'shield': return POWERUP.SHIELD_DURATION;
-      case 'magnet': return POWERUP.MAGNET_DURATION;
-      case 'slowmo': return POWERUP.SLOWMO_DURATION;
-      case 'doublePoints': return POWERUP.DOUBLE_POINTS_DURATION;
-      default: return POWERUP.SHIELD_DURATION;
-    }
-  }
-
   getColor(): string {
     return COLORS.POWERUP[this.type];
   }
