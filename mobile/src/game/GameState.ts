@@ -107,9 +107,11 @@ export class GameEngine {
       }
     }
 
-    // Update power-up timer
+    // Update power-up timer in REAL time, not game time. If slowmo's timer
+    // ticked by `effectiveDelta` it would slow down its own expiry, so a
+    // 6-second slowmo would last 12 real seconds.
     if (this.state.activePowerUp) {
-      this.state.powerUpTimeRemaining -= effectiveDelta;
+      this.state.powerUpTimeRemaining -= deltaTime;
       if (this.state.powerUpTimeRemaining <= 0) {
         this.state.activePowerUp = null;
         this.state.powerUpTimeRemaining = 0;
