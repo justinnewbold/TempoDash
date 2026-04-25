@@ -4823,7 +4823,7 @@ export class Game {
 
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
-      const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
+      const buyCost = LEVEL_UNLOCK_COSTS[levelId];
       const highScore = this.save.getHighScore(levelId);
 
       this.ctx.save();
@@ -4896,10 +4896,13 @@ export class Game {
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
         this.ctx.fillText('🔒', cardCenterX, scaledCardY + 125 * scale);
 
-        // Cost
+        // Unlock requirement: either points-to-buy or beat-the-previous-level
         this.ctx.font = `${Math.round(13 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText(`${cost} pts to unlock`, cardCenterX, scaledCardY + 150 * scale);
+        const unlockText = buyCost !== undefined
+          ? `${buyCost} pts to unlock`
+          : `Beat Level ${levelId - 1} to unlock`;
+        this.ctx.fillText(unlockText, cardCenterX, scaledCardY + 150 * scale);
 
         if (canUnlock && isSelected) {
           // Click to unlock
