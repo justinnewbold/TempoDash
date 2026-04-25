@@ -38,6 +38,7 @@ import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
 import { TimeRewindManager } from '../systems/TimeRewind';
 import { GravityWellManager } from '../systems/GravityWells';
 import { ScoreManager } from '../systems/ScoreManager';
+import { hexToRgba } from '../util/color';
 
 // Single source of truth for mastery-badge presentation. Iteration order here
 // is the on-screen order on the level-select cards. The notification overlay
@@ -4708,10 +4709,7 @@ export class Game {
 
     // Parse color for background
     if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
+      this.ctx.fillStyle = hexToRgba(color, 0.15);
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 2;
@@ -5668,10 +5666,7 @@ export class Game {
 
     this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
     if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+      this.ctx.fillStyle = hexToRgba(color, 0.2);
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 1;
@@ -5971,7 +5966,7 @@ export class Game {
 
       // Card background
       const cardColor = challenge.isWeekly ? '#9933ff' : '#ff6600';
-      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.15)`;
+      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : hexToRgba(cardColor, 0.15);
       this.ctx.strokeStyle = isCompleted ? '#00ff66' : cardColor;
       this.ctx.lineWidth = 3;
       this.ctx.beginPath();
@@ -6027,7 +6022,7 @@ export class Game {
         this.ctx.fillText(`✓ Best: ${progress!.bestScore}`, btnX, btnY + 5);
       } else {
         // Play button
-        this.ctx.fillStyle = `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.3)`;
+        this.ctx.fillStyle = hexToRgba(cardColor, 0.3);
         this.ctx.strokeStyle = cardColor;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
@@ -7263,7 +7258,7 @@ export class Game {
       const size = 15 + this.beatPulse * 10;
       this.ctx.beginPath();
       this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
-      this.ctx.fillStyle = `rgba(${parseInt(challengeColor.slice(1, 3), 16)}, ${parseInt(challengeColor.slice(3, 5), 16)}, ${parseInt(challengeColor.slice(5, 7), 16)}, ${this.beatPulse * 0.8})`;
+      this.ctx.fillStyle = hexToRgba(challengeColor, this.beatPulse * 0.8);
       this.ctx.fill();
     }
 
@@ -8498,11 +8493,8 @@ export class Game {
 
     let y = boxY + 55;
     for (const p of powerups) {
-      // Icon and box - convert hex to rgba for browser compatibility
-      const pr = parseInt(p.color.slice(1, 3), 16);
-      const pg = parseInt(p.color.slice(3, 5), 16);
-      const pb = parseInt(p.color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, 0.2)`;
+      // Icon and box
+      this.ctx.fillStyle = hexToRgba(p.color, 0.2);
       this.ctx.beginPath();
       this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
       this.ctx.fill();
@@ -8779,12 +8771,9 @@ export class Game {
         break;
     }
 
-    // Glow background - convert hex to rgba for transparency
+    // Glow background
     const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.3)`);
+    glowGrad.addColorStop(0, hexToRgba(color, 0.3));
     glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = glowGrad;
     this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
@@ -9765,15 +9754,8 @@ export class Game {
       const bx = x + i * (badgeSize + spacing);
       const hasEarned = badges.includes(id);
 
-      // Badge background - convert hex to rgba for browser compatibility
-      if (hasEarned) {
-        const br = parseInt(info.color.slice(1, 3), 16);
-        const bg = parseInt(info.color.slice(3, 5), 16);
-        const bb = parseInt(info.color.slice(5, 7), 16);
-        this.ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, 0.2)`;
-      } else {
-        this.ctx.fillStyle = 'rgba(50, 50, 50, 0.5)';
-      }
+      // Badge background
+      this.ctx.fillStyle = hasEarned ? hexToRgba(info.color, 0.2) : 'rgba(50, 50, 50, 0.5)';
       this.ctx.beginPath();
       this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
       this.ctx.fill();
@@ -9805,12 +9787,9 @@ export class Game {
     const centerX = GAME_WIDTH / 2;
     const centerY = 150;
 
-    // Glow - convert hex to rgba for better browser compatibility
+    // Glow
     const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
-    const r = parseInt(info.color.slice(1, 3), 16);
-    const g = parseInt(info.color.slice(3, 5), 16);
-    const b = parseInt(info.color.slice(5, 7), 16);
-    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.27)`);
+    gradient.addColorStop(0, hexToRgba(info.color, 0.27));
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
