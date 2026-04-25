@@ -25,7 +25,7 @@ import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
-import { PowerUpManager } from '../systems/PowerUps';
+import { PowerUpManager, POWER_UP_CONFIG } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES, GauntletStage } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
@@ -2363,13 +2363,7 @@ export class Game {
       );
 
       // Trigger power-up flash with color based on type
-      const powerUpColors: Record<string, string> = {
-        speed: '#00ffff',
-        shield: '#00aaff',
-        magnet: '#ff00ff',
-        doubleJump: '#ffff00'
-      };
-      this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
+      this.powerUpFlashColor = POWER_UP_CONFIG[collectedPowerUp.type].color;
       // Trigger power-up flash (reduced or disabled based on settings)
       if (!this.save.isReduceFlashEnabled()) {
         this.powerUpFlashOpacity = 0.25;
