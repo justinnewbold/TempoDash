@@ -13,11 +13,9 @@ import {
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
 import { Background } from '../graphics/Background';
 import { TouchHandler, GestureEvent } from './TouchHandler';
-import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyInspector';
+import { PropertyInspector, InspectorElement, PropertyChange, PLATFORM_TYPES } from './PropertyInspector';
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
-
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
 
 const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
