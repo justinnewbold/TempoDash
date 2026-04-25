@@ -39,6 +39,16 @@ import { TimeRewindManager } from '../systems/TimeRewind';
 import { GravityWellManager } from '../systems/GravityWells';
 import { ScoreManager } from '../systems/ScoreManager';
 
+// Single source of truth for mastery-badge presentation. Iteration order here
+// is the on-screen order on the level-select cards. The notification overlay
+// uppercases `name`; do not duplicate that as a separate field.
+const MASTERY_BADGES: Record<MasteryBadge, { icon: string; color: string; name: string }> = {
+  flawless:     { icon: '💎', color: '#00ffff', name: 'Flawless' },
+  speedDemon:   { icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
+  collector:    { icon: '🪙', color: '#ffd700', name: 'Collector' },
+  rhythmMaster: { icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
+};
+
 export class Game {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -301,7 +311,7 @@ export class Game {
   // Level Mastery Badges
   private levelRhythmHits = 0;
   private levelRhythmTotal = 0;
-  private newBadgesEarned: { badge: string; levelId: number }[] = [];
+  private newBadgesEarned: { badge: MasteryBadge; levelId: number }[] = [];
   private badgeNotificationTimer = 0;
 
   // Weather Effects
@@ -9747,24 +9757,19 @@ export class Game {
     const badgeSize = 20;
     const spacing = 5;
 
-    const allBadges: { id: MasteryBadge; icon: string; color: string; name: string }[] = [
-      { id: 'flawless', icon: '💎', color: '#00ffff', name: 'Flawless' },
-      { id: 'speedDemon', icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
-      { id: 'collector', icon: '🪙', color: '#ffd700', name: 'Collector' },
-      { id: 'rhythmMaster', icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
-    ];
-
     this.ctx.save();
 
-    allBadges.forEach((badge, i) => {
+    const ids = Object.keys(MASTERY_BADGES) as MasteryBadge[];
+    ids.forEach((id, i) => {
+      const info = MASTERY_BADGES[id];
       const bx = x + i * (badgeSize + spacing);
-      const hasEarned = badges.includes(badge.id);
+      const hasEarned = badges.includes(id);
 
       // Badge background - convert hex to rgba for browser compatibility
       if (hasEarned) {
-        const br = parseInt(badge.color.slice(1, 3), 16);
-        const bg = parseInt(badge.color.slice(3, 5), 16);
-        const bb = parseInt(badge.color.slice(5, 7), 16);
+        const br = parseInt(info.color.slice(1, 3), 16);
+        const bg = parseInt(info.color.slice(3, 5), 16);
+        const bb = parseInt(info.color.slice(5, 7), 16);
         this.ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, 0.2)`;
       } else {
         this.ctx.fillStyle = 'rgba(50, 50, 50, 0.5)';
@@ -9778,7 +9783,7 @@ export class Game {
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillStyle = hasEarned ? '#ffffff' : '#444444';
-      this.ctx.fillText(badge.icon, bx, y);
+      this.ctx.fillText(info.icon, bx, y);
     });
 
     this.ctx.restore();
@@ -9792,15 +9797,7 @@ export class Game {
     const fadeOut = Math.min(1, this.badgeNotificationTimer / 500);
     const alpha = Math.min(fadeIn, fadeOut);
 
-    const badgeInfo: Record<string, { icon: string; name: string; color: string }> = {
-      flawless: { icon: '💎', name: 'FLAWLESS', color: '#00ffff' },
-      speedDemon: { icon: '⚡', name: 'SPEED DEMON', color: '#ffcc00' },
-      collector: { icon: '🪙', name: 'COLLECTOR', color: '#ffd700' },
-      rhythmMaster: { icon: '🎵', name: 'RHYTHM MASTER', color: '#ff00ff' },
-    };
-
-    const info = badgeInfo[badge.badge];
-    if (!info) return;
+    const info = MASTERY_BADGES[badge.badge];
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
@@ -9833,7 +9830,7 @@ export class Game {
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText(info.name, centerX, centerY + 55);
+    this.ctx.fillText(info.name.toUpperCase(), centerX, centerY + 55);
 
     this.ctx.restore();
   }
