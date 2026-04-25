@@ -157,40 +157,15 @@ export class Platform {
   }
 
   getColor(): string {
-    const colorMap: Record<string, string> = {
-      solid: COLORS.PLATFORM.solid,
-      bounce: COLORS.PLATFORM.bounce,
-      crumble: COLORS.PLATFORM.crumble,
-      moving: COLORS.PLATFORM.moving,
-      spike: COLORS.PLATFORM.spike,
-      phase: COLORS.PLATFORM.phase,
-      conveyor: COLORS.PLATFORM.conveyor,
-      gravity: COLORS.PLATFORM.gravity,
-      sticky: COLORS.PLATFORM.sticky,
-      glass: COLORS.PLATFORM.glass,
-      slowmo: COLORS.PLATFORM.slowmo,
-      wall: COLORS.PLATFORM.wall,
-      secret: COLORS.PLATFORM.secret,
-      ice: COLORS.PLATFORM.ice,
-      lava: COLORS.PLATFORM.lava,
-    };
-    return colorMap[this.type] || COLORS.PLATFORM.solid;
+    // COLORS.PLATFORM has a colour for every supported PlatformType plus a
+    // matching `<type>Highlight` key for some. Fall back to solid for types
+    // mobile has not implemented yet (e.g. 'wind').
+    const palette = COLORS.PLATFORM as Record<string, string>;
+    return palette[this.type] ?? palette.solid;
   }
 
   getHighlightColor(): string {
-    const highlights: Record<string, string> = {
-      solid: COLORS.PLATFORM.solidHighlight,
-      bounce: COLORS.PLATFORM.bounceHighlight,
-      conveyor: COLORS.PLATFORM.conveyorHighlight,
-      gravity: COLORS.PLATFORM.gravityHighlight,
-      sticky: COLORS.PLATFORM.stickyHighlight,
-      glass: COLORS.PLATFORM.glassHighlight,
-      slowmo: COLORS.PLATFORM.slowmoHighlight,
-      wall: COLORS.PLATFORM.wallHighlight,
-      secret: COLORS.PLATFORM.secretHighlight,
-      ice: COLORS.PLATFORM.iceHighlight,
-      lava: COLORS.PLATFORM.lavaHighlight,
-    };
-    return highlights[this.type] || this.getColor();
+    const palette = COLORS.PLATFORM as Record<string, string>;
+    return palette[`${this.type}Highlight`] ?? this.getColor();
   }
 }
