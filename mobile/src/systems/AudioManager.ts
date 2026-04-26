@@ -1,6 +1,6 @@
 import { Audio, AVPlaybackStatus } from 'expo-av';
 
-type SoundEffect = 'jump' | 'land' | 'coin' | 'bounce' | 'death' | 'complete' | 'button';
+export type SoundEffect = 'jump' | 'land' | 'coin' | 'bounce' | 'death' | 'complete' | 'button';
 
 interface AudioSettings {
   musicVolume: number;

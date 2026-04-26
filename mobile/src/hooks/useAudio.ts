@@ -1,7 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { AudioManager } from '../systems/AudioManager';
-
-type SoundEffect = 'jump' | 'land' | 'coin' | 'bounce' | 'death' | 'complete' | 'button';
+import { AudioManager, SoundEffect } from '../systems/AudioManager';
 
 export function useAudio() {
   useEffect(() => {
