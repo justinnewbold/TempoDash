@@ -1,13 +1,7 @@
-import { Rectangle } from '../types';
+import { Rectangle, PortalConfig } from '../types';
 import { GAME_WIDTH } from '../constants';
 
-export interface PortalConfig {
-  id: string;
-  x: number;
-  y: number;
-  linkedPortalId: string;
-  color?: string;
-}
+export type { PortalConfig };
 
 export class Portal {
   id: string;
