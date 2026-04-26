@@ -1,7 +1,7 @@
 // Flow Meter / Overdrive Mode System
 // Builds through skillful play, triggers Overdrive when full
 
-export interface FlowMeterState {
+interface FlowMeterState {
   current: number;      // 0-100
   isOverdrive: boolean;
   overdriveDuration: number;  // remaining ms
