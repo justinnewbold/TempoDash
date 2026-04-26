@@ -1,13 +1,7 @@
-import { Rectangle } from '../types';
+import { Rectangle, GemType, GemConfig } from '../types';
 import { GAME_WIDTH } from '../constants';
 
-export type GemType = 'ruby' | 'sapphire' | 'emerald';
-
-export interface GemConfig {
-  x: number;
-  y: number;
-  type: GemType;
-}
+export type { GemType, GemConfig };
 
 const GEM_COLORS: Record<GemType, { primary: string; glow: string; inner: string }> = {
   ruby: { primary: '#e11d48', glow: '#ff4466', inner: '#ff6b8a' },
