@@ -11,7 +11,7 @@ export interface ScreenEffectsConfig {
   weatherEnabled: boolean;
 }
 
-type WeatherType = 'none' | 'rain' | 'snow' | 'lightning' | 'particles';
+type ScreenWeatherType = 'none' | 'rain' | 'snow' | 'lightning' | 'particles';
 
 interface WeatherParticle {
   x: number;
@@ -54,7 +54,7 @@ export class ScreenEffects {
   private flashDecay = 0.1;
 
   // Weather system
-  private weatherType: WeatherType = 'none';
+  private weatherType: ScreenWeatherType = 'none';
   private weatherParticles: WeatherParticle[] = [];
   private weatherIntensity = 1.0;
   private lightningTimer = 0;
@@ -254,7 +254,7 @@ export class ScreenEffects {
   /**
    * Set weather type
    */
-  setWeather(type: WeatherType, intensity: number = 1.0): void {
+  setWeather(type: ScreenWeatherType, intensity: number = 1.0): void {
     if (!this.config.weatherEnabled) {
       this.weatherType = 'none';
       return;
