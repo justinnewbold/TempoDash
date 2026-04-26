@@ -57,21 +57,6 @@ export interface GameState {
   hasShield: boolean;
 }
 
-export interface SaveData {
-  totalPoints: number;
-  unlockedLevels: number[];
-  highScores: Record<number, number>;
-  endlessHighScore: number;
-  settings: GameSettings;
-}
-
-export interface GameSettings {
-  musicVolume: number;
-  sfxVolume: number;
-  hapticFeedback: boolean;
-  reducedMotion: boolean;
-}
-
 export interface PlayerSkin {
   id: string;
   name: string;
