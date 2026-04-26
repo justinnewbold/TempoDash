@@ -1,4 +1,4 @@
-import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry, PlatformType } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS, TIMING } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
@@ -10,7 +10,6 @@ import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
-import { PlatformType } from '../types';
 // LevelEditor is lazy-loaded to reduce initial bundle size (~2800 lines)
 type LevelEditor = import('../editor/LevelEditor').LevelEditor;
 let LevelEditorClass: (new (...args: any[]) => LevelEditor) | null = null;
