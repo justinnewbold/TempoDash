@@ -1,7 +1,7 @@
 // Procedural EDM music system using Web Audio API
 // Based on the Neon Pulse Engine with multiple music styles
 
-export type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic' | 'industrial' | 'ethereal';
+type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic' | 'industrial' | 'ethereal';
 
 interface MusicPreset {
   tempo: number;
