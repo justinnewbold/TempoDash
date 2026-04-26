@@ -1,11 +1,7 @@
 import { GAME_WIDTH } from '../constants';
+import type { GravityWellConfig } from '../types';
 
-export interface GravityWellConfig {
-  x: number;
-  y: number;
-  radius: number;
-  strength: number; // Positive = attract toward center, negative = repel from center
-}
+export type { GravityWellConfig };
 
 class GravityWell {
   x: number;
