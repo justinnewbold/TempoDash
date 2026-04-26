@@ -1,8 +1,8 @@
 // Power-up system for gameplay enhancements
-import { Rectangle } from '../types';
+import { Rectangle, PowerUpType } from '../types';
 import { GAME_HEIGHT } from '../constants';
 
-export type PowerUpType = 'shield' | 'magnet' | 'slowmo' | 'doublePoints';
+export type { PowerUpType };
 
 export interface PowerUp {
   type: PowerUpType;
