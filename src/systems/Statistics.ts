@@ -250,25 +250,6 @@ export class StatisticsManager {
     ctx.fillText('Press ESC to close', GAME_WIDTH / 2, GAME_HEIGHT - 20);
   }
 
-  // Render mini stats during gameplay
-  renderMiniStats(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-    const stats = this.getSessionStats();
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(x, y, 100, 60);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'left';
-
-    ctx.fillText(`Jumps: ${stats.jumps}`, x + 5, y + 15);
-    ctx.fillText(`Deaths: ${stats.deaths}`, x + 5, y + 30);
-    ctx.fillText(`Coins: ${stats.coinsCollected}`, x + 5, y + 45);
-
-    ctx.restore();
-  }
-
   // Reset session stats
   resetSession(): void {
     this.sessionStats = this.createEmptySession();
