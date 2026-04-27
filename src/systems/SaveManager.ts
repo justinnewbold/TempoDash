@@ -58,16 +58,19 @@ function migrateSaveData(data: Record<string, unknown>, fromVersion: number): Re
   return data;
 }
 
-// Points required to unlock each level
+// Buy-with-points costs per level. Levels not in this table can only be
+// reached by completing the previous level (auto-grant in Game.startNextLevel),
+// which is the design path for 9..TOTAL_LEVELS. Game.renderLevelSelect shows
+// "Beat Level N-1 to unlock" for those entries instead of "0 pts to unlock".
 export const LEVEL_UNLOCK_COSTS: Record<number, number> = {
-  1: 0,      // Level 1 is free
-  2: 500,    // Level 2 costs 500 points
-  3: 1500,   // Level 3 costs 1500 points
-  4: 3000,   // Level 4 costs 3000 points
-  5: 5000,   // Level 5 costs 5000 points
-  6: 7500,   // Level 6 costs 7500 points
-  7: 10000,  // Level 7 costs 10000 points
-  8: 15000,  // Level 8 costs 15000 points
+  1: 0,
+  2: 500,
+  3: 1500,
+  4: 3000,
+  5: 5000,
+  6: 7500,
+  7: 10000,
+  8: 15000,
 };
 
 // Available player skins
