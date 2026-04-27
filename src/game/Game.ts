@@ -150,7 +150,16 @@ export class Game {
 
   // Performance: adaptive quality to maintain frame rate at high tempo
   private frameTimeHistory: number[] = [];
-  private reducedEffects = false; // true when FPS drops, reduces shadowBlur and particles
+  private reducedEffects = false; // true when FPS drops or user opts in, reduces shadowBlur and particles
+
+  // Apply the current reduced-effects state to subsystems. Called from the
+  // settings toggle handler so changes take effect immediately, not just on
+  // the next FPS sample.
+  private applyReducedEffects(): void {
+    this.reducedEffects = this.save.isReducedMotionEnabled();
+    Platform.setReducedEffects(this.reducedEffects);
+    ParticleEffects.setReducedEffects(this.reducedEffects);
+  }
 
   // Orientation and screen sizing
   private isPortrait = false;
@@ -1134,7 +1143,12 @@ export class Game {
     // Reduced motion toggle (right column)
     const rightToggleX = rightColX - toggleWidth / 2;
     if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
-      this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
+      const enabled = !this.save.isReducedMotionEnabled();
+      this.save.setReducedMotion(enabled);
+      // Apply immediately so the user sees the effect change at toggle time.
+      // The auto-FPS check below also ORs this in so subsequent frames don't
+      // overwrite the user preference.
+      this.applyReducedEffects();
       this.audio.playSelect();
     }
 
@@ -2140,13 +2154,14 @@ export class Game {
         this.frameTimeHistory.shift();
       }
       // Enable reduced effects if average frame time exceeds ~22ms (below 45fps)
+      // OR if the user has explicitly opted in via the Reduced Motion setting.
       if (this.frameTimeHistory.length >= 10) {
         let sum = 0;
         for (let i = 0; i < this.frameTimeHistory.length; i++) {
           sum += this.frameTimeHistory[i];
         }
         const avgFrameTime = sum / this.frameTimeHistory.length;
-        this.reducedEffects = avgFrameTime > 22;
+        this.reducedEffects = avgFrameTime > 22 || this.save.isReducedMotionEnabled();
         Platform.setReducedEffects(this.reducedEffects);
         ParticleEffects.setReducedEffects(this.reducedEffects);
       }
