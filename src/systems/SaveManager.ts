@@ -1,4 +1,4 @@
-import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFrame } from '../types';
+import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFrame, MasteryBadge } from '../types';
 import { TOTAL_LEVELS } from '../levels';
 
 const SAVE_KEY = 'tempodash_save';
@@ -765,27 +765,27 @@ export class SaveManager {
 
   // --- MASTERY BADGES ---
 
-  getLevelMasteryBadges(levelId: number): string[] {
+  getLevelMasteryBadges(levelId: number): MasteryBadge[] {
     return this.data.levelMastery?.[levelId] || [];
   }
 
-  addMasteryBadge(levelId: number, badge: string): boolean {
+  addMasteryBadge(levelId: number, badge: MasteryBadge): boolean {
     if (!this.data.levelMastery) {
       this.data.levelMastery = {};
     }
     if (!this.data.levelMastery[levelId]) {
       this.data.levelMastery[levelId] = [];
     }
-    if (!this.data.levelMastery[levelId].includes(badge as import('../types').MasteryBadge)) {
-      this.data.levelMastery[levelId].push(badge as import('../types').MasteryBadge);
+    if (!this.data.levelMastery[levelId].includes(badge)) {
+      this.data.levelMastery[levelId].push(badge);
       this.save();
       return true;
     }
     return false;
   }
 
-  hasMasteryBadge(levelId: number, badge: string): boolean {
-    return this.data.levelMastery?.[levelId]?.includes(badge as import('../types').MasteryBadge) ?? false;
+  hasMasteryBadge(levelId: number, badge: MasteryBadge): boolean {
+    return this.data.levelMastery?.[levelId]?.includes(badge) ?? false;
   }
 
   getTotalMasteryBadges(): number {
