@@ -145,11 +145,6 @@ export class GhostManager {
     this.ghostRotation = frames[0].rotation;
   }
 
-  stopPlayback(): void {
-    this.isPlaying = false;
-    this.playbackIndex = 0;
-  }
-
   update(deltaTime: number): void {
     if (!this.isPlaying || this.frames.length === 0) return;
 
@@ -216,14 +211,6 @@ export class GhostManager {
 
   getIsRecording(): boolean {
     return this.isRecording;
-  }
-
-  getIsPlaying(): boolean {
-    return this.isPlaying;
-  }
-
-  getRecordedFrames(): GhostFrame[] {
-    return [...this.frames];
   }
 
   getPlaybackProgress(): number {
