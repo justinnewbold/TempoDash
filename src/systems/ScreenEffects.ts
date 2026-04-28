@@ -81,10 +81,6 @@ export class ScreenEffects {
     weatherEnabled: true,
   };
 
-  configure(config: Partial<ScreenEffectsConfig>): void {
-    this.config = { ...this.config, ...config };
-  }
-
   // ===========================================
   // FREEZE-FRAME SYSTEM
   // ===========================================
@@ -164,13 +160,6 @@ export class ScreenEffects {
     return this.zoomLevel;
   }
 
-  /**
-   * Get zoom center
-   */
-  getZoomCenter(): { x: number; y: number } {
-    return { x: this.zoomCenterX, y: this.zoomCenterY };
-  }
-
   // ===========================================
   // CHROMATIC ABERRATION
   // ===========================================
@@ -208,13 +197,6 @@ export class ScreenEffects {
     this.triggerChromaticAberration(12);
     this.vignetteTargetIntensity = 0.5;
     this.triggerDeathZoom();
-  }
-
-  /**
-   * Check if kill cam is active
-   */
-  isKillCamActive(): boolean {
-    return this.killCamActive;
   }
 
   /**
