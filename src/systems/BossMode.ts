@@ -113,13 +113,6 @@ export class BossManager {
   }
 
   /**
-   * Get boss name for UI
-   */
-  getBossName(): string {
-    return this.bossConfig?.name || '';
-  }
-
-  /**
    * Update boss logic
    */
   update(
