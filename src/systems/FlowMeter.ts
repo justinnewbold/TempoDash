@@ -137,20 +137,12 @@ export class FlowMeterManager {
   }
 
   // Getters for Game/UI
-  getMeter(): number {
-    return this.meter;
-  }
-
   getMeterPercent(): number {
     return this.meter / FlowMeterManager.MAX_METER;
   }
 
   isInOverdrive(): boolean {
     return this.isOverdrive;
-  }
-
-  getOverdriveTimeRemaining(): number {
-    return this.overdriveTimeRemaining;
   }
 
   getOverdrivePercent(): number {
