@@ -305,14 +305,6 @@ export class BeatHazard {
     ctx.strokeRect(screenX + 2, currentY + 2, this.width - 4, this.height - 4);
     ctx.setLineDash([]);
   }
-
-  isHazardActive(): boolean {
-    return this.isActive;
-  }
-
-  getActivationProgress(): number {
-    return this.activationProgress;
-  }
 }
 
 export class BeatHazardManager {
@@ -326,10 +318,6 @@ export class BeatHazardManager {
 
   loadHazards(configs: BeatHazardConfig[]): void {
     this.hazards = configs.map(config => new BeatHazard(config));
-  }
-
-  addHazard(config: BeatHazardConfig): void {
-    this.hazards.push(new BeatHazard(config));
   }
 
   update(deltaTime: number, beatNumber: number): void {
@@ -352,17 +340,5 @@ export class BeatHazardManager {
     for (const hazard of this.hazards) {
       hazard.render(ctx, cameraX);
     }
-  }
-
-  getHazards(): BeatHazard[] {
-    return this.hazards;
-  }
-
-  // Get hazards within a screen range for rendering optimization
-  getVisibleHazards(cameraX: number, screenWidth: number): BeatHazard[] {
-    return this.hazards.filter(h => {
-      const bounds = h.getBounds();
-      return bounds.x + bounds.width > cameraX - 100 && bounds.x < cameraX + screenWidth + 100;
-    });
   }
 }
