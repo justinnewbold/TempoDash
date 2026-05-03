@@ -1,15 +1,15 @@
-import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry } from '../types';
+import { GameState, CustomLevel, Achievement, GameSettings, WeatherType, MasteryBadge, LeaderboardEntry, PlatformType } from '../types';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS, TIMING } from '../constants';
 import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
+import { LEVEL_CARDS } from '../config/LevelMetadata';
 import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
 import { createLevel, TOTAL_LEVELS } from '../levels/index';
 import { Platform } from '../entities/Platform';
 import { Coin } from '../entities/Coin';
-import { PlatformType } from '../types';
 // LevelEditor is lazy-loaded to reduce initial bundle size (~2800 lines)
 type LevelEditor = import('../editor/LevelEditor').LevelEditor;
 let LevelEditorClass: (new (...args: any[]) => LevelEditor) | null = null;
@@ -24,7 +24,7 @@ import { ParticleEffects } from '../systems/ParticleEffects';
 import { ScreenTransition } from '../systems/ScreenTransition';
 import { DebugOverlay } from '../systems/DebugOverlay';
 import { StatisticsManager } from '../systems/Statistics';
-import { PowerUpManager } from '../systems/PowerUps';
+import { PowerUpManager, POWER_UP_CONFIG } from '../systems/PowerUps';
 import { ModifierManager, MODIFIERS, ModifierId } from '../systems/Modifiers';
 import { ChallengeManager, Challenge, CHALLENGE_TYPES, GauntletStage } from '../systems/Challenges';
 import { ChaseModeManager } from '../systems/ChaseMode';
@@ -37,6 +37,17 @@ import { BeatHazardManager, BeatHazardConfig } from '../systems/BeatHazards';
 import { TimeRewindManager } from '../systems/TimeRewind';
 import { GravityWellManager } from '../systems/GravityWells';
 import { ScoreManager } from '../systems/ScoreManager';
+import { hexToRgba } from '../util/color';
+
+// Single source of truth for mastery-badge presentation. Iteration order here
+// is the on-screen order on the level-select cards. The notification overlay
+// uppercases `name`; do not duplicate that as a separate field.
+const MASTERY_BADGES: Record<MasteryBadge, { icon: string; color: string; name: string }> = {
+  flawless:     { icon: '💎', color: '#00ffff', name: 'Flawless' },
+  speedDemon:   { icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
+  collector:    { icon: '🪙', color: '#ffd700', name: 'Collector' },
+  rhythmMaster: { icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
+};
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -139,7 +150,16 @@ export class Game {
 
   // Performance: adaptive quality to maintain frame rate at high tempo
   private frameTimeHistory: number[] = [];
-  private reducedEffects = false; // true when FPS drops, reduces shadowBlur and particles
+  private reducedEffects = false; // true when FPS drops or user opts in, reduces shadowBlur and particles
+
+  // Apply the current reduced-effects state to subsystems. Called from the
+  // settings toggle handler so changes take effect immediately, not just on
+  // the next FPS sample.
+  private applyReducedEffects(): void {
+    this.reducedEffects = this.save.isReducedMotionEnabled();
+    Platform.setReducedEffects(this.reducedEffects);
+    ParticleEffects.setReducedEffects(this.reducedEffects);
+  }
 
   // Orientation and screen sizing
   private isPortrait = false;
@@ -300,7 +320,7 @@ export class Game {
   // Level Mastery Badges
   private levelRhythmHits = 0;
   private levelRhythmTotal = 0;
-  private newBadgesEarned: { badge: string; levelId: number }[] = [];
+  private newBadgesEarned: { badge: MasteryBadge; levelId: number }[] = [];
   private badgeNotificationTimer = 0;
 
   // Weather Effects
@@ -1123,7 +1143,12 @@ export class Game {
     // Reduced motion toggle (right column)
     const rightToggleX = rightColX - toggleWidth / 2;
     if (x >= rightToggleX && x <= rightToggleX + toggleWidth && y >= 150 && y <= 185) {
-      this.save.setReducedMotion(!this.save.isReducedMotionEnabled());
+      const enabled = !this.save.isReducedMotionEnabled();
+      this.save.setReducedMotion(enabled);
+      // Apply immediately so the user sees the effect change at toggle time.
+      // The auto-FPS check below also ORs this in so subsequent frames don't
+      // overwrite the user preference.
+      this.applyReducedEffects();
       this.audio.playSelect();
     }
 
@@ -2129,13 +2154,14 @@ export class Game {
         this.frameTimeHistory.shift();
       }
       // Enable reduced effects if average frame time exceeds ~22ms (below 45fps)
+      // OR if the user has explicitly opted in via the Reduced Motion setting.
       if (this.frameTimeHistory.length >= 10) {
         let sum = 0;
         for (let i = 0; i < this.frameTimeHistory.length; i++) {
           sum += this.frameTimeHistory[i];
         }
         const avgFrameTime = sum / this.frameTimeHistory.length;
-        this.reducedEffects = avgFrameTime > 22;
+        this.reducedEffects = avgFrameTime > 22 || this.save.isReducedMotionEnabled();
         Platform.setReducedEffects(this.reducedEffects);
         ParticleEffects.setReducedEffects(this.reducedEffects);
       }
@@ -2362,13 +2388,7 @@ export class Game {
       );
 
       // Trigger power-up flash with color based on type
-      const powerUpColors: Record<string, string> = {
-        speed: '#00ffff',
-        shield: '#00aaff',
-        magnet: '#ff00ff',
-        doubleJump: '#ffff00'
-      };
-      this.powerUpFlashColor = powerUpColors[collectedPowerUp.type] || '#00ffaa';
+      this.powerUpFlashColor = POWER_UP_CONFIG[collectedPowerUp.type].color;
       // Trigger power-up flash (reduced or disabled based on settings)
       if (!this.save.isReduceFlashEnabled()) {
         this.powerUpFlashOpacity = 0.25;
@@ -4703,10 +4723,7 @@ export class Game {
 
     // Parse color for background
     if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.15)`;
+      this.ctx.fillStyle = hexToRgba(color, 0.15);
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 2;
@@ -4786,20 +4803,6 @@ export class Game {
     const cardY = 180;
     const centerX = GAME_WIDTH / 2;
 
-    const levelNames = [
-      'First Flight', 'Neon Dreams', 'Final Ascent', 'Frozen Peak',
-      'Volcanic Descent', 'Abyssal Depths', 'The Gauntlet', 'Sky Temple',
-      'Crystal Caverns', 'Storm Surge', 'Shadow Realm', 'Cyber Grid',
-      'Ancient Ruins', 'Starlight Path', 'Chaos Dimension'
-    ];
-    const levelColors = [
-      '#00ffaa', '#ff00ff', '#ff6600', '#88ddff',
-      '#ff4400', '#00ccff', '#ff0000', '#e94560',
-      '#aa66ff', '#ffaa00', '#666699', '#00ffff',
-      '#cc9966', '#aaaaff', '#ff0066'
-    ];
-    const levelDifficulty = [1, 2, 3, 3, 4, 5, 5, 5, 4, 5, 5, 4, 3, 4, 5]; // 1-5 stars
-
     // Navigation arrows
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.ctx.font = 'bold 40px "Segoe UI", sans-serif';
@@ -4821,6 +4824,7 @@ export class Game {
     for (let i = 0; i < TOTAL_LEVELS; i++) {
       const levelId = i + 1;
       const isSelected = i === this.selectedLevelIndex;
+      const card = LEVEL_CARDS[i];
 
       // Calculate position relative to selected level
       const offsetFromSelected = i - this.selectedLevelIndex;
@@ -4835,7 +4839,7 @@ export class Game {
 
       const isUnlocked = this.save.isLevelUnlocked(levelId);
       const canUnlock = this.save.canUnlockLevel(levelId);
-      const cost = LEVEL_UNLOCK_COSTS[levelId] || 0;
+      const buyCost = LEVEL_UNLOCK_COSTS[levelId];
       const highScore = this.save.getHighScore(levelId);
 
       this.ctx.save();
@@ -4850,7 +4854,7 @@ export class Game {
 
       // Card background
       this.ctx.fillStyle = isUnlocked ? 'rgba(0, 0, 0, 0.7)' : 'rgba(50, 50, 50, 0.7)';
-      this.ctx.strokeStyle = isUnlocked ? levelColors[i] : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
+      this.ctx.strokeStyle = isUnlocked ? card.color : (canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.5)');
       this.ctx.lineWidth = isSelected ? 4 : 3;
       this.ctx.beginPath();
       this.ctx.roundRect(scaledCardX, scaledCardY, scaledCardWidth, scaledCardHeight, 15 * scale);
@@ -4859,7 +4863,7 @@ export class Game {
 
       // Selected glow effect
       if (isSelected) {
-        this.ctx.shadowColor = levelColors[i];
+        this.ctx.shadowColor = card.color;
         this.ctx.shadowBlur = 20;
         this.ctx.stroke();
         this.ctx.shadowBlur = 0;
@@ -4870,8 +4874,8 @@ export class Game {
 
       // Level number
       this.ctx.font = `bold ${Math.round(42 * scale)}px "Segoe UI", sans-serif`;
-      this.ctx.fillStyle = isUnlocked ? levelColors[i] : 'rgba(100, 100, 100, 0.8)';
-      this.ctx.shadowColor = levelColors[i];
+      this.ctx.fillStyle = isUnlocked ? card.color : 'rgba(100, 100, 100, 0.8)';
+      this.ctx.shadowColor = card.color;
       this.ctx.shadowBlur = isUnlocked && isSelected ? 15 : 0;
       this.ctx.fillText(`${levelId}`, cardCenterX, scaledCardY + 55 * scale);
 
@@ -4879,11 +4883,10 @@ export class Game {
       this.ctx.font = `bold ${Math.round(15 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffffff' : 'rgba(150, 150, 150, 0.8)';
       this.ctx.shadowBlur = 0;
-      this.ctx.fillText(levelNames[i], cardCenterX, scaledCardY + 85 * scale);
+      this.ctx.fillText(card.name, cardCenterX, scaledCardY + 85 * scale);
 
       // Difficulty stars
-      const difficulty = levelDifficulty[i];
-      const starStr = '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty);
+      const starStr = '★'.repeat(card.difficulty) + '☆'.repeat(5 - card.difficulty);
       this.ctx.font = `${Math.round(10 * scale)}px "Segoe UI", sans-serif`;
       this.ctx.fillStyle = isUnlocked ? '#ffaa00' : 'rgba(150, 150, 150, 0.6)';
       this.ctx.fillText(starStr, cardCenterX, scaledCardY + 100 * scale);
@@ -4909,10 +4912,13 @@ export class Game {
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
         this.ctx.fillText('🔒', cardCenterX, scaledCardY + 125 * scale);
 
-        // Cost
+        // Unlock requirement: either points-to-buy or beat-the-previous-level
         this.ctx.font = `${Math.round(13 * scale)}px "Segoe UI", sans-serif`;
         this.ctx.fillStyle = canUnlock ? '#ffd700' : 'rgba(100, 100, 100, 0.8)';
-        this.ctx.fillText(`${cost} pts to unlock`, cardCenterX, scaledCardY + 150 * scale);
+        const unlockText = buyCost !== undefined
+          ? `${buyCost} pts to unlock`
+          : `Beat Level ${levelId - 1} to unlock`;
+        this.ctx.fillText(unlockText, cardCenterX, scaledCardY + 150 * scale);
 
         if (canUnlock && isSelected) {
           // Click to unlock
@@ -4932,7 +4938,7 @@ export class Game {
       const dotX = centerX + (i - (TOTAL_LEVELS - 1) / 2) * 20;
       this.ctx.beginPath();
       this.ctx.arc(dotX, dotsY, i === this.selectedLevelIndex ? 6 : 4, 0, Math.PI * 2);
-      this.ctx.fillStyle = i === this.selectedLevelIndex ? levelColors[i] : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.fillStyle = i === this.selectedLevelIndex ? LEVEL_CARDS[i].color : 'rgba(255, 255, 255, 0.3)';
       this.ctx.fill();
     }
 
@@ -5674,10 +5680,7 @@ export class Game {
 
     this.ctx.fillStyle = color.replace(')', ', 0.2)').replace('rgb', 'rgba');
     if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.2)`;
+      this.ctx.fillStyle = hexToRgba(color, 0.2);
     }
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 1;
@@ -5977,7 +5980,7 @@ export class Game {
 
       // Card background
       const cardColor = challenge.isWeekly ? '#9933ff' : '#ff6600';
-      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.15)`;
+      this.ctx.fillStyle = isCompleted ? 'rgba(0, 255, 100, 0.15)' : hexToRgba(cardColor, 0.15);
       this.ctx.strokeStyle = isCompleted ? '#00ff66' : cardColor;
       this.ctx.lineWidth = 3;
       this.ctx.beginPath();
@@ -6033,7 +6036,7 @@ export class Game {
         this.ctx.fillText(`✓ Best: ${progress!.bestScore}`, btnX, btnY + 5);
       } else {
         // Play button
-        this.ctx.fillStyle = `rgba(${parseInt(cardColor.slice(1, 3), 16)}, ${parseInt(cardColor.slice(3, 5), 16)}, ${parseInt(cardColor.slice(5, 7), 16)}, 0.3)`;
+        this.ctx.fillStyle = hexToRgba(cardColor, 0.3);
         this.ctx.strokeStyle = cardColor;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
@@ -7269,7 +7272,7 @@ export class Game {
       const size = 15 + this.beatPulse * 10;
       this.ctx.beginPath();
       this.ctx.arc(GAME_WIDTH - 30, GAME_HEIGHT - 30, size, 0, Math.PI * 2);
-      this.ctx.fillStyle = `rgba(${parseInt(challengeColor.slice(1, 3), 16)}, ${parseInt(challengeColor.slice(3, 5), 16)}, ${parseInt(challengeColor.slice(5, 7), 16)}, ${this.beatPulse * 0.8})`;
+      this.ctx.fillStyle = hexToRgba(challengeColor, this.beatPulse * 0.8);
       this.ctx.fill();
     }
 
@@ -8504,11 +8507,8 @@ export class Game {
 
     let y = boxY + 55;
     for (const p of powerups) {
-      // Icon and box - convert hex to rgba for browser compatibility
-      const pr = parseInt(p.color.slice(1, 3), 16);
-      const pg = parseInt(p.color.slice(3, 5), 16);
-      const pb = parseInt(p.color.slice(5, 7), 16);
-      this.ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, 0.2)`;
+      // Icon and box
+      this.ctx.fillStyle = hexToRgba(p.color, 0.2);
       this.ctx.beginPath();
       this.ctx.roundRect(boxX + 20, y - 25, 440, 50, 8);
       this.ctx.fill();
@@ -8785,12 +8785,9 @@ export class Game {
         break;
     }
 
-    // Glow background - convert hex to rgba for transparency
+    // Glow background
     const glowGrad = this.ctx.createRadialGradient(centerX, baseY, 0, centerX, baseY, 150);
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.3)`);
+    glowGrad.addColorStop(0, hexToRgba(color, 0.3));
     glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = glowGrad;
     this.ctx.fillRect(centerX - 150, baseY - 50, 300, 100);
@@ -9763,28 +9760,16 @@ export class Game {
     const badgeSize = 20;
     const spacing = 5;
 
-    const allBadges: { id: MasteryBadge; icon: string; color: string; name: string }[] = [
-      { id: 'flawless', icon: '💎', color: '#00ffff', name: 'Flawless' },
-      { id: 'speedDemon', icon: '⚡', color: '#ffcc00', name: 'Speed Demon' },
-      { id: 'collector', icon: '🪙', color: '#ffd700', name: 'Collector' },
-      { id: 'rhythmMaster', icon: '🎵', color: '#ff00ff', name: 'Rhythm Master' },
-    ];
-
     this.ctx.save();
 
-    allBadges.forEach((badge, i) => {
+    const ids = Object.keys(MASTERY_BADGES) as MasteryBadge[];
+    ids.forEach((id, i) => {
+      const info = MASTERY_BADGES[id];
       const bx = x + i * (badgeSize + spacing);
-      const hasEarned = badges.includes(badge.id);
+      const hasEarned = badges.includes(id);
 
-      // Badge background - convert hex to rgba for browser compatibility
-      if (hasEarned) {
-        const br = parseInt(badge.color.slice(1, 3), 16);
-        const bg = parseInt(badge.color.slice(3, 5), 16);
-        const bb = parseInt(badge.color.slice(5, 7), 16);
-        this.ctx.fillStyle = `rgba(${br}, ${bg}, ${bb}, 0.2)`;
-      } else {
-        this.ctx.fillStyle = 'rgba(50, 50, 50, 0.5)';
-      }
+      // Badge background
+      this.ctx.fillStyle = hasEarned ? hexToRgba(info.color, 0.2) : 'rgba(50, 50, 50, 0.5)';
       this.ctx.beginPath();
       this.ctx.arc(bx, y, badgeSize / 2, 0, Math.PI * 2);
       this.ctx.fill();
@@ -9794,7 +9779,7 @@ export class Game {
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillStyle = hasEarned ? '#ffffff' : '#444444';
-      this.ctx.fillText(badge.icon, bx, y);
+      this.ctx.fillText(info.icon, bx, y);
     });
 
     this.ctx.restore();
@@ -9808,15 +9793,7 @@ export class Game {
     const fadeOut = Math.min(1, this.badgeNotificationTimer / 500);
     const alpha = Math.min(fadeIn, fadeOut);
 
-    const badgeInfo: Record<string, { icon: string; name: string; color: string }> = {
-      flawless: { icon: '💎', name: 'FLAWLESS', color: '#00ffff' },
-      speedDemon: { icon: '⚡', name: 'SPEED DEMON', color: '#ffcc00' },
-      collector: { icon: '🪙', name: 'COLLECTOR', color: '#ffd700' },
-      rhythmMaster: { icon: '🎵', name: 'RHYTHM MASTER', color: '#ff00ff' },
-    };
-
-    const info = badgeInfo[badge.badge];
-    if (!info) return;
+    const info = MASTERY_BADGES[badge.badge];
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
@@ -9824,12 +9801,9 @@ export class Game {
     const centerX = GAME_WIDTH / 2;
     const centerY = 150;
 
-    // Glow - convert hex to rgba for better browser compatibility
+    // Glow
     const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 100);
-    const r = parseInt(info.color.slice(1, 3), 16);
-    const g = parseInt(info.color.slice(3, 5), 16);
-    const b = parseInt(info.color.slice(5, 7), 16);
-    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.27)`);
+    gradient.addColorStop(0, hexToRgba(info.color, 0.27));
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(centerX - 100, centerY - 50, 200, 100);
@@ -9849,7 +9823,7 @@ export class Game {
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#ffffff';
     this.ctx.shadowBlur = 0;
-    this.ctx.fillText(info.name, centerX, centerY + 55);
+    this.ctx.fillText(info.name.toUpperCase(), centerX, centerY + 55);
 
     this.ctx.restore();
   }

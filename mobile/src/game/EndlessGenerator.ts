@@ -3,20 +3,25 @@ import { GAME, PLAYER } from '../constants';
 
 const SCREEN_WIDTH = GAME.WIDTH;
 
+type SectionType = 'easy' | 'medium' | 'hard' | 'bonus';
+
 interface GeneratorState {
   lastY: number;
   lastX: number;
   difficulty: number;
   platformCount: number;
-  sectionType: 'easy' | 'medium' | 'hard' | 'bonus';
+  sectionType: SectionType;
 }
 
-// Platform type weights by difficulty
-const PLATFORM_WEIGHTS: Record<string, Record<PlatformType, number>> = {
-  easy: { solid: 80, bounce: 15, moving: 5, crumble: 0, spike: 0, phase: 0 },
-  medium: { solid: 50, bounce: 20, moving: 15, crumble: 10, spike: 5, phase: 0 },
-  hard: { solid: 30, bounce: 15, moving: 20, crumble: 15, spike: 10, phase: 10 },
-  bonus: { solid: 40, bounce: 40, moving: 10, crumble: 0, spike: 0, phase: 10 },
+// Platform-type weights per section. Only types with weight > 0 are listed;
+// the selection loop never picks a 0-weight entry, so leaving them out keeps
+// intent honest. Typed by SectionType so adding a section requires a real
+// weight table.
+const PLATFORM_WEIGHTS: Record<SectionType, Partial<Record<PlatformType, number>>> = {
+  easy:   { solid: 80, bounce: 15, moving: 5 },
+  medium: { solid: 50, bounce: 20, moving: 15, crumble: 10, spike: 5 },
+  hard:   { solid: 30, bounce: 15, moving: 20, crumble: 15, spike: 10, phase: 10 },
+  bonus:  { solid: 40, bounce: 40, moving: 10, phase: 10 },
 };
 
 export class EndlessGenerator {

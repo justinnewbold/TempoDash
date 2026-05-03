@@ -5,6 +5,13 @@ import { PowerUp } from '../entities/PowerUp';
 import { LevelConfig, GameState, PowerUpType } from '../types';
 import { PLAYER, GAME, COMBO, POWERUP } from '../constants';
 
+// Timed power-ups - shield uses a flag, not a timer, so it's omitted here.
+const TIMED_POWERUP_DURATIONS: Record<Exclude<PowerUpType, 'shield'>, number> = {
+  magnet: POWERUP.MAGNET_DURATION,
+  slowmo: POWERUP.SLOWMO_DURATION,
+  doublePoints: POWERUP.DOUBLE_POINTS_DURATION,
+};
+
 export class GameEngine {
   player: Player;
   platforms: Platform[] = [];
@@ -100,9 +107,11 @@ export class GameEngine {
       }
     }
 
-    // Update power-up timer
+    // Update power-up timer in REAL time, not game time. If slowmo's timer
+    // ticked by `effectiveDelta` it would slow down its own expiry, so a
+    // 6-second slowmo would last 12 real seconds.
     if (this.state.activePowerUp) {
-      this.state.powerUpTimeRemaining -= effectiveDelta;
+      this.state.powerUpTimeRemaining -= deltaTime;
       if (this.state.powerUpTimeRemaining <= 0) {
         this.state.activePowerUp = null;
         this.state.powerUpTimeRemaining = 0;
@@ -281,10 +290,7 @@ export class GameEngine {
       case 'slowmo':
       case 'doublePoints':
         this.state.activePowerUp = type;
-        this.state.powerUpTimeRemaining =
-          type === 'magnet' ? POWERUP.MAGNET_DURATION :
-          type === 'slowmo' ? POWERUP.SLOWMO_DURATION :
-          POWERUP.DOUBLE_POINTS_DURATION;
+        this.state.powerUpTimeRemaining = TIMED_POWERUP_DURATIONS[type];
         break;
     }
   }

@@ -20,9 +20,15 @@ export interface PropertyChange {
 
 export type PropertyChangeCallback = (change: PropertyChange) => void;
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
+// Display order for the editor's platform-type pickers. Imported by both the
+// sidebar (LevelEditor) and the property panel here so the two views always
+// agree, and so adding a PlatformType variant only requires one update.
+export const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
 
-const PLATFORM_COLORS: Record<PlatformType, string> = {
+// Editor-wide platform palette. Brighter than the in-game COLORS.PLATFORM so
+// platforms read clearly against the dark editor canvas; shared by the
+// sidebar, the inspector, and the minimap so the three views stay in sync.
+export const PLATFORM_COLORS: Record<PlatformType, string> = {
   solid: '#4a9eff',
   bounce: '#ff6b9d',
   ice: '#88ddff',

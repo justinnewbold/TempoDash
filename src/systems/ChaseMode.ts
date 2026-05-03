@@ -85,10 +85,6 @@ export class ChaseModeManager {
     return playerX - 20 < this.wallX + this.config.wallWidth;
   }
 
-  getWallX(): number {
-    return this.wallX;
-  }
-
   isChaseActive(): boolean {
     return this.isActive;
   }

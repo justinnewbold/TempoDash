@@ -19,6 +19,7 @@ import {
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  Directions,
 } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 
@@ -193,19 +194,26 @@ export function GameCanvas({
       engineRef.current.onJumpEnd();
     });
 
-  // Dash gesture - horizontal swipe
-  const dashGesture = Gesture.Fling()
-    .direction(Gesture.DIRECTION_LEFT | Gesture.DIRECTION_RIGHT)
-    .onStart((event) => {
+  // Dash gesture - horizontal swipe (separate flings per direction, payload no longer exposes velocity)
+  const dashRightGesture = Gesture.Fling()
+    .direction(Directions.RIGHT)
+    .onStart(() => {
       const engine = engineRef.current;
       if (engine.player.canDash()) {
-        // Determine direction based on velocity
-        const direction = event.velocityX > 0 ? 1 : -1;
-        engine.player.dash(direction);
+        engine.player.dash(1);
       }
     });
 
-  const gesture = Gesture.Race(dashGesture, tapGesture, panGesture);
+  const dashLeftGesture = Gesture.Fling()
+    .direction(Directions.LEFT)
+    .onStart(() => {
+      const engine = engineRef.current;
+      if (engine.player.canDash()) {
+        engine.player.dash(-1);
+      }
+    });
+
+  const gesture = Gesture.Race(dashRightGesture, dashLeftGesture, tapGesture, panGesture);
 
   const engine = engineRef.current;
 
@@ -955,7 +963,7 @@ function HUDRenderer({ state, player }: { state: any; player: any }) {
       )}
       {/* Dash icon arrows */}
       <Group opacity={canDash ? 1 : 0.3}>
-        <Rect
+        <RoundedRect
           x={SCREEN_WIDTH - 48}
           y={SCREEN_HEIGHT - 42}
           width={6}
@@ -963,7 +971,7 @@ function HUDRenderer({ state, player }: { state: any; player: any }) {
           r={1}
           color="rgba(255, 255, 255, 0.9)"
         />
-        <Rect
+        <RoundedRect
           x={SCREEN_WIDTH - 38}
           y={SCREEN_HEIGHT - 42}
           width={6}

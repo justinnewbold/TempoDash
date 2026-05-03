@@ -1,7 +1,7 @@
 // Flow Meter / Overdrive Mode System
 // Builds through skillful play, triggers Overdrive when full
 
-export interface FlowMeterState {
+interface FlowMeterState {
   current: number;      // 0-100
   isOverdrive: boolean;
   overdriveDuration: number;  // remaining ms
@@ -137,20 +137,12 @@ export class FlowMeterManager {
   }
 
   // Getters for Game/UI
-  getMeter(): number {
-    return this.meter;
-  }
-
   getMeterPercent(): number {
     return this.meter / FlowMeterManager.MAX_METER;
   }
 
   isInOverdrive(): boolean {
     return this.isOverdrive;
-  }
-
-  getOverdriveTimeRemaining(): number {
-    return this.overdriveTimeRemaining;
   }
 
   getOverdrivePercent(): number {

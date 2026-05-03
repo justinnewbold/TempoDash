@@ -13,32 +13,80 @@ import {
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants';
 import { Background } from '../graphics/Background';
 import { TouchHandler, GestureEvent } from './TouchHandler';
-import { PropertyInspector, InspectorElement, PropertyChange } from './PropertyInspector';
+import { PropertyInspector, InspectorElement, PropertyChange, PLATFORM_TYPES, PLATFORM_COLORS } from './PropertyInspector';
 import { ContextMenu } from './ContextMenu';
 import { MiniMap } from './MiniMap';
 
-const PLATFORM_TYPES: PlatformType[] = ['solid', 'bounce', 'ice', 'lava', 'spike', 'moving', 'phase', 'crumble', 'conveyor', 'gravity', 'sticky', 'glass', 'slowmo', 'wall', 'secret', 'wind'];
-
-const PLATFORM_COLORS: Record<PlatformType, string> = {
-  solid: '#4a9eff',
-  bounce: '#ff6b9d',
-  ice: '#88ddff',
-  lava: '#ff4400',
-  spike: '#ff0000',
-  moving: '#9966ff',
-  phase: '#66ffaa',
-  crumble: '#aa8866',
-  conveyor: '#48bb78',
-  gravity: '#ed64a6',
-  sticky: '#ecc94b',
-  glass: '#e2e8f0',
-  slowmo: '#00c8ff',
-  wall: '#718096',
-  secret: '#ffd700',
-  wind: '#7ec8e3',
+const BACKGROUND_CONFIGS: Record<BackgroundType, BackgroundConfig> = {
+  city: {
+    type: 'city',
+    primaryColor: '#0a0a1a',
+    secondaryColor: '#151530',
+    accentColor: '#00ffff',
+    particles: { count: 30, color: 'rgba(255, 255, 255, 0.5)', minSize: 1, maxSize: 3, speed: 30, direction: 'down' },
+    effects: ['stars'],
+  },
+  neon: {
+    type: 'neon',
+    primaryColor: '#0d0221',
+    secondaryColor: '#1a0533',
+    accentColor: '#ff00ff',
+    particles: { count: 40, color: 'rgba(255, 0, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'up' },
+    effects: ['grid', 'scanlines', 'pulse'],
+  },
+  space: {
+    type: 'space',
+    primaryColor: '#0a1628',
+    secondaryColor: '#1a2a4a',
+    accentColor: '#88ddff',
+    particles: { count: 80, color: 'rgba(200, 230, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'down' },
+    effects: ['stars', 'aurora'],
+  },
+  forest: {
+    type: 'forest',
+    primaryColor: '#0a1a0a',
+    secondaryColor: '#1a2a1a',
+    accentColor: '#66ff66',
+    particles: { count: 40, color: 'rgba(100, 200, 100, 0.5)', minSize: 2, maxSize: 5, speed: 20, direction: 'down' },
+    effects: ['stars'],
+  },
+  volcano: {
+    type: 'volcano',
+    primaryColor: '#1a0a00',
+    secondaryColor: '#2d1200',
+    accentColor: '#ff4400',
+    particles: { count: 60, color: 'rgba(255, 100, 0, 0.5)', minSize: 2, maxSize: 5, speed: 50, direction: 'up' },
+    effects: ['embers', 'pulse'],
+  },
+  ocean: {
+    type: 'ocean',
+    primaryColor: '#001a33',
+    secondaryColor: '#002244',
+    accentColor: '#00ccff',
+    particles: { count: 40, color: 'rgba(150, 220, 255, 0.5)', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
+    effects: ['bubbles'],
+  },
+  inferno: {
+    type: 'inferno',
+    primaryColor: '#1a0505',
+    secondaryColor: '#2d0a0a',
+    accentColor: '#ff4400',
+    particles: { count: 80, color: 'rgba(255, 100, 0, 0.6)', minSize: 2, maxSize: 6, speed: 50, direction: 'up' },
+    effects: ['embers', 'pulse'],
+  },
+  sky: {
+    type: 'sky',
+    primaryColor: '#87CEEB',
+    secondaryColor: '#E0F6FF',
+    accentColor: '#FFD700',
+    particles: { count: 40, color: 'rgba(255, 255, 255, 0.8)', minSize: 20, maxSize: 60, speed: 20, direction: 'down' },
+    effects: ['aurora'],
+  },
 };
 
-const BACKGROUND_TYPES: BackgroundType[] = ['city', 'neon', 'space', 'forest', 'volcano', 'ocean'];
+// Sidebar list derives from the configs above so adding a new BackgroundType
+// surfaces in the editor automatically once its config exists.
+const BACKGROUND_TYPES = Object.keys(BACKGROUND_CONFIGS) as BackgroundType[];
 
 export class LevelEditor {
   private level: CustomLevel;
@@ -1373,74 +1421,7 @@ export class LevelEditor {
 
   // Set background type
   setBackgroundType(type: BackgroundType): void {
-    const backgrounds: Record<BackgroundType, BackgroundConfig> = {
-      city: {
-        type: 'city',
-        primaryColor: '#0a0a1a',
-        secondaryColor: '#151530',
-        accentColor: '#00ffff',
-        particles: { count: 30, color: 'rgba(255, 255, 255, 0.5)', minSize: 1, maxSize: 3, speed: 30, direction: 'down' },
-        effects: ['stars'],
-      },
-      neon: {
-        type: 'neon',
-        primaryColor: '#0d0221',
-        secondaryColor: '#1a0533',
-        accentColor: '#ff00ff',
-        particles: { count: 40, color: 'rgba(255, 0, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'up' },
-        effects: ['grid', 'scanlines', 'pulse'],
-      },
-      space: {
-        type: 'space',
-        primaryColor: '#0a1628',
-        secondaryColor: '#1a2a4a',
-        accentColor: '#88ddff',
-        particles: { count: 80, color: 'rgba(200, 230, 255, 0.5)', minSize: 1, maxSize: 4, speed: 40, direction: 'down' },
-        effects: ['stars', 'aurora'],
-      },
-      forest: {
-        type: 'forest',
-        primaryColor: '#0a1a0a',
-        secondaryColor: '#1a2a1a',
-        accentColor: '#66ff66',
-        particles: { count: 40, color: 'rgba(100, 200, 100, 0.5)', minSize: 2, maxSize: 5, speed: 20, direction: 'down' },
-        effects: ['stars'],
-      },
-      volcano: {
-        type: 'volcano',
-        primaryColor: '#1a0a00',
-        secondaryColor: '#2d1200',
-        accentColor: '#ff4400',
-        particles: { count: 60, color: 'rgba(255, 100, 0, 0.5)', minSize: 2, maxSize: 5, speed: 50, direction: 'up' },
-        effects: ['embers', 'pulse'],
-      },
-      ocean: {
-        type: 'ocean',
-        primaryColor: '#001a33',
-        secondaryColor: '#002244',
-        accentColor: '#00ccff',
-        particles: { count: 40, color: 'rgba(150, 220, 255, 0.5)', minSize: 3, maxSize: 8, speed: 30, direction: 'up' },
-        effects: ['bubbles'],
-      },
-      inferno: {
-        type: 'inferno',
-        primaryColor: '#1a0505',
-        secondaryColor: '#2d0a0a',
-        accentColor: '#ff4400',
-        particles: { count: 80, color: 'rgba(255, 100, 0, 0.6)', minSize: 2, maxSize: 6, speed: 50, direction: 'up' },
-        effects: ['embers', 'pulse'],
-      },
-      sky: {
-        type: 'sky',
-        primaryColor: '#87CEEB',
-        secondaryColor: '#E0F6FF',
-        accentColor: '#FFD700',
-        particles: { count: 40, color: 'rgba(255, 255, 255, 0.8)', minSize: 20, maxSize: 60, speed: 20, direction: 'down' },
-        effects: ['aurora'],
-      },
-    };
-
-    this.level.background = backgrounds[type];
+    this.level.background = BACKGROUND_CONFIGS[type];
     this.background = new Background(this.level.background);
   }
 
@@ -2451,7 +2432,7 @@ export class LevelEditor {
       const isSelected = this.state.selectedElement?.type === 'platform' &&
                         this.state.selectedElement?.index === i;
 
-      ctx.fillStyle = PLATFORM_COLORS[platform.type] || '#4a9eff';
+      ctx.fillStyle = PLATFORM_COLORS[platform.type];
       ctx.fillRect(screenX, platform.y, platform.width, platform.height);
 
       // Border

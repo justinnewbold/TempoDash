@@ -4,6 +4,7 @@
  */
 
 import { CustomLevel } from '../types';
+import { PLATFORM_COLORS } from './PropertyInspector';
 
 export type MiniMapCallback = (worldX: number) => void;
 
@@ -167,7 +168,7 @@ export class MiniMap {
       const pw = Math.max(2, platform.width * scale);
       const ph = Math.max(1, platform.height * scale * 0.5);
 
-      ctx.fillStyle = this.getPlatformColor(platform.type);
+      ctx.fillStyle = PLATFORM_COLORS[platform.type];
       ctx.fillRect(px, py, pw, ph);
     }
 
@@ -222,24 +223,6 @@ export class MiniMap {
       this.x + this.currentWidth - 10,
       this.y + 12
     );
-  }
-
-  private getPlatformColor(type: string): string {
-    const colors: Record<string, string> = {
-      solid: '#4a9eff',
-      bounce: '#ff6b9d',
-      ice: '#88ddff',
-      lava: '#ff4400',
-      spike: '#ff0000',
-      moving: '#9966ff',
-      phase: '#66ffaa',
-      crumble: '#aa8866',
-      conveyor: '#48bb78',
-      gravity: '#ed64a6',
-      sticky: '#ecc94b',
-      glass: '#e2e8f0',
-    };
-    return colors[type] || '#4a9eff';
   }
 
   // Handle tap on minimap

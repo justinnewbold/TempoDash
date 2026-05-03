@@ -1,11 +1,7 @@
 import { GAME_WIDTH } from '../constants';
+import type { GravityWellConfig } from '../types';
 
-export interface GravityWellConfig {
-  x: number;
-  y: number;
-  radius: number;
-  strength: number; // Positive = attract toward center, negative = repel from center
-}
+export type { GravityWellConfig };
 
 class GravityWell {
   x: number;
@@ -180,26 +176,10 @@ export class GravityWellManager {
     return { fx: totalFx, fy: totalFy };
   }
 
-  /**
-   * Check if the player is within any gravity well.
-   */
-  isPlayerInAnyWell(playerX: number, playerY: number): boolean {
-    for (const well of this.wells) {
-      if (well.isPlayerInRange(playerX, playerY)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   render(ctx: CanvasRenderingContext2D, cameraX: number): void {
     if (this.wells.length === 0) return;
     for (const well of this.wells) {
       well.render(ctx, cameraX);
     }
-  }
-
-  getWells(): GravityWell[] {
-    return this.wells;
   }
 }

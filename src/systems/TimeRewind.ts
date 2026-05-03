@@ -181,10 +181,6 @@ export class TimeRewindManager {
     return this.rewindFlashOpacity;
   }
 
-  hasRewindsLeft(): boolean {
-    return this.rewindsRemaining > 0;
-  }
-
   // Clear recording (call when transitioning screens)
   clearRecording(): void {
     this.frames = [];

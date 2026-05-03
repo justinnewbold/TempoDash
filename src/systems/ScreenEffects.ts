@@ -11,7 +11,7 @@ export interface ScreenEffectsConfig {
   weatherEnabled: boolean;
 }
 
-type WeatherType = 'none' | 'rain' | 'snow' | 'lightning' | 'particles';
+type ScreenWeatherType = 'none' | 'rain' | 'snow' | 'lightning' | 'particles';
 
 interface WeatherParticle {
   x: number;
@@ -54,7 +54,7 @@ export class ScreenEffects {
   private flashDecay = 0.1;
 
   // Weather system
-  private weatherType: WeatherType = 'none';
+  private weatherType: ScreenWeatherType = 'none';
   private weatherParticles: WeatherParticle[] = [];
   private weatherIntensity = 1.0;
   private lightningTimer = 0;
@@ -80,10 +80,6 @@ export class ScreenEffects {
     slowMoEnabled: true,
     weatherEnabled: true,
   };
-
-  configure(config: Partial<ScreenEffectsConfig>): void {
-    this.config = { ...this.config, ...config };
-  }
 
   // ===========================================
   // FREEZE-FRAME SYSTEM
@@ -164,13 +160,6 @@ export class ScreenEffects {
     return this.zoomLevel;
   }
 
-  /**
-   * Get zoom center
-   */
-  getZoomCenter(): { x: number; y: number } {
-    return { x: this.zoomCenterX, y: this.zoomCenterY };
-  }
-
   // ===========================================
   // CHROMATIC ABERRATION
   // ===========================================
@@ -211,13 +200,6 @@ export class ScreenEffects {
   }
 
   /**
-   * Check if kill cam is active
-   */
-  isKillCamActive(): boolean {
-    return this.killCamActive;
-  }
-
-  /**
    * Get current slow-mo factor (1.0 = normal, 0.5 = half speed)
    */
   getSlowMoFactor(): number {
@@ -254,7 +236,7 @@ export class ScreenEffects {
   /**
    * Set weather type
    */
-  setWeather(type: WeatherType, intensity: number = 1.0): void {
+  setWeather(type: ScreenWeatherType, intensity: number = 1.0): void {
     if (!this.config.weatherEnabled) {
       this.weatherType = 'none';
       return;

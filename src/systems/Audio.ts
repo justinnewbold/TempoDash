@@ -1,7 +1,7 @@
 // Procedural EDM music system using Web Audio API
 // Based on the Neon Pulse Engine with multiple music styles
 
-export type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic' | 'industrial' | 'ethereal';
+type MusicStyle = 'noir' | 'funk' | 'sludge' | 'focus' | 'crystal' | 'hazard' | 'energetic' | 'industrial' | 'ethereal';
 
 interface MusicPreset {
   tempo: number;
@@ -32,6 +32,7 @@ export const LEVEL_MUSIC: Record<number, MusicStyle> = {
   13: 'focus',     // Level 13: Gravity Flip - precision required
   14: 'industrial', // Level 14: Wall Runner - urban intensity
   15: 'energetic', // Level 15: Ultimate Challenge - final boss energy
+  16: 'ethereal',  // Level 16: Stellar Circuit - cosmic drift
 };
 
 export class AudioManager {
@@ -297,25 +298,6 @@ export class AudioManager {
   setStyleForLevel(levelId: number): void {
     const style = LEVEL_MUSIC[levelId] || 'noir';
     this.setStyle(style);
-  }
-
-  getStyle(): MusicStyle {
-    return this.currentStyle;
-  }
-
-  getStyleName(): string {
-    const names: Record<MusicStyle, string> = {
-      noir: 'Neon Noir',
-      funk: 'Cyber Funk',
-      sludge: 'Sludge Factory',
-      focus: 'Deep Focus',
-      crystal: 'Crystalline',
-      hazard: 'Biohazard',
-      energetic: 'Festival EDM',
-      industrial: 'Industrial',
-      ethereal: 'Ethereal',
-    };
-    return names[this.currentStyle];
   }
 
   // --- SCHEDULER (from Neon Pulse Engine) ---

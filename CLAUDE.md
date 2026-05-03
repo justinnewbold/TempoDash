@@ -31,7 +31,7 @@ src/
 ├── types.ts             # All TypeScript interfaces and types
 ├── config/
 │   ├── UIConstants.ts   # UI layout, button sizes, colors
-│   └── LevelMetadata.ts # Level descriptions and metadata
+│   └── LevelMetadata.ts # LEVEL_CARDS: name/color/difficulty for level-select
 ├── game/
 │   └── Game.ts          # Main game engine (~9500 lines, handles everything)
 ├── entities/
@@ -97,7 +97,7 @@ src/
 - Terminal velocity: 900 px/s
 
 ### Platform Types
-15 types: solid, bounce, crumble, moving, ice, lava, phase, spike, conveyor, gravity, sticky, glass, slowmo, wall, secret
+16 types: solid, bounce, crumble, moving, ice, lava, phase, spike, conveyor, gravity, sticky, glass, slowmo, wall, secret, wind
 
 ### Collision Detection
 AABB overlap with minimum penetration resolution. Returns 'top'|'bottom'|'left'|'right'. Side collisions are death except for wall platforms (wall-slide) and edge bounces (boomerang mechanic).
@@ -115,9 +115,11 @@ Web uses LocalStorage via `SaveManager`. Mobile uses AsyncStorage. Save data inc
 ## Common Patterns
 
 ### Adding a new level
-1. Create `src/levels/LevelN.ts` with `LevelConfig` export
-2. Register in `src/levels/index.ts`
-3. Update `TOTAL_LEVELS` constant
+1. Create `src/levels/LevelN.ts` exporting a `LevelN` class that extends `Level`
+2. Append `() => new LevelN()` to `LEVEL_FACTORIES` in `src/levels/index.ts` — `TOTAL_LEVELS` is derived from the array length, no separate constant to bump
+3. Append a `{ name, color, difficulty }` entry to `LEVEL_CARDS` in `src/config/LevelMetadata.ts`. The `name` must match `LevelConfig.name` exactly (the level-select card and the in-game HUD share titles; a guard test in `BuiltinLevels.test.ts` enforces this)
+4. Add the level's music style to `LEVEL_MUSIC` in `src/systems/Audio.ts`
+5. `npm test` will run the level through `LevelValidator` and check the registry/cards/music are all in sync. Fix any errors before shipping
 
 ### Adding a new platform type
 1. Add type to `PlatformType` union in `src/types.ts`

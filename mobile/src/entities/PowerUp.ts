@@ -1,7 +1,18 @@
 import { PowerUpConfig, PowerUpType, Rectangle } from '../types';
-import { POWERUP } from '../constants';
+import { POWERUP, COLORS } from '../constants';
 
 export class PowerUp {
+  // Single-letter labels rendered inside the power-up token (Skia text doesn't
+  // handle emoji as cleanly as the web canvas, hence S/M/T/2x instead of the
+  // web's 🛡️🧲⏱️2x emoji set). Hoisted to a static so we don't allocate a
+  // fresh literal per render call.
+  private static readonly ICONS: Record<PowerUpType, string> = {
+    shield: 'S',
+    magnet: 'M',
+    slowmo: 'T',
+    doublePoints: '2x',
+  };
+
   x: number;
   y: number;
   type: PowerUpType;
@@ -64,33 +75,11 @@ export class PowerUp {
     return `powerup-${this.x}-${this.y}-${this.type}`;
   }
 
-  getDuration(): number {
-    switch (this.type) {
-      case 'shield': return POWERUP.SHIELD_DURATION;
-      case 'magnet': return POWERUP.MAGNET_DURATION;
-      case 'slowmo': return POWERUP.SLOWMO_DURATION;
-      case 'doublePoints': return POWERUP.DOUBLE_POINTS_DURATION;
-      default: return POWERUP.SHIELD_DURATION;
-    }
-  }
-
   getColor(): string {
-    const colors: Record<PowerUpType, string> = {
-      shield: '#2196f3',
-      magnet: '#e91e63',
-      slowmo: '#9c27b0',
-      doublePoints: '#ff9800',
-    };
-    return colors[this.type];
+    return COLORS.POWERUP[this.type];
   }
 
   getIcon(): string {
-    const icons: Record<PowerUpType, string> = {
-      shield: 'S',
-      magnet: 'M',
-      slowmo: 'T',
-      doublePoints: '2x',
-    };
-    return icons[this.type];
+    return PowerUp.ICONS[this.type];
   }
 }
