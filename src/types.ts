@@ -258,6 +258,7 @@ export interface GameSettings {
   highContrast: boolean; // High contrast mode for better visibility
   assistMode: boolean;   // Assist mode for struggling players
   showBeatVisualizer: boolean; // Show rhythm sync visualizer
+  difficulty: import('./config/Difficulty').Difficulty; // Game speed + jump forgiveness
 }
 
 export interface PlayerSkin {

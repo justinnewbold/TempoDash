@@ -4,6 +4,7 @@ import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
 import { LEVEL_CARDS } from '../config/LevelMetadata';
+import { DIFFICULTIES, DIFFICULTY_ORDER } from '../config/Difficulty';
 import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
@@ -432,6 +433,7 @@ export class Game {
     this.showGhost = this.save.isShowGhostEnabled();
     this.showBeatVisualizer = this.save.isBeatVisualizerEnabled();
     this.assistModeEnabled = this.save.isAssistModeEnabled();
+    Player.setTimingScale(DIFFICULTIES[this.save.getDifficulty()].timingMultiplier);
 
     this.loadLevel(1);
 
@@ -708,6 +710,7 @@ export class Game {
    * Shared click routing logic for both mouse and touch events
    */
   private routeClickToHandler(x: number, y: number, shiftKey: boolean, _isTouch: boolean): void {
+    if (this.handleDesktopExitClick(x, y)) return;
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.handleMainMenuClick(x, y);
@@ -1138,6 +1141,20 @@ export class Game {
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
+    }
+
+    // Difficulty buttons (left column)
+    if (y >= 266 && y <= 291) {
+      for (let i = 0; i < DIFFICULTY_ORDER.length; i++) {
+        const btnX = this.difficultyButtonX(leftColX, i);
+        if (x >= btnX && x <= btnX + Game.DIFFICULTY_BTN_WIDTH) {
+          const preset = DIFFICULTIES[DIFFICULTY_ORDER[i]];
+          this.save.setDifficulty(DIFFICULTY_ORDER[i]);
+          Player.setTimingScale(preset.timingMultiplier);
+          this.audio.playSelect();
+          return;
+        }
+      }
     }
 
     // Reduced motion toggle (right column)
@@ -2413,7 +2430,8 @@ export class Game {
     // Apply slowmo effect from power-ups and speed demon modifier
     const effectiveSpeedMultiplier = this.speedMultiplier *
       this.powerUps.getSlowMoMultiplier() *
-      this.modifiers.getSpeedMultiplier();
+      this.modifiers.getSpeedMultiplier() *
+      DIFFICULTIES[this.save.getDifficulty()].speedMultiplier;
 
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
@@ -3331,7 +3349,9 @@ export class Game {
 
         // Apply modifier score multiplier (higher score for harder modifiers)
         const modifierMultiplier = this.modifiers.getScoreMultiplier();
-        this.scoreManager.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
+        this.scoreManager.levelScoreThisRun = Math.floor(
+          rawScore * modifierMultiplier * DIFFICULTIES[this.save.getDifficulty()].scoreMultiplier
+        );
 
         // Persist total points and per-level high score
         this.scoreManager.commitLevelScore(this.state.currentLevel);
@@ -3855,6 +3875,25 @@ export class Game {
     this.ctx.fillText('Tap anywhere to dismiss', centerX, centerY + 105);
   }
 
+  private renderLiveScore(score: number): void {
+    const w = 140, h = 26, x = (GAME_WIDTH - w) / 2, y = 46;
+    this.ctx.save();
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    this.ctx.strokeStyle = 'rgba(0, 255, 204, 0.6)';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.beginPath();
+    this.ctx.roundRect(x, y, w, h, 13);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.font = 'bold 15px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(`SCORE ${score.toLocaleString()}`, GAME_WIDTH / 2, y + h / 2 + 1);
+    this.ctx.restore();
+  }
+
   private renderPlayingUI(): void {
     this.ctx.save();
 
@@ -3885,6 +3924,9 @@ export class Game {
     this.ctx.shadowColor = COLORS.UI_SHADOW;
     this.ctx.shadowBlur = 4;
     this.ctx.fillText(`${Math.floor(progress * 100)}%`, GAME_WIDTH / 2, 38);
+
+    // Live score panel (below percentage)
+    this.renderLiveScore(this.scoreManager.levelScoreThisRun);
 
     // Level name (top-left, larger and more prominent)
     this.ctx.textAlign = 'left';
@@ -4161,6 +4203,8 @@ export class Game {
     // Mobile controls (pause, home, restart buttons)
     if (this.input.isMobileDevice()) {
       this.renderMobileControls();
+    } else {
+      this.renderDesktopExitButton();
     }
 
     this.ctx.restore();
@@ -4443,6 +4487,41 @@ export class Game {
     this.ctx.restore();
   }
 
+  // Desktop exit button (top-right, same slot as the mobile pause button)
+  private getDesktopExitButtonRect() {
+    const width = 90, height = 36;
+    return { x: GAME_WIDTH - width - 12, y: 55, width, height };
+  }
+
+  private renderDesktopExitButton(): void {
+    const r = this.getDesktopExitButtonRect();
+    this.ctx.save();
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(r.x, r.y, r.width, r.height, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('✕ EXIT', r.x + r.width / 2, r.y + r.height / 2);
+    this.ctx.restore();
+  }
+
+  private handleDesktopExitClick(x: number, y: number): boolean {
+    const inGame = ['playing', 'practice', 'endless', 'challengePlaying', 'editorTest', 'paused']
+      .includes(this.state.gameStatus);
+    if (!inGame || this.input.isMobileDevice()) return false;
+    const r = this.getDesktopExitButtonRect();
+    if (x < r.x || x > r.x + r.width || y < r.y || y > r.y + r.height) return false;
+    this.audio.playSelect();
+    this.returnToMainMenu();
+    return true;
+  }
+
   private renderMobileControls(): void {
     const buttonSize = 44;
     const buttonPadding = 12;
@@ -4477,11 +4556,11 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Home icon (simple house shape)
+    // Exit icon
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText('⌂', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
+    this.ctx.fillText('✕', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
 
     // Restart button (left of home)
     const restartX = homeX - buttonSize - buttonPadding;
@@ -5525,7 +5604,7 @@ export class Game {
     this.ctx.textAlign = 'center';
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffff';
-    this.ctx.fillText('AUDIO', leftColX, 100);
+    this.ctx.fillText('AUDIO (M to mute)', leftColX, 100);
 
     // Music volume
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
@@ -5537,10 +5616,11 @@ export class Game {
     this.ctx.fillText('SFX Volume', leftColX, 195);
     this.renderSlider(leftColX - sliderWidth / 2 - 15, 210, sliderWidth, this.audio.getSfxVolume());
 
-    // Mute indicator
-    this.ctx.font = '12px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Press M to mute', leftColX, 260);
+    // Difficulty selector
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Difficulty', leftColX, 258);
+    this.renderDifficultySelector(leftColX, 266);
 
     // === RIGHT COLUMN: Display ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
@@ -5662,6 +5742,35 @@ export class Game {
       this.ctx.fillStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.7)';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(mode.label, btnX + buttonWidth / 2, y + 16);
+    });
+  }
+
+  private static readonly DIFFICULTY_BTN_WIDTH = 64;
+  private static readonly DIFFICULTY_BTN_GAP = 8;
+
+  private difficultyButtonX(centerX: number, index: number): number {
+    const w = Game.DIFFICULTY_BTN_WIDTH, gap = Game.DIFFICULTY_BTN_GAP;
+    const total = DIFFICULTY_ORDER.length * w + (DIFFICULTY_ORDER.length - 1) * gap;
+    return centerX - total / 2 + index * (w + gap);
+  }
+
+  private renderDifficultySelector(x: number, y: number): void {
+    const current = this.save.getDifficulty();
+    DIFFICULTY_ORDER.forEach((id, i) => {
+      const preset = DIFFICULTIES[id];
+      const btnX = this.difficultyButtonX(x, i);
+      const isSelected = id === current;
+      this.ctx.fillStyle = isSelected ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)';
+      this.ctx.strokeStyle = isSelected ? preset.color : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, y, Game.DIFFICULTY_BTN_WIDTH, 25, 5);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isSelected ? preset.color : 'rgba(255, 255, 255, 0.7)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(preset.label, btnX + Game.DIFFICULTY_BTN_WIDTH / 2, y + 16);
     });
   }
 
