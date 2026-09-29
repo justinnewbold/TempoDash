@@ -3349,7 +3349,9 @@ export class Game {
 
         // Apply modifier score multiplier (higher score for harder modifiers)
         const modifierMultiplier = this.modifiers.getScoreMultiplier();
-        this.scoreManager.levelScoreThisRun = Math.floor(rawScore * modifierMultiplier);
+        this.scoreManager.levelScoreThisRun = Math.floor(
+          rawScore * modifierMultiplier * DIFFICULTIES[this.save.getDifficulty()].scoreMultiplier
+        );
 
         // Persist total points and per-level high score
         this.scoreManager.commitLevelScore(this.state.currentLevel);
