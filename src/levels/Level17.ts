@@ -39,10 +39,10 @@ const level17Config: LevelConfig = {
   },
   portals: [
     // Pair 1: skip the lava sea
-    { id: 'm1-in', x: BEAT * 20.3, y: GROUND_Y - 90, linkedPortalId: 'm1-out', color: '#ff7700' },
-    { id: 'm1-out', x: BEAT * 23, y: GROUND_Y - 150, linkedPortalId: 'm1-in', color: '#ff7700' },
+    { id: 'm1-in', x: BEAT * 20.1, y: GROUND_Y - 90, linkedPortalId: 'm1-out', color: '#ff7700' },
+    { id: 'm1-out', x: BEAT * 22.9, y: GROUND_Y - 150, linkedPortalId: 'm1-in', color: '#ff7700' },
     // Pair 2: risky high route shortcut in the caldera
-    { id: 'm2-in', x: BEAT * 33, y: GROUND_Y - 210, linkedPortalId: 'm2-out', color: '#ffcc00' },
+    { id: 'm2-in', x: BEAT * 32.55, y: GROUND_Y - 210, linkedPortalId: 'm2-out', color: '#ffcc00' },
     { id: 'm2-out', x: BEAT * 36, y: GROUND_Y - 90, linkedPortalId: 'm2-in', color: '#ffcc00' },
   ],
   gems: [
@@ -92,12 +92,16 @@ const level17Config: LevelConfig = {
     { x: BEAT * 5, y: GROUND_Y - 30, width: 30, height: 30, type: 'spike' },
 
     // ===== CRUMBLE STEPS (Beats 6-12): Collapsing stones over lava =====
-    { x: BEAT * 6, y: GROUND_Y, width: BEAT * 5.5, height: 20, type: 'lava' },
-    { x: BEAT * 6.6, y: GROUND_Y - 60, width: 80, height: 20, type: 'crumble' },
-    { x: BEAT * 7.8, y: GROUND_Y - 90, width: 80, height: 20, type: 'crumble' },
-    { x: BEAT * 9, y: GROUND_Y - 20, width: 70, height: 20, type: 'bounce' },
-    { x: BEAT * 10.3, y: GROUND_Y - 90, width: 80, height: 20, type: 'crumble' },
-    { x: BEAT * 11.5, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },
+    // Stones are 120 wide with ~150px edge gaps (single-jump reach is ~210px)
+    { x: BEAT * 6, y: GROUND_Y, width: BEAT * 5, height: 20, type: 'lava' },
+    { x: BEAT * 6.3, y: GROUND_Y - 40, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 6.975, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 7.65, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 8.325, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 9, y: GROUND_Y - 20, width: 100, height: 20, type: 'bounce' },
+    { x: BEAT * 9.75, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 10.425, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 11, y: GROUND_Y, width: BEAT * 2.5, height: GROUND_HEIGHT, type: 'solid' },
 
     // ===== MOVING RIFT (Beats 13.5-19): Moving platforms over lava =====
     { x: BEAT * 13.5, y: GROUND_Y, width: BEAT * 4.5, height: 20, type: 'lava' },
@@ -112,10 +116,11 @@ const level17Config: LevelConfig = {
     { x: BEAT * 18, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },
 
     // ===== RIFT PORTALS (Beats 20-25): Teleport over the lava sea =====
-    { x: BEAT * 20, y: GROUND_Y - 60, width: 80, height: 20, type: 'solid' },
-    { x: BEAT * 20, y: GROUND_Y, width: BEAT * 4, height: 20, type: 'lava' },
-    { x: BEAT * 22.8, y: GROUND_Y - 120, width: 120, height: 20, type: 'solid' },
-    { x: BEAT * 24, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },
+    // Entry portal sits over its platform; exit lands on a wide ledge close to the ground
+    { x: BEAT * 20, y: GROUND_Y - 60, width: 120, height: 20, type: 'solid' },
+    { x: BEAT * 20, y: GROUND_Y, width: BEAT * 3.5, height: 20, type: 'lava' },
+    { x: BEAT * 22.75, y: GROUND_Y - 120, width: 200, height: 20, type: 'solid' },
+    { x: BEAT * 23.5, y: GROUND_Y, width: BEAT * 2.5, height: GROUND_HEIGHT, type: 'solid' },
 
     // ===== SPIKE CORRIDOR (Beats 26-31): Tight jumps between spikes =====
     { x: BEAT * 26, y: GROUND_Y, width: BEAT * 5.5, height: GROUND_HEIGHT, type: 'solid' },
@@ -128,20 +133,24 @@ const level17Config: LevelConfig = {
     // ===== CALDERA (Beats 31.5-37): Ground path or high portal route =====
     { x: BEAT * 31.5, y: GROUND_Y, width: BEAT * 4, height: 20, type: 'lava' },
     { x: BEAT * 31.6, y: GROUND_Y - 20, width: 70, height: 20, type: 'bounce' },
-    { x: BEAT * 32.4, y: GROUND_Y - 180, width: 100, height: 20, type: 'glass' },
-    { x: BEAT * 33.5, y: GROUND_Y - 80, width: 80, height: 20, type: 'crumble' },
-    { x: BEAT * 34.6, y: GROUND_Y - 80, width: 80, height: 20, type: 'crumble' },
+    { x: BEAT * 32.4, y: GROUND_Y - 180, width: 140, height: 20, type: 'glass' },
+    { x: BEAT * 32.4, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 33.075, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 33.75, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 34.425, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
     { x: BEAT * 35.5, y: GROUND_Y, width: BEAT * 3.5, height: GROUND_HEIGHT, type: 'solid' },
 
     // ===== FINAL GAUNTLET (Beats 39-48): Everything at once =====
     { x: BEAT * 39, y: GROUND_Y, width: BEAT * 1.5, height: 20, type: 'lava' },
-    { x: BEAT * 39.3, y: GROUND_Y - 70, width: 80, height: 20, type: 'crumble' },
+    { x: BEAT * 39.3, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 39.975, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
     { x: BEAT * 40.5, y: GROUND_Y, width: BEAT * 1, height: GROUND_HEIGHT, type: 'solid' },
     { x: BEAT * 41, y: GROUND_Y - 30, width: 30, height: 30, type: 'spike' },
     { x: BEAT * 41.5, y: GROUND_Y, width: BEAT * 2, height: 20, type: 'lava' },
     { x: BEAT * 42, y: GROUND_Y - 170, width: 100, height: 20, type: 'glass' },
-    { x: BEAT * 41.8, y: GROUND_Y - 80, width: 80, height: 20, type: 'crumble' },
-    { x: BEAT * 43, y: GROUND_Y - 60, width: 80, height: 20, type: 'crumble' },
+    { x: BEAT * 41.75, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 42.425, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
+    { x: BEAT * 43.1, y: GROUND_Y - 60, width: 120, height: 20, type: 'crumble' },
     { x: BEAT * 43.5, y: GROUND_Y, width: BEAT * 2, height: GROUND_HEIGHT, type: 'solid' },
     { x: BEAT * 45, y: GROUND_Y - 30, width: 30, height: 30, type: 'spike' },
     { x: BEAT * 45.5, y: GROUND_Y, width: 70, height: 20, type: 'bounce' },
