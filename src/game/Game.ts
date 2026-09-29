@@ -708,6 +708,7 @@ export class Game {
    * Shared click routing logic for both mouse and touch events
    */
   private routeClickToHandler(x: number, y: number, shiftKey: boolean, _isTouch: boolean): void {
+    if (this.handleDesktopExitClick(x, y)) return;
     switch (this.state.gameStatus) {
       case 'mainMenu':
         this.handleMainMenuClick(x, y);
@@ -4161,6 +4162,8 @@ export class Game {
     // Mobile controls (pause, home, restart buttons)
     if (this.input.isMobileDevice()) {
       this.renderMobileControls();
+    } else {
+      this.renderDesktopExitButton();
     }
 
     this.ctx.restore();
@@ -4443,6 +4446,41 @@ export class Game {
     this.ctx.restore();
   }
 
+  // Desktop exit button (top-right, same slot as the mobile pause button)
+  private getDesktopExitButtonRect() {
+    const width = 90, height = 36;
+    return { x: GAME_WIDTH - width - 12, y: 55, width, height };
+  }
+
+  private renderDesktopExitButton(): void {
+    const r = this.getDesktopExitButtonRect();
+    this.ctx.save();
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.roundRect(r.x, r.y, r.width, r.height, 8);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('✕ EXIT', r.x + r.width / 2, r.y + r.height / 2);
+    this.ctx.restore();
+  }
+
+  private handleDesktopExitClick(x: number, y: number): boolean {
+    const inGame = ['playing', 'practice', 'endless', 'challengePlaying', 'editorTest', 'paused']
+      .includes(this.state.gameStatus);
+    if (!inGame || this.input.isMobileDevice()) return false;
+    const r = this.getDesktopExitButtonRect();
+    if (x < r.x || x > r.x + r.width || y < r.y || y > r.y + r.height) return false;
+    this.audio.playSelect();
+    this.returnToMainMenu();
+    return true;
+  }
+
   private renderMobileControls(): void {
     const buttonSize = 44;
     const buttonPadding = 12;
@@ -4477,11 +4515,11 @@ export class Game {
     this.ctx.fill();
     this.ctx.stroke();
 
-    // Home icon (simple house shape)
+    // Exit icon
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    this.ctx.font = 'bold 22px "Segoe UI", sans-serif';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText('⌂', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
+    this.ctx.fillText('✕', homeX + buttonSize / 2, topY + buttonSize / 2 + 8);
 
     // Restart button (left of home)
     const restartX = homeX - buttonSize - buttonPadding;
