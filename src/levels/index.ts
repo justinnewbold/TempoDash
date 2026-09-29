@@ -15,8 +15,9 @@ import { Level13 } from './Level13';
 import { Level14 } from './Level14';
 import { Level15 } from './Level15';
 import { Level16 } from './Level16';
+import { Level17 } from './Level17';
 
-export { Level, Level1, Level2, Level3, Level4, Level5, Level6, Level7, Level8, Level9, Level10, Level11, Level12, Level13, Level14, Level15, Level16 };
+export { Level, Level1, Level2, Level3, Level4, Level5, Level6, Level7, Level8, Level9, Level10, Level11, Level12, Level13, Level14, Level15, Level16, Level17 };
 
 // Indexed by levelId - 1. Append new levels here; TOTAL_LEVELS derives from length.
 const LEVEL_FACTORIES: Array<() => Level> = [
@@ -36,6 +37,7 @@ const LEVEL_FACTORIES: Array<() => Level> = [
   () => new Level14(),
   () => new Level15(),
   () => new Level16(),
+  () => new Level17(),
 ];
 
 export function createLevel(levelId: number): Level {

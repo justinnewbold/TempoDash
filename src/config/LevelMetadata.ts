@@ -27,4 +27,5 @@ export const LEVEL_CARDS: LevelCard[] = [
   { name: 'Wall Runner',        color: '#aaaaff', difficulty: 4 },
   { name: 'Ultimate Challenge', color: '#ff0066', difficulty: 5 },
   { name: 'Stellar Circuit',    color: '#cc88ff', difficulty: 4 },
+  { name: 'Magma Rift',         color: '#ff5500', difficulty: 5 },
 ];
