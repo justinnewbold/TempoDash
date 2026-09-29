@@ -4,6 +4,7 @@ import { InputManager } from '../systems/Input';
 import { AudioManager } from '../systems/Audio';
 import { SaveManager, LEVEL_UNLOCK_COSTS, PLAYER_SKINS } from '../systems/SaveManager';
 import { LEVEL_CARDS } from '../config/LevelMetadata';
+import { DIFFICULTIES, DIFFICULTY_ORDER } from '../config/Difficulty';
 import { CustomLevelManager, LevelTemplate } from '../systems/CustomLevelManager';
 import { Player } from '../entities/Player';
 import { Level } from '../levels/Level';
@@ -432,6 +433,7 @@ export class Game {
     this.showGhost = this.save.isShowGhostEnabled();
     this.showBeatVisualizer = this.save.isBeatVisualizerEnabled();
     this.assistModeEnabled = this.save.isAssistModeEnabled();
+    Player.setTimingScale(DIFFICULTIES[this.save.getDifficulty()].timingMultiplier);
 
     this.loadLevel(1);
 
@@ -1139,6 +1141,20 @@ export class Game {
       this.audio.setSfxVolume(volume);
       this.save.updateSettings({ sfxVolume: volume });
       this.audio.playSelect();
+    }
+
+    // Difficulty buttons (left column)
+    if (y >= 266 && y <= 291) {
+      for (let i = 0; i < DIFFICULTY_ORDER.length; i++) {
+        const btnX = this.difficultyButtonX(leftColX, i);
+        if (x >= btnX && x <= btnX + Game.DIFFICULTY_BTN_WIDTH) {
+          const preset = DIFFICULTIES[DIFFICULTY_ORDER[i]];
+          this.save.setDifficulty(DIFFICULTY_ORDER[i]);
+          Player.setTimingScale(preset.timingMultiplier);
+          this.audio.playSelect();
+          return;
+        }
+      }
     }
 
     // Reduced motion toggle (right column)
@@ -2414,7 +2430,8 @@ export class Game {
     // Apply slowmo effect from power-ups and speed demon modifier
     const effectiveSpeedMultiplier = this.speedMultiplier *
       this.powerUps.getSlowMoMultiplier() *
-      this.modifiers.getSpeedMultiplier();
+      this.modifiers.getSpeedMultiplier() *
+      DIFFICULTIES[this.save.getDifficulty()].speedMultiplier;
 
     // Check if air jumps are allowed (disabled by "Grounded" modifier)
     const allowAirJumps = !this.modifiers.isDoubleJumpDisabled();
@@ -5585,7 +5602,7 @@ export class Game {
     this.ctx.textAlign = 'center';
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
     this.ctx.fillStyle = '#00ffff';
-    this.ctx.fillText('AUDIO', leftColX, 100);
+    this.ctx.fillText('AUDIO (M to mute)', leftColX, 100);
 
     // Music volume
     this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
@@ -5597,10 +5614,11 @@ export class Game {
     this.ctx.fillText('SFX Volume', leftColX, 195);
     this.renderSlider(leftColX - sliderWidth / 2 - 15, 210, sliderWidth, this.audio.getSfxVolume());
 
-    // Mute indicator
-    this.ctx.font = '12px "Segoe UI", sans-serif';
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    this.ctx.fillText('Press M to mute', leftColX, 260);
+    // Difficulty selector
+    this.ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText('Difficulty', leftColX, 258);
+    this.renderDifficultySelector(leftColX, 266);
 
     // === RIGHT COLUMN: Display ===
     this.ctx.font = 'bold 16px "Segoe UI", sans-serif';
@@ -5722,6 +5740,35 @@ export class Game {
       this.ctx.fillStyle = isSelected ? '#00ffaa' : 'rgba(255, 255, 255, 0.7)';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(mode.label, btnX + buttonWidth / 2, y + 16);
+    });
+  }
+
+  private static readonly DIFFICULTY_BTN_WIDTH = 64;
+  private static readonly DIFFICULTY_BTN_GAP = 8;
+
+  private difficultyButtonX(centerX: number, index: number): number {
+    const w = Game.DIFFICULTY_BTN_WIDTH, gap = Game.DIFFICULTY_BTN_GAP;
+    const total = DIFFICULTY_ORDER.length * w + (DIFFICULTY_ORDER.length - 1) * gap;
+    return centerX - total / 2 + index * (w + gap);
+  }
+
+  private renderDifficultySelector(x: number, y: number): void {
+    const current = this.save.getDifficulty();
+    DIFFICULTY_ORDER.forEach((id, i) => {
+      const preset = DIFFICULTIES[id];
+      const btnX = this.difficultyButtonX(x, i);
+      const isSelected = id === current;
+      this.ctx.fillStyle = isSelected ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)';
+      this.ctx.strokeStyle = isSelected ? preset.color : 'rgba(255, 255, 255, 0.3)';
+      this.ctx.lineWidth = isSelected ? 2 : 1;
+      this.ctx.beginPath();
+      this.ctx.roundRect(btnX, y, Game.DIFFICULTY_BTN_WIDTH, 25, 5);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.font = 'bold 11px "Segoe UI", sans-serif';
+      this.ctx.fillStyle = isSelected ? preset.color : 'rgba(255, 255, 255, 0.7)';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(preset.label, btnX + Game.DIFFICULTY_BTN_WIDTH / 2, y + 16);
     });
   }
 

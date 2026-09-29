@@ -93,6 +93,11 @@ export class Player {
 
   // Jump buffering (queue jump input slightly before landing)
   private jumpBufferTimer = 0;
+  // Difficulty scale for coyote time + jump buffer (set from settings)
+  private static timingScale = 1;
+  static setTimingScale(scale: number): void {
+    Player.timingScale = scale;
+  }
   private static readonly JUMP_BUFFER_TIME = 100; // ms - how early before landing a jump press is remembered
 
   // Landing event for sound feedback
@@ -231,14 +236,14 @@ export class Player {
 
     // Track coyote time - grace period after leaving a platform
     if (this.isGrounded) {
-      this.coyoteTimer = Player.COYOTE_TIME;
+      this.coyoteTimer = Player.COYOTE_TIME * Player.timingScale;
     } else {
       this.coyoteTimer -= deltaTime;
     }
 
     // Track jump buffer - remember jump presses slightly before landing
     if (input.jumpPressed) {
-      this.jumpBufferTimer = Player.JUMP_BUFFER_TIME;
+      this.jumpBufferTimer = Player.JUMP_BUFFER_TIME * Player.timingScale;
     } else {
       this.jumpBufferTimer -= deltaTime;
     }

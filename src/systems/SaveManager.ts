@@ -1,5 +1,6 @@
 import { SaveData, GameSettings, PlayerSkin, ACHIEVEMENTS, Achievement, GhostFrame, MasteryBadge } from '../types';
 import { TOTAL_LEVELS } from '../levels';
+import type { Difficulty } from '../config/Difficulty';
 
 const SAVE_KEY = 'tempodash_save';
 const SAVE_VERSION = 3; // Increment when SaveData schema changes
@@ -224,6 +225,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   highContrast: false,
   assistMode: false,
   showBeatVisualizer: true,
+  difficulty: 'normal',
 };
 
 const DEFAULT_SAVE: SaveData = {
@@ -754,6 +756,15 @@ export class SaveManager {
 
   setAssistMode(enabled: boolean): void {
     this.data.settings.assistMode = enabled;
+    this.save();
+  }
+
+  getDifficulty(): Difficulty {
+    return this.data.settings.difficulty ?? 'normal';
+  }
+
+  setDifficulty(difficulty: Difficulty): void {
+    this.data.settings.difficulty = difficulty;
     this.save();
   }
 
