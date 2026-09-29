@@ -3856,6 +3856,25 @@ export class Game {
     this.ctx.fillText('Tap anywhere to dismiss', centerX, centerY + 105);
   }
 
+  private renderLiveScore(score: number): void {
+    const w = 140, h = 26, x = (GAME_WIDTH - w) / 2, y = 46;
+    this.ctx.save();
+    this.ctx.shadowBlur = 0;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    this.ctx.strokeStyle = 'rgba(0, 255, 204, 0.6)';
+    this.ctx.lineWidth = 1.5;
+    this.ctx.beginPath();
+    this.ctx.roundRect(x, y, w, h, 13);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.font = 'bold 15px "Segoe UI", sans-serif';
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillText(`SCORE ${score.toLocaleString()}`, GAME_WIDTH / 2, y + h / 2 + 1);
+    this.ctx.restore();
+  }
+
   private renderPlayingUI(): void {
     this.ctx.save();
 
@@ -3886,6 +3905,9 @@ export class Game {
     this.ctx.shadowColor = COLORS.UI_SHADOW;
     this.ctx.shadowBlur = 4;
     this.ctx.fillText(`${Math.floor(progress * 100)}%`, GAME_WIDTH / 2, 38);
+
+    // Live score panel (below percentage)
+    this.renderLiveScore(this.scoreManager.levelScoreThisRun);
 
     // Level name (top-left, larger and more prominent)
     this.ctx.textAlign = 'left';
